@@ -10,6 +10,7 @@ alias gsl='git stash list'
 alias gsa='git stash apply'
 alias gsd='git stash drop'
 alias grs='git reset --soft HEAD~1'
+alias gca='git commit --amend --no-edit'
 
 gcm() {
   if (( $# == 0 )); then
