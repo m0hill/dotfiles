@@ -1,5 +1,38 @@
 export ZSH="$HOME/.oh-my-zsh"
 
+alias gs='git status -sb'
+alias gsw='git switch'
+alias gsm='git switch main'
+alias gpl='git pull'
+alias gpu='git push'
+alias gpo='git push -u origin HEAD'
+alias gsl='git stash list'
+alias gsa='git stash apply'
+alias gsd='git stash drop'
+alias grs='git reset --soft HEAD~1'
+
+gcm() {
+  if (( $# == 0 )); then
+    git commit
+  else
+    git commit -m "$*"
+  fi
+}
+
+gsp() {
+  if (( $# == 0 )); then
+    git stash push
+  else
+    git stash push -m "$*"
+  fi
+}
+
+gl() {
+  git log --graph \
+    --pretty="%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%ar) %C(bold blue)<%an>%Creset" \
+    "$@"
+}
+
 path=(
   "$HOME/.local/bin"
   "$HOME/.opencode/bin"
@@ -17,7 +50,6 @@ typeset -U path PATH
 ZSH_THEME=""
 
 plugins=(
-  git
   zsh-completions
   zsh-autosuggestions
   zsh-syntax-highlighting
