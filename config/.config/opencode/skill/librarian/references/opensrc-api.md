@@ -39,7 +39,7 @@ opensrc.astGrep(sourceName: string, pattern: string, options?: AstGrepOptions): 
 // Read single file
 opensrc.read(sourceName: string, filePath: string): Promise<string>
 
-// Batch read multiple files
+// Batch read multiple files (supports globs!)
 opensrc.readMany(sourceName: string, paths: string[]): Promise<Record<string, string>>
 
 // Parse fetch spec
@@ -148,6 +148,16 @@ interface FileEntry {
 }
 ```
 
+### TreeNode
+
+```typescript
+interface TreeNode {
+  name: string;
+  type: "file" | "dir";
+  children?: TreeNode[];  // only for dirs
+}
+```
+
 ### CleanOptions
 
 ```typescript
@@ -214,10 +224,10 @@ const successful = Object.entries(files)
 ```javascript
 async () => {
   const [{ source }] = await opensrc.fetch("vercel/ai");
-
+  
   // GitHub repos: "vercel/ai" → "github.com/vercel/ai"
   const sourceName = source.name;
-
+  
   // Use sourceName for ALL subsequent calls
   const files = await opensrc.files(sourceName, "src/**/*.ts");
   return files;
