@@ -13,14 +13,14 @@ dotfiles/
 │   ├── .zshrc          # Shell config with guards
 │   ├── .gitconfig      # Git config (portable paths)
 │   └── ...
-├── config/              # Stow package: ~/.config/
-│   └── .config/
-│       ├── atuin/      # Shell history
-│       ├── mise/       # Runtime versions
-│       ├── opencode/   # AI assistant config
-│       └── ...
-└── ghostty/             # Stow package: macOS App Support
-    └── config
+└── config/              # Stow package: ~/.config/ + ~/Library/
+    ├── .config/
+    │   ├── atuin/      # Shell history
+    │   ├── mise/       # Runtime versions
+    │   ├── opencode/   # AI assistant config
+    │   └── ...
+    └── Library/Application Support/com.mitchellh.ghostty/
+        └── config
 ```
 
 ## Build/Test Commands

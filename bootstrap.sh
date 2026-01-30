@@ -38,10 +38,6 @@ fi
 echo "Stowing dotfiles..."
 stow -v -t ~ --restow home config
 
-# Stow ghostty to Application Support
-mkdir -p ~/Library/Application\ Support/com.mitchellh.ghostty
-stow -v -t ~/Library/Application\ Support/com.mitchellh.ghostty --restow ghostty
-
 echo ""
 echo "✅ Done!"
 echo ""
