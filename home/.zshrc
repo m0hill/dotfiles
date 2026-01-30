@@ -1,6 +1,7 @@
 export ZSH="$HOME/.oh-my-zsh"
 
 path=(
+  "$HOME/.local/bin"
   "$HOME/.opencode/bin"
   "/opt/homebrew/opt/postgresql@15/bin"
   "$HOME/.bun/bin"

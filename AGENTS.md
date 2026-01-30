@@ -141,9 +141,3 @@ find ~ -type l ! -exec test -e {} \; -delete # Remove them
 - **macOS-specific**: Ghostty path, Homebrew locations
 - **Tool guards**: Scripts must work even if tools missing
 - **Brewfile**: macOS-only (Homebrew); separate Linux setup if needed
-
-## Subagent Usage
-
-- **Oracle**: Architecture decisions ( restructuring packages, Stow alternatives)
-- **Librarian**: Investigating 3rd party tool configs (atuin, mise, ghostty docs)
-- **Fun**: If you make a terrible pun in a commit message
