@@ -5,7 +5,7 @@ description: Clone a repo with opensrc
 Clone a repository using opensrc
 
 ```bash
-npx opensrc <repo>
+opensrc <repo> --modify=false
 ```
 
 Where `<repo>` is extracted from the user request (supports `owner/repo`, `github:owner/repo`, full URL, etc.)
