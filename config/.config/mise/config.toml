@@ -1,0 +1,6 @@
+[tools]
+node = "lts"
+python = "latest"
+bun = "latest"
+pnpm = "latest"
+cloudflared = "latest"

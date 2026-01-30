@@ -1,0 +1,12 @@
+[user]
+	email = 112541468+m0hill@users.noreply.github.com
+	name = Mohil
+[init]
+	defaultBranch = main
+[filter "lfs"]
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+[core]
+	excludesfile = ~/.config/git/ignore
