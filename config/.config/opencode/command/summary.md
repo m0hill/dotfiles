@@ -71,6 +71,16 @@ Analyze the output from Step 2.
 ## 📊 Stats
 <Summary stats, e.g., "15 files changed, +300 insertions, -50 deletions">
 
+If linear link is present in the user-request or github pr description then use this to get the issue details for more information
+
+```bash
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $LINEAR_API_TOKEN" \
+  --data '{"query":"{ issue(id: \"CTM-123\") { id title description state { name } assignee { name } priority priorityLabel createdAt updatedAt comments { nodes { body createdAt user { name } } } } }"}' \
+  https://api.linear.app/graphql | jq .
+```
+
 ```
 
 <user-request>

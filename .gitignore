@@ -5,3 +5,6 @@
 **/*.log
 **/.zcompdump-*
 atuin-receipt.json
+
+# opensrc - source code for packages
+opensrc/

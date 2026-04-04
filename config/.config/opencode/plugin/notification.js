@@ -1,8 +1,7 @@
-import { homedir } from "os";
-import { join } from "path";
-
 export const NotificationPlugin = async ({ $, client }) => {
-  const soundPath = join(homedir(), ".config/opencode/sounds/demon_slayer_drums.mp3");
+  // Send macOS notification via osascript
+  const notify = (title, message) =>
+    $`osascript -e ${`display notification "${message}" with title "${title}"`}`;
 
   // Check if a session is a main (non-subagent) session
   const isMainSession = async (sessionID) => {
@@ -22,13 +21,13 @@ export const NotificationPlugin = async ({ $, client }) => {
       if (event.type === "session.idle") {
         const sessionID = event.properties.sessionID;
         if (await isMainSession(sessionID)) {
-          await $`afplay ${soundPath}`;
+          await notify("OpenCode", "Agent is idle and waiting for your input");
         }
       }
 
       // Permission prompt created
       if (event.type === "permission.asked") {
-        await $`afplay ${soundPath}`;
+        await notify("OpenCode", "Permission required - check the chat");
       }
     },
   };

@@ -1,11 +1,9 @@
 ---
 description: Principal engineering advisor for code reviews, architecture decisions, complex debugging, and planning. Invoke when you need deeper analysis before acting — reviews, trade-offs, debugging race conditions, planning refactors. Prompt with precise problem + files. Ask for concrete outcomes.
 mode: subagent
-model: openai/gpt-5.2
-# GPT-5.2: 400k context, 128k output, native reasoning (matches amp oracle)
+model: openai/gpt-5.4
 options:
   reasoningEffort: high
-# Strict read-only permissions (mirrors Amp's allowMcp:false, allowToolbox:false)
 permission:
   "*": deny
   read: allow
