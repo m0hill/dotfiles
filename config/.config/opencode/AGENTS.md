@@ -1,77 +1,36 @@
-- In all interaction and commit messages, be extremely concise and sacrifice grammar for the sake of concision.
+## Agent Guidelines
 
-## Code Quality Standards
+### Interaction Style
+Extremely concise. Sacrifice grammar for brevity.
 
-- Make minimal, surgical changes
-- **Never compromise type safety**: No `any`, no non-null assertion operator (`!`), no type assertions (`as Type`)
-- **Make illegal states unrepresentable**: Model domain with ADTs/discriminated unions; parse inputs at boundaries into typed structures; if state can't exist, code can't mishandle it
-- **Abstractions**: Consciously constrained, pragmatically parameterised, doggedly documented
+---
 
-### **ENTROPY REMINDER**
-This codebase will outlive you. Every shortcut you take becomes
-someone else's burden. Every hack compounds into technical debt
-that slows the whole team down.
+### Code Quality
 
-You are not just writing code. You are shaping the future of this
-project. The patterns you establish will be copied. The corners
-you cut will be cut again.
+**Minimal, surgical changes only.**
 
-**Fight entropy. Leave the codebase better than you found it.**
+- **No unsafe TS**: no `any`, no `!`, no `as Type`
+- **Make illegal states unrepresentable**: ADTs/discriminated unions; parse at boundaries; if state can't exist, code can't mishandle it
+- **Abstractions**: consciously constrained, pragmatically parameterised, doggedly documented
 
-## Slice-First (Tracer Code) Policy
+> **Fight entropy.** Shortcuts become others' burdens. Hacks compound. Patterns get copied. Corners get recut.
+> *Leave the codebase better than you found it.*
 
-When work spans >1 layer (UI/API/DB/infra), ALWAYS start with a tracer slice:
-- Ship ONE thin end-to-end path first (real inputs, real output, real checks)
-- Must include at least one verification hook:
-  - integration test OR
-  - runnable script OR
-  - manual repro steps that hit real boundaries (HTTP/DB/queue/etc)
-- Prefer “boring + testable” over “smart”.
+---
 
-Rules:
-- No broad scaffolding across the whole system before tracer path exists.
-- No new abstractions until 2nd slice proves repetition.
-- Slice size limit: if change touches many files, cut scope until it’s a single path.
-- Every slice must define its contract: inputs, outputs, failure modes.
-- Logging/metrics at the boundary for the tracer path (errors must be actionable).
+### Tools & Resources
 
-## Testing
+| Need | Tool |
+|------|------|
+| Search docs | `context7` tools |
+| Unsure how to do X | `grep_app` tools |
+| 3rd-party libs, remote repos, OSS patterns | **Librarian** subagent |
+| Deep implementation details | `opensrc/` directory — see `opensrc/sources.json` |
 
-- Write tests that verify semantically correct behavior
-- **Failing tests are acceptable** when they expose genuine bugs and test correct behavior
-
-## Plans
-
-- At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise. Sacrifice grammar for the sake of concision.
-
-## Docs
-
-- When you need to search docs, use `context7` tools.
-- When you are unsure on how to do a certain thing use `grep_app` tools.
-
-## Specialized Subagents
-
-### Oracle
-Invoke for: code review, architecture decisions, debugging analysis, refactor planning, second opinion.
-
-### Librarian
-Invoke for: understanding 3rd party libraries/packages, exploring remote repositories, discovering open source patterns.
-
-## Source Code Reference
-
-Source code for dependencies is available in `opensrc/` for deeper understanding of implementation details.
-
-See `opensrc/sources.json` for the list of available packages and their versions.
-
-Use this source code when you need to understand how a package works internally, not just its types/interface.
-
-### Fetching Additional Source Code
-
-To fetch source code for a package or repository you need to understand, run:
-
+**Fetch source:**
 ```bash
-npx opensrc <package>           # npm package (e.g., npx opensrc zod)
-npx opensrc pypi:<package>      # Python package (e.g., npx opensrc pypi:requests)
-npx opensrc crates:<package>    # Rust crate (e.g., npx opensrc crates:serde)
-npx opensrc <owner>/<repo>      # GitHub repo (e.g., npx opensrc vercel/ai)
+npx opensrc <package>           # npm
+npx opensrc pypi:<package>      # Python
+npx opensrc crates:<package>    # Rust
+npx opensrc <owner>/<repo>      # GitHub
 ```
