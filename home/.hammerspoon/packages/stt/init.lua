@@ -17,7 +17,7 @@ return function(manager)
 		SAMPLE_RATE = 16000,
 		MIN_BYTES = 2000,
 		MAX_HOLD_SECONDS = 300,
-		RIGHT_OPTION_TRIGGER_DELAY = 0.3,
+		RIGHT_OPTION_TRIGGER_DELAY = 0.15,
 		ENABLE_NOTIFY = true,
 		ENABLE_SOUND = true,
 		RECORDING_INDICATOR_COLOR = { red = 1, green = 0, blue = 0, alpha = 0.9 },
@@ -36,8 +36,7 @@ return function(manager)
 	local right_option_down = false
 	local right_option_cancelled = false
 	local right_option_timer = nil
-	local recordingIndicator = nil
-	local transcribingIndicator = nil
+	local indicatorCanvas = nil
 	local indicatorTimer = nil
 	local pulseTimer = nil
 	local pulseDirection = 1
@@ -165,53 +164,88 @@ return function(manager)
 		return dir .. name
 	end
 
-	local function createRecordingIndicator()
-		local mousePos = hs.mouse.absolutePosition()
-		recordingIndicator = hs.canvas.new({
-			x = mousePos.x - 15,
-			y = mousePos.y - 35,
-			w = 30,
-			h = 30,
-		})
+	local function stopIndicatorTracking()
+		if indicatorTimer then
+			indicatorTimer:stop()
+			indicatorTimer = nil
+		end
+	end
 
-		recordingIndicator[1] = {
-			type = "circle",
-			action = "stroke",
-			strokeColor = CONFIG.RECORDING_INDICATOR_COLOR,
-			strokeWidth = 2,
-			center = { x = 15, y = 15 },
-			radius = 12,
-		}
+	local function updateIndicatorPosition()
+		if not indicatorCanvas then
+			return
+		end
 
-		recordingIndicator[2] = {
-			type = "circle",
-			action = "fill",
-			fillColor = CONFIG.RECORDING_INDICATOR_COLOR,
-			center = { x = 15, y = 15 },
-			radius = 8,
-		}
+		local pos = hs.mouse.absolutePosition()
+		indicatorCanvas:topLeft({ x = pos.x - 15, y = pos.y - 35 })
+	end
 
-		recordingIndicator:show()
+	local function startIndicatorTracking()
+		if indicatorTimer then
+			return
+		end
 
-		indicatorTimer = hs.timer.new(0.05, function()
-			if recordingIndicator then
-				local pos = hs.mouse.absolutePosition()
-				recordingIndicator:topLeft({ x = pos.x - 15, y = pos.y - 35 })
-			end
-		end)
+		indicatorTimer = hs.timer.new(0.05, updateIndicatorPosition)
 		indicatorTimer:start()
 	end
 
-	local function createTranscribingIndicator()
+	local function stopIndicatorPulse()
+		if pulseTimer then
+			pulseTimer:stop()
+			pulseTimer = nil
+		end
+		pulseDirection = 1
+		pulseAlpha = 0.3
+	end
+
+	local function ensureIndicator()
+		if indicatorCanvas then
+			return indicatorCanvas
+		end
+
 		local mousePos = hs.mouse.absolutePosition()
-		transcribingIndicator = hs.canvas.new({
+		indicatorCanvas = hs.canvas.new({
 			x = mousePos.x - 15,
 			y = mousePos.y - 35,
 			w = 30,
 			h = 30,
 		})
+		indicatorCanvas:show()
+		return indicatorCanvas
+	end
 
-		transcribingIndicator[1] = {
+	local function setIndicatorMode(mode)
+		local indicator = ensureIndicator()
+		if not indicator then
+			return
+		end
+
+		stopIndicatorPulse()
+
+		if mode == "recording" then
+			updateIndicatorPosition()
+			indicator[1] = {
+				type = "circle",
+				action = "stroke",
+				strokeColor = CONFIG.RECORDING_INDICATOR_COLOR,
+				strokeWidth = 2,
+				center = { x = 15, y = 15 },
+				radius = 12,
+			}
+
+			indicator[2] = {
+				type = "circle",
+				action = "fill",
+				fillColor = CONFIG.RECORDING_INDICATOR_COLOR,
+				center = { x = 15, y = 15 },
+				radius = 8,
+			}
+			startIndicatorTracking()
+			return
+		end
+
+		stopIndicatorTracking()
+		indicator[1] = {
 			type = "circle",
 			action = "stroke",
 			strokeColor = { red = 0, green = 0.8, blue = 1, alpha = pulseAlpha },
@@ -220,7 +254,7 @@ return function(manager)
 			radius = 12,
 		}
 
-		transcribingIndicator[2] = {
+		indicator[2] = {
 			type = "circle",
 			action = "fill",
 			fillColor = CONFIG.TRANSCRIBING_INDICATOR_COLOR,
@@ -228,18 +262,8 @@ return function(manager)
 			radius = 6,
 		}
 
-		transcribingIndicator:show()
-
-		indicatorTimer = hs.timer.new(0.05, function()
-			if transcribingIndicator then
-				local pos = hs.mouse.absolutePosition()
-				transcribingIndicator:topLeft({ x = pos.x - 15, y = pos.y - 35 })
-			end
-		end)
-		indicatorTimer:start()
-
 		pulseTimer = hs.timer.new(0.03, function()
-			if transcribingIndicator and transcribingIndicator[1] then
+			if indicatorCanvas and indicatorCanvas[1] then
 				pulseAlpha = pulseAlpha + (pulseDirection * 0.02)
 				if pulseAlpha >= 0.9 then
 					pulseDirection = -1
@@ -247,7 +271,7 @@ return function(manager)
 					pulseDirection = 1
 				end
 
-				transcribingIndicator[1] = {
+				indicatorCanvas[1] = {
 					type = "circle",
 					action = "stroke",
 					strokeColor = { red = 0, green = 0.8, blue = 1, alpha = pulseAlpha },
@@ -261,28 +285,16 @@ return function(manager)
 	end
 
 	local function cleanupIndicators()
-		if indicatorTimer then
-			indicatorTimer:stop()
-			indicatorTimer = nil
-		end
+		stopIndicatorTracking()
+		stopIndicatorPulse()
 
-		if pulseTimer then
-			pulseTimer:stop()
-			pulseTimer = nil
-		end
-
-		if recordingIndicator then
-			recordingIndicator:delete()
-			recordingIndicator = nil
-		end
-
-		if transcribingIndicator then
-			transcribingIndicator:delete()
-			transcribingIndicator = nil
+		if indicatorCanvas then
+			indicatorCanvas:delete()
+			indicatorCanvas = nil
 		end
 	end
 
-	local function cleanupRecordingRuntime()
+	local function cleanupRecordingRuntime(keepIndicator)
 		if rec_task and rec_task:isRunning() then
 			rec_task:terminate()
 		end
@@ -293,7 +305,9 @@ return function(manager)
 			stop_timer = nil
 		end
 
-		cleanupIndicators()
+		if not keepIndicator then
+			cleanupIndicators()
+		end
 		is_recording = false
 		stop_requested = false
 	end
@@ -314,6 +328,10 @@ return function(manager)
 		if right_option_timer then
 			right_option_timer:stop()
 			right_option_timer = nil
+		end
+
+		if not is_recording and not is_busy then
+			cleanupIndicators()
 		end
 	end
 
@@ -448,24 +466,28 @@ return function(manager)
 			return
 		end
 
-		cleanupRecordingRuntime()
+		setIndicatorMode("transcribing")
+		cleanupRecordingRuntime(true)
 
 		local path = wav_path
 		wav_path = nil
 
 		if not path then
+			cleanupIndicators()
 			notifyError("STT", "No recording captured.")
 			return
 		end
 
 		local attrs = hs.fs.attributes(path)
 		if not attrs or (attrs.size or 0) < CONFIG.MIN_BYTES then
+			cleanupIndicators()
 			os.remove(path)
 			notifyError("STT", "Recording too short. Please speak longer.")
 			return
 		end
 
 		if not helperExists() then
+			cleanupIndicators()
 			os.remove(path)
 			applyHelperState({ ok = false, helperReady = false, modelAvailable = false, error = helperMissingMessage() })
 			notifyError("STT", helperMissingMessage(), "Basso")
@@ -474,6 +496,7 @@ return function(manager)
 		end
 
 		if not helperState.modelAvailable then
+			cleanupIndicators()
 			os.remove(path)
 			notifyError("STT", "Model missing. Open STT menu and click Download Model.", "Basso")
 			refreshHelperStatus()
@@ -481,7 +504,7 @@ return function(manager)
 		end
 
 		is_busy = true
-		createTranscribingIndicator()
+		setIndicatorMode("transcribing")
 		playSound("process")
 		log("Transcribing with local Parakeet")
 		manager.refreshMenu()
@@ -538,6 +561,7 @@ return function(manager)
 		end
 
 		stop_requested = true
+		setIndicatorMode("transcribing")
 
 		if stop_timer then
 			stop_timer:stop()
@@ -553,17 +577,24 @@ return function(manager)
 
 	local function startRecording()
 		if is_busy or is_recording or is_downloading then
+			if not is_recording then
+				cleanupIndicators()
+			end
 			return
 		end
 
 		if settings.triggerMode == TRIGGER_MODE_RIGHT_OPTION and hs.eventtap.isSecureInputEnabled() then
+			cleanupIndicators()
 			notifyError("STT", "Secure Input is enabled, so Right Option trigger is blocked.", "Basso")
 			return
 		end
 
+		setIndicatorMode("recording")
+
 		if not rec_path then
 			rec_path = which("rec")
 			if not rec_path then
+				cleanupIndicators()
 				notifyError("STT", "'sox' is not installed. Install via: brew install sox", "Basso")
 				playSound("error")
 				return
@@ -593,6 +624,7 @@ return function(manager)
 		if not rec_task then
 			is_recording = false
 			wav_path = nil
+			cleanupIndicators()
 			notifyError("STT", "Could not create audio recording task.", "Basso")
 			playSound("error")
 			return
@@ -602,13 +634,13 @@ return function(manager)
 			is_recording = false
 			wav_path = nil
 			rec_task = nil
+			cleanupIndicators()
 			notifyError("STT", "Could not start audio recording.", "Basso")
 			playSound("error")
 			return
 		end
 
 		stop_timer = hs.timer.doAfter(CONFIG.MAX_HOLD_SECONDS, requestStopRecording)
-		createRecordingIndicator()
 		playSound("start")
 		manager.refreshMenu()
 	end
@@ -635,7 +667,12 @@ return function(manager)
 		local allowedMask = rightAltMask | altMask
 
 		local function startPendingRightOption()
+			if is_busy or is_recording or is_downloading then
+				return
+			end
+
 			cancelPendingRightOptionStart()
+			setIndicatorMode("recording")
 			right_option_timer = hs.timer.doAfter(CONFIG.RIGHT_OPTION_TRIGGER_DELAY, function()
 				right_option_timer = nil
 				if right_option_down and not right_option_cancelled and not is_recording then
