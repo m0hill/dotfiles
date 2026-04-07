@@ -14,6 +14,7 @@ selection-invert-fg-bg = true
 
 unfocused-split-opacity = 0.8
 split-divider-color = #333333
+focus-follows-mouse = true
 
 macos-titlebar-style = tabs
 window-theme = dark
