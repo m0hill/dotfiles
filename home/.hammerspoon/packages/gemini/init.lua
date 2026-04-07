@@ -21,6 +21,7 @@ return function(manager)
 			"Put your entire answer inside a code block using three backticks (```).",
 		}, " "),
 		SCREENSHOT_TIMEOUT = 60,
+		PROCESS_SOUND_INTERVAL = 1.5,
 	}
 
 	local settings = {
@@ -32,6 +33,7 @@ return function(manager)
 	local state = {
 		captureTask = nil,
 		busy = false,
+		processSoundTimer = nil,
 		timer = nil,
 		hotkey = nil,
 	}
@@ -90,8 +92,24 @@ return function(manager)
 		end
 	end
 
+	local function stopProcessSound()
+		if state.processSoundTimer then
+			state.processSoundTimer:stop()
+			state.processSoundTimer = nil
+		end
+	end
+
+	local function startProcessSound()
+		stopProcessSound()
+		playSound("process")
+		state.processSoundTimer = hs.timer.doEvery(CONFIG.PROCESS_SOUND_INTERVAL, function()
+			playSound("process")
+		end)
+	end
+
 	local function reset(path)
 		state.busy = false
+		stopProcessSound()
 		if state.captureTask then
 			state.captureTask = nil
 		end
@@ -215,6 +233,7 @@ return function(manager)
 		}
 
 		local apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" .. CONFIG.MODEL .. ":generateContent"
+		startProcessSound()
 
 		hs.http.asyncPost(apiUrl, body, headers, function(status, responseData, responseHeaders)
 			local resultText = nil
@@ -332,6 +351,7 @@ return function(manager)
 			state.timer:stop()
 			state.timer = nil
 		end
+		stopProcessSound()
 		state.busy = false
 	end
 
