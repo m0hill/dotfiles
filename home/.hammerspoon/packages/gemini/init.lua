@@ -10,7 +10,7 @@ return function(manager)
 	local DEFAULT_HOTKEY = { { "cmd", "shift" }, "s" }
 
 	local CONFIG = {
-		MODEL = "gemini-flash-lite-latest",
+		MODEL = "gemini-3.1-flash-lite-preview",
 		MIME_TYPE = "image/png",
 		PROMPT = table.concat({
 			"Extract all text from this image. If the text is in a non-english language, translate it to English.",
@@ -48,16 +48,22 @@ return function(manager)
 		manager.playSound(soundType)
 	end
 
-	local function notify(title, text)
+	local function notify(title, text, sound)
 		if not settings.enableNotify then
 			return
 		end
-		manager.notify(title, text, { withdrawAfter = 4 })
+		manager.notify(title, text, {
+			withdrawAfter = 4,
+			sound = sound,
+			soundEnabled = settings.enableSound,
+		})
 	end
 
-	local function notifyError(title, text)
+	local function notifyError(title, text, sound)
 		manager.notifyError(title, text, {
 			withdrawAfter = 4,
+			sound = sound,
+			soundEnabled = settings.enableSound,
 			notify = settings.enableNotify,
 		})
 	end
@@ -65,7 +71,7 @@ return function(manager)
 	local function log(level, message)
 		local line = string.format("Gemini OCR [%s] %s", level, message)
 		if hs.printf then
-			hs.printf(line)
+			hs.printf("%s", line)
 		else
 			print(line)
 		end
@@ -171,7 +177,7 @@ return function(manager)
 		local apiKey = manager.getSecret("GEMINI_API_KEY")
 		if not apiKey or apiKey == "" then
 			reset(path)
-			notifyError("Gemini OCR", "GEMINI_API_KEY is missing")
+			notifyError("Gemini OCR", "GEMINI_API_KEY is missing", "Basso")
 			playSound("error")
 			return
 		end
@@ -179,7 +185,7 @@ return function(manager)
 		local file = io.open(path, "rb")
 		if not file then
 			reset(path)
-			notifyError("Gemini OCR", "Unable to read screenshot")
+			notifyError("Gemini OCR", "Unable to read screenshot", "Basso")
 			playSound("error")
 			return
 		end
@@ -233,7 +239,7 @@ return function(manager)
 
 			if not resultText or resultText == "" then
 				reset(path)
-				notifyError("Gemini OCR", "Failed to interpret API response")
+				notifyError("Gemini OCR", "Failed to interpret API response", "Basso")
 				playSound("error")
 				return
 			end
@@ -246,7 +252,8 @@ return function(manager)
 				preview = preview:sub(1, 147) .. "..."
 			end
 
-			notify("Gemini OCR", preview)
+			notify("Gemini OCR", preview, "Glass")
+			playSound("success")
 			reset(path)
 		end)
 	end
@@ -259,18 +266,21 @@ return function(manager)
 		local tmpDir = hs.fs.temporaryDirectory()
 		local tmpPath = tmpDir .. string.format("gemini_%d.png", hs.timer.absoluteTime())
 		state.busy = true
+		playSound("capture")
 
 		state.timer = hs.timer.doAfter(CONFIG.SCREENSHOT_TIMEOUT, function()
 			if state.captureTask then
 				state.captureTask:terminate()
 			end
 			reset(tmpPath)
-			notifyError("Gemini OCR", "Screenshot timed out")
+			notifyError("Gemini OCR", "Screenshot timed out", "Basso")
+			playSound("error")
 		end)
 
 		state.captureTask = hs.task.new("/usr/sbin/screencapture", function(exitCode)
 			if exitCode ~= 0 then
 				reset(tmpPath)
+				playSound("cancel")
 				return
 			end
 
@@ -284,7 +294,7 @@ return function(manager)
 
 		if not state.captureTask:start() then
 			reset(tmpPath)
-			notifyError("Gemini OCR", "Unable to start screenshot")
+			notifyError("Gemini OCR", "Unable to start screenshot", "Basso")
 			playSound("error")
 			return
 		end
