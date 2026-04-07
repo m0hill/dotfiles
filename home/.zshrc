@@ -29,5 +29,3 @@ command -v mise >/dev/null && eval "$(mise activate zsh)"
 command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
 command -v atuin >/dev/null && eval "$(atuin init zsh)"
 command -v starship >/dev/null && eval "$(starship init zsh)"
-
-export PRE_COMMIT_ALLOW_NO_CONFIG=1
