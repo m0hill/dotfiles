@@ -57,17 +57,15 @@ return function(manager)
 		saveSetting("enableSound", not settings.enableSound)
 	end
 
-	local function notify(title, text, sound)
+	local function notify(title, text)
 		if not settings.enableNotify then
 			return
 		end
-		manager.notify(title, text, { sound = sound, soundEnabled = settings.enableSound })
+		manager.notify(title, text)
 	end
 
-	local function notifyError(title, text, sound)
+	local function notifyError(title, text)
 		manager.notifyError(title, text, {
-			sound = sound,
-			soundEnabled = settings.enableSound,
 			notify = settings.enableNotify,
 		})
 	end

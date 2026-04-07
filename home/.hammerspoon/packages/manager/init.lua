@@ -232,9 +232,6 @@ return function(config)
 			informativeText = text or "",
 			withdrawAfter = options.withdrawAfter or 3,
 		})
-		if options.sound and options.soundEnabled ~= false then
-			notification:soundName(options.sound)
-		end
 		notification:send()
 	end
 

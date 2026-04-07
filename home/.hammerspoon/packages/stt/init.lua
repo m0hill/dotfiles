@@ -87,17 +87,15 @@ return function(manager)
 		manager.log(PACKAGE_ID, message)
 	end
 
-	local function notify(title, text, sound)
+	local function notify(title, text)
 		if not settings.enableNotify then
 			return
 		end
-		manager.notify(title, text, { sound = sound, soundEnabled = settings.enableSound })
+		manager.notify(title, text)
 	end
 
-	local function notifyError(title, text, sound)
+	local function notifyError(title, text)
 		manager.notifyError(title, text, {
-			sound = sound,
-			soundEnabled = settings.enableSound,
 			notify = settings.enableNotify,
 		})
 	end
@@ -482,7 +480,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			cleanupIndicators()
 			os.remove(path)
 			applyHelperState({ ok = false, helperReady = false, modelAvailable = false, error = helperMissingMessage() })
-			notifyError("STT", helperMissingMessage(), "Basso")
+			notifyError("STT", helperMissingMessage())
 			manager.refreshMenu()
 			return
 		end
@@ -490,7 +488,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 		if not helperState.modelAvailable then
 			cleanupIndicators()
 			os.remove(path)
-			notifyError("STT", "Model missing. Open STT menu and click Download Model.", "Basso")
+			notifyError("STT", "Model missing. Open STT menu and click Download Model.")
 			refreshHelperStatus()
 			return
 		end
@@ -513,7 +511,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			end
 
 			if not result or result.ok ~= true then
-				notifyError("STT", result and result.error or "Transcription failed.", "Basso")
+				notifyError("STT", result and result.error or "Transcription failed.")
 				playSound("error")
 				refreshHelperStatus()
 				manager.refreshMenu()
@@ -531,7 +529,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			hs.eventtap.keyStroke({ "cmd" }, "v", 0)
 
 			local preview = '"' .. (text:len() > 50 and text:sub(1, 50) .. "..." or text) .. '"'
-			notify("STT", preview, "Glass")
+			notify("STT", preview)
 			playSound("success")
 			manager.refreshMenu()
 		end)
@@ -540,7 +538,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			is_busy = false
 			cleanupIndicators()
 			os.remove(path)
-			notifyError("STT", "Could not start stt-helper.", "Basso")
+			notifyError("STT", "Could not start stt-helper.")
 			playSound("error")
 			manager.refreshMenu()
 		end
@@ -576,7 +574,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		if settings.triggerMode == TRIGGER_MODE_RIGHT_OPTION and hs.eventtap.isSecureInputEnabled() then
 			cleanupIndicators()
-			notifyError("STT", "Secure Input is enabled, so Right Option trigger is blocked.", "Basso")
+			notifyError("STT", "Secure Input is enabled, so Right Option trigger is blocked.")
 			return
 		end
 
@@ -586,7 +584,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			rec_path = which("rec")
 			if not rec_path then
 				cleanupIndicators()
-				notifyError("STT", "'sox' is not installed. Install via: brew install sox", "Basso")
+				notifyError("STT", "'sox' is not installed. Install via: brew install sox")
 				playSound("error")
 				return
 			end
@@ -616,7 +614,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			is_recording = false
 			wav_path = nil
 			cleanupIndicators()
-			notifyError("STT", "Could not create audio recording task.", "Basso")
+			notifyError("STT", "Could not create audio recording task.")
 			playSound("error")
 			return
 		end
@@ -626,7 +624,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			wav_path = nil
 			rec_task = nil
 			cleanupIndicators()
-			notifyError("STT", "Could not start audio recording.", "Basso")
+			notifyError("STT", "Could not start audio recording.")
 			playSound("error")
 			return
 		end
@@ -754,7 +752,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		is_downloading = true
 		helperState.message = "Downloading model..."
-		notify("STT", "Downloading Parakeet model...", "Tink")
+		notify("STT", "Downloading Parakeet model...")
 		manager.refreshMenu()
 
 		download_task, _ = runHelper({ "download" }, function(_, result)
@@ -762,10 +760,10 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			is_downloading = false
 			applyHelperState(result)
 			if result and result.ok == true and result.modelAvailable == true then
-				notify("STT", "Parakeet model downloaded.", "Glass")
+				notify("STT", "Parakeet model downloaded.")
 				playSound("success")
 			else
-				notifyError("STT", result and result.error or "Download failed.", "Basso")
+				notifyError("STT", result and result.error or "Download failed.")
 				playSound("error")
 			end
 			manager.refreshMenu()
@@ -773,7 +771,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		if not download_task then
 			is_downloading = false
-			notifyError("STT", helperState.message or helperMissingMessage(), "Basso")
+			notifyError("STT", helperState.message or helperMissingMessage())
 			manager.refreshMenu()
 		end
 	end
@@ -785,7 +783,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		is_downloading = true
 		helperState.message = "Deleting model..."
-		notify("STT", "Deleting Parakeet model...", "Tink")
+		notify("STT", "Deleting Parakeet model...")
 		manager.refreshMenu()
 
 		download_task, _ = runHelper({ "delete" }, function(_, result)
@@ -793,10 +791,10 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			is_downloading = false
 			applyHelperState(result)
 			if result and result.ok == true and result.modelAvailable ~= true then
-				notify("STT", "Parakeet model deleted.", "Glass")
+				notify("STT", "Parakeet model deleted.")
 				playSound("success")
 			else
-				notifyError("STT", result and result.error or "Delete failed.", "Basso")
+				notifyError("STT", result and result.error or "Delete failed.")
 				playSound("error")
 			end
 			manager.refreshMenu()
@@ -804,7 +802,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		if not download_task then
 			is_downloading = false
-			notifyError("STT", helperState.message or helperMissingMessage(), "Basso")
+			notifyError("STT", helperState.message or helperMissingMessage())
 			manager.refreshMenu()
 		end
 	end

@@ -48,22 +48,18 @@ return function(manager)
 		manager.playSound(soundType)
 	end
 
-	local function notify(title, text, sound)
+	local function notify(title, text)
 		if not settings.enableNotify then
 			return
 		end
 		manager.notify(title, text, {
 			withdrawAfter = 4,
-			sound = sound,
-			soundEnabled = settings.enableSound,
 		})
 	end
 
-	local function notifyError(title, text, sound)
+	local function notifyError(title, text)
 		manager.notifyError(title, text, {
 			withdrawAfter = 4,
-			sound = sound,
-			soundEnabled = settings.enableSound,
 			notify = settings.enableNotify,
 		})
 	end
@@ -177,7 +173,7 @@ return function(manager)
 		local apiKey = manager.getSecret("GEMINI_API_KEY")
 		if not apiKey or apiKey == "" then
 			reset(path)
-			notifyError("Gemini OCR", "GEMINI_API_KEY is missing", "Basso")
+			notifyError("Gemini OCR", "GEMINI_API_KEY is missing")
 			playSound("error")
 			return
 		end
@@ -185,7 +181,7 @@ return function(manager)
 		local file = io.open(path, "rb")
 		if not file then
 			reset(path)
-			notifyError("Gemini OCR", "Unable to read screenshot", "Basso")
+			notifyError("Gemini OCR", "Unable to read screenshot")
 			playSound("error")
 			return
 		end
@@ -239,7 +235,7 @@ return function(manager)
 
 			if not resultText or resultText == "" then
 				reset(path)
-				notifyError("Gemini OCR", "Failed to interpret API response", "Basso")
+				notifyError("Gemini OCR", "Failed to interpret API response")
 				playSound("error")
 				return
 			end
@@ -252,7 +248,7 @@ return function(manager)
 				preview = preview:sub(1, 147) .. "..."
 			end
 
-			notify("Gemini OCR", preview, "Glass")
+			notify("Gemini OCR", preview)
 			playSound("success")
 			reset(path)
 		end)
@@ -273,7 +269,7 @@ return function(manager)
 				state.captureTask:terminate()
 			end
 			reset(tmpPath)
-			notifyError("Gemini OCR", "Screenshot timed out", "Basso")
+			notifyError("Gemini OCR", "Screenshot timed out")
 			playSound("error")
 		end)
 
@@ -294,7 +290,7 @@ return function(manager)
 
 		if not state.captureTask:start() then
 			reset(tmpPath)
-			notifyError("Gemini OCR", "Unable to start screenshot", "Basso")
+			notifyError("Gemini OCR", "Unable to start screenshot")
 			playSound("error")
 			return
 		end
