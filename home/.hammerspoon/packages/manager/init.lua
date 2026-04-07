@@ -251,6 +251,7 @@ return function(config)
 		end
 		local sound = hs.sound.getByName(soundName)
 		if sound then
+			sound:volume(0.5)
 			sound:play()
 		end
 	end
