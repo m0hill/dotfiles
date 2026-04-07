@@ -396,18 +396,10 @@ return function(manager)
 			return nil, result.error
 		end
 
-		local task = hs.task.new(path, function(exitCode, stdout, stderr)
-			local result = parseHelperResult(exitCode, stdout, stderr)
-			stdout = (stdout or ""):gsub("%s+$", "")
-			stderr = (stderr or ""):gsub("%s+$", "")
-			if stderr ~= "" then
-				log(commandName .. " stderr: " .. stderr)
-			end
-			if result and result.ok ~= true then
-				log(commandName .. " failed: " .. (result.error or "unknown error"))
-			end
-			onComplete(exitCode, result, stdout, stderr)
-		end, args)
+local task = hs.task.new(path, function(exitCode, stdout, stderr)
+		local result = parseHelperResult(exitCode, stdout, stderr)
+		onComplete(exitCode, result, stdout, stderr)
+	end, args)
 
 		if not task then
 			helperState.checked = true
@@ -506,7 +498,6 @@ return function(manager)
 		is_busy = true
 		setIndicatorMode("transcribing")
 		playSound("process")
-		log("Transcribing with local Parakeet")
 		manager.refreshMenu()
 
 		transcribe_task, _ = runHelper({ "transcribe", "--input", path }, function(_, result)
@@ -770,12 +761,10 @@ return function(manager)
 			download_task = nil
 			is_downloading = false
 			applyHelperState(result)
-		if result and result.ok == true and result.modelAvailable == true then
-				log("download ready path=" .. tostring(result.modelPath or "unknown"))
+			if result and result.ok == true and result.modelAvailable == true then
 				notify("STT", "Parakeet model downloaded.", "Glass")
 				playSound("success")
 			else
-				log("download not ready path=" .. tostring(result and result.modelPath or "unknown"))
 				notifyError("STT", result and result.error or "Download failed.", "Basso")
 				playSound("error")
 			end
@@ -804,11 +793,9 @@ return function(manager)
 			is_downloading = false
 			applyHelperState(result)
 			if result and result.ok == true and result.modelAvailable ~= true then
-				log("delete finished path=" .. tostring(result.modelPath or "unknown"))
 				notify("STT", "Parakeet model deleted.", "Glass")
 				playSound("success")
 			else
-				log("delete failed path=" .. tostring(result and result.modelPath or "unknown"))
 				notifyError("STT", result and result.error or "Delete failed.", "Basso")
 				playSound("error")
 			end
