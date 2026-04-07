@@ -1,2 +1,5 @@
 # opensrc - source code for packages
 opensrc/
+
+# JSON files (settings/secrets)
+*.json
