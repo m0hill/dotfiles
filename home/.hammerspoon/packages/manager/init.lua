@@ -20,6 +20,15 @@ return function(config)
 			},
 		},
 		{
+			id = "stt",
+			name = "STT",
+			description = "Hold a trigger to record and transcribe locally with Parakeet.",
+			defaultEnabled = false,
+			entryPath = PACKAGES_DIR .. "/stt/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
 			id = "gemini",
 			name = "Gemini OCR",
 			description = "Capture a region and extract text with Gemini.",
@@ -210,6 +219,10 @@ return function(config)
 		if runtime.menubar then
 			runtime.menubar:setMenu(C.buildMenu())
 		end
+	end
+
+	function C.refreshMenu()
+		refreshMenu()
 	end
 
 	function C.notify(title, text, options)

@@ -2,23 +2,27 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and three local modules:
+There is one local menubar controller and four local modules:
+- `packages/stt/`
 - `packages/whisper/`
 - `packages/gemini/`
 - `packages/lyrics/`
 
-No Spoon. No registry. No remote downloads. No versions.
+No Spoon. No registry. No package versions.
 
 ## Structure
 
 ```text
 ~/.hammerspoon/
 ├── init.lua
-├── packages/
-│   ├── manager/
-│   │   └── init.lua
-│   ├── whisper/
-│   │   ├── init.lua
+	├── packages/
+	│   ├── manager/
+	│   │   └── init.lua
+	│   ├── stt/
+	│   │   ├── init.lua
+	│   │   └── stt.json
+	│   ├── whisper/
+	│   │   ├── init.lua
 │   │   └── whisper.json
 │   ├── gemini/
 │   │   ├── init.lua
@@ -50,6 +54,14 @@ The controller menu always shows all local modules.
 - release to transcribe and paste
 - requires `sox` and `GROQ_API_KEY`
 
+### STT
+- local Parakeet v3 speech-to-text
+- Apple Silicon and macOS 14+ only
+- default trigger is `Right Option` alone
+- can switch to a normal combo trigger in the menu
+- requires `sox` and the local `stt-helper` binary
+- stores the Parakeet model under `~/Library/Application Support/Hammerspoon/STT/cache`
+
 ### Gemini OCR
 - press `Cmd+Shift+S`
 - select a screen region
@@ -69,6 +81,6 @@ The controller menu always shows all local modules.
 ## Troubleshooting
 
 - Whisper needs `sox`: run `brew install sox`
+- STT needs the helper installed once: see `packages/stt/README.md`
 - Gemini needs Screen Recording permission for Hammerspoon
 - If a module fails, check the Hammerspoon console and toggle the module off/on
-

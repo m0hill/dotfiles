@@ -8,3 +8,7 @@ atuin-receipt.json
 
 # opensrc - source code for packages
 opensrc/
+
+# local Swift helper artifacts
+home/.hammerspoon/packages/stt/helper/.build/
+home/.hammerspoon/packages/stt/helper/.swiftpm/
