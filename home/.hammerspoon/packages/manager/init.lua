@@ -132,20 +132,52 @@ return function(config)
 		}
 	end
 
+	local function getDeclaredSecretKeys(packageId)
+		local def = getModuleDef(packageId)
+		local keys = {}
+		for _, secret in ipairs(def and def.secrets or {}) do
+			keys[secret.key] = true
+		end
+		return keys
+	end
+
+	local function normalizeModuleData(packageId, data)
+		local normalized = getDefaultModuleData(packageId)
+		local secretKeys = getDeclaredSecretKeys(packageId)
+		normalized.enabled = data and data.enabled == true or false
+
+		local settings = type(data and data.settings) == "table" and data.settings or {}
+		for key, value in pairs(settings) do
+			if not secretKeys[key] then
+				normalized.settings[key] = value
+			end
+		end
+
+		local secrets = type(data and data.secrets) == "table" and data.secrets or {}
+		for key, value in pairs(secrets) do
+			if secretKeys[key] then
+				normalized.secrets[key] = value
+			elseif normalized.settings[key] == nil then
+				normalized.settings[key] = value
+			end
+		end
+
+		for key, value in pairs(settings) do
+			if secretKeys[key] and normalized.secrets[key] == nil then
+				normalized.secrets[key] = value
+			end
+		end
+
+		return normalized
+	end
+
 	local function readModuleData(packageId)
 		local data = readJsonFile(getModuleConfigPath(packageId), getDefaultModuleData(packageId))
-		data.enabled = data.enabled == true
-		data.settings = type(data.settings) == "table" and data.settings or {}
-		data.secrets = type(data.secrets) == "table" and data.secrets or {}
-		return data
+		return normalizeModuleData(packageId, data)
 	end
 
 	local function writeModuleData(packageId, data)
-		local normalized = {
-			enabled = data.enabled == true,
-			settings = type(data.settings) == "table" and data.settings or {},
-			secrets = type(data.secrets) == "table" and data.secrets or {},
-		}
+		local normalized = normalizeModuleData(packageId, data)
 		return writeJsonFile(getModuleConfigPath(packageId), normalized)
 	end
 
@@ -705,6 +737,16 @@ return function(config)
 	function C.start()
 		if runtime.menubar then
 			C.stop()
+		end
+
+		for _, def in ipairs(MODULES) do
+			local configPath = getModuleConfigPath(def.id)
+			if hs.fs.attributes(configPath, "mode") then
+				local ok, err = writeModuleData(def.id, readModuleData(def.id))
+				if not ok then
+					logError("Normalize module data for '" .. def.id .. "'", err)
+				end
+			end
 		end
 
 		runtime.menubar = hs.menubar.new()
