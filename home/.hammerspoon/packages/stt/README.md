@@ -1,6 +1,6 @@
 # STT
 
-Hold a trigger to record, then release to transcribe locally with Parakeet and paste.
+Press a trigger once to start recording, then press it again to transcribe locally with Parakeet and paste.
 
 Apple Silicon and macOS 14+ are required.
 
@@ -20,7 +20,7 @@ Apple Silicon and macOS 14+ are required.
 
 ## Trigger Modes
 
-- default: hold `Right Option` alone
+- default: tap `Right Option` alone to start, tap again to stop
 - optional: switch to `Combo` in the STT menu and set a normal hotkey
 
 ## Storage

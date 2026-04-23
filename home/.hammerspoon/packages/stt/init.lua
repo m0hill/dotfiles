@@ -1,5 +1,5 @@
 --- STT
---- Hold a trigger to record audio and transcribe locally with Parakeet.
+--- Press a trigger once to record audio and press again to transcribe locally with Parakeet.
 ---
 --- @package stt
 --- @author m0hill
@@ -16,8 +16,7 @@ return function(manager)
 	local CONFIG = {
 		SAMPLE_RATE = 16000,
 		MIN_BYTES = 2000,
-		MAX_HOLD_SECONDS = 300,
-		RIGHT_OPTION_TRIGGER_DELAY = 0.15,
+		MAX_RECORDING_SECONDS = 300,
 		ENABLE_NOTIFY = true,
 		ENABLE_SOUND = true,
 		RECORDING_INDICATOR_COLOR = { red = 1, green = 0, blue = 0, alpha = 0.9 },
@@ -35,7 +34,6 @@ return function(manager)
 	local right_option_tap = nil
 	local right_option_down = false
 	local right_option_cancelled = false
-	local right_option_timer = nil
 	local indicatorCanvas = nil
 	local indicatorTimer = nil
 	local pulseTimer = nil
@@ -323,11 +321,6 @@ return function(manager)
 	end
 
 	local function cancelPendingRightOptionStart()
-		if right_option_timer then
-			right_option_timer:stop()
-			right_option_timer = nil
-		end
-
 		if not is_recording and not is_busy then
 			cleanupIndicators()
 		end
@@ -564,7 +557,18 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 		end
 	end
 
-	local function startRecording()
+	local startRecording
+
+	local function toggleRecording()
+		if is_recording then
+			requestStopRecording()
+			return
+		end
+
+		startRecording()
+	end
+
+	startRecording = function()
 		if is_busy or is_recording or is_downloading then
 			if not is_recording then
 				cleanupIndicators()
@@ -629,7 +633,7 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			return
 		end
 
-		stop_timer = hs.timer.doAfter(CONFIG.MAX_HOLD_SECONDS, requestStopRecording)
+		stop_timer = hs.timer.doAfter(CONFIG.MAX_RECORDING_SECONDS, requestStopRecording)
 		playSound("start")
 		manager.refreshMenu()
 	end
@@ -640,8 +644,8 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 		if settings.triggerMode == TRIGGER_MODE_COMBO then
 			local spec = {
 				record = {
-					fn = { press = startRecording, release = requestStopRecording },
-					description = "Hold to Record",
+					fn = toggleRecording,
+					description = "Toggle Recording",
 				},
 			}
 			local bound = manager.bindHotkeysToSpec(PACKAGE_ID, spec, { record = settings.comboHotkey })
@@ -655,21 +659,6 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 		local ignoreMask = (rawFlagMasks.nonCoalesced or 0) | 0x20000000
 		local allowedMask = rightAltMask | altMask
 
-		local function startPendingRightOption()
-			if is_busy or is_recording or is_downloading then
-				return
-			end
-
-			cancelPendingRightOptionStart()
-			setIndicatorMode("recording")
-			right_option_timer = hs.timer.doAfter(CONFIG.RIGHT_OPTION_TRIGGER_DELAY, function()
-				right_option_timer = nil
-				if right_option_down and not right_option_cancelled and not is_recording then
-					startRecording()
-				end
-			end)
-		end
-
 		local function cancelRightOptionOnlyTrigger()
 			right_option_cancelled = true
 			cancelPendingRightOptionStart()
@@ -682,13 +671,13 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			local isDown = (flags & rightAltMask) ~= 0
 
 			if eventType == hs.eventtap.event.types.keyDown or eventType == hs.eventtap.event.types.keyUp then
-				if right_option_down and not is_recording then
+				if right_option_down then
 					cancelRightOptionOnlyTrigger()
 				end
 				return false
 			end
 
-			if right_option_down and hasOtherModifiers and not is_recording then
+			if right_option_down and hasOtherModifiers then
 				cancelRightOptionOnlyTrigger()
 			end
 
@@ -699,13 +688,13 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 			right_option_down = isDown
 			if isDown then
 				right_option_cancelled = hasOtherModifiers
-				if not right_option_cancelled then
-					startPendingRightOption()
-				end
 			else
-				cancelPendingRightOptionStart()
+				if not right_option_cancelled then
+					toggleRecording()
+				else
+					cancelPendingRightOptionStart()
+				end
 				right_option_cancelled = false
-				requestStopRecording()
 			end
 
 			return false
