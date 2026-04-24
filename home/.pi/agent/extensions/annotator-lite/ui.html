@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Annotator</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header id="topbar">
+  <div id="topbar-title">
+    <span class="prompt">›</span>
+    <h1 id="title">ANNOTATOR</h1>
+  </div>
+  <div id="topbar-actions">
+    <button id="closeBtn">Close</button>
+    <button id="submitBtn" class="primary">Send Feedback</button>
+  </div>
+</header>
+
+<div id="shell">
+  <aside class="sidebar" id="sidebar-left">
+    <div class="sb-head">
+      <span class="sb-label">Index</span>
+      <button class="sb-toggle" id="leftToggle">‹</button>
+    </div>
+    <div class="sb-scroll">
+      <nav id="toc"><div class="toc-empty">no headings</div></nav>
+    </div>
+  </aside>
+
+  <div id="doc-wrap">
+    <div id="doc-bar">
+      <span class="doc-bar-label">Document</span>
+      <span id="source"></span>
+    </div>
+    <article id="doc">
+      <div class="loading">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <span>loading…</span>
+      </div>
+    </article>
+  </div>
+
+  <aside class="sidebar" id="sidebar-right">
+    <div class="sb-head">
+      <span class="sb-label">Tools</span>
+      <button class="sb-toggle" id="rightToggle">›</button>
+    </div>
+    <div id="sb-right-inner">
+      <div class="rsec">
+        <div class="rsec-head"><span class="rsec-label">Global Feedback</span></div>
+        <div class="rsec-body"><textarea id="global" placeholder="Overall notes…"></textarea></div>
+      </div>
+      <div class="rsec rsec-annotations">
+        <div class="rsec-head">
+          <span class="rsec-label">Annotations</span>
+          <span class="anno-badge" id="count">0</span>
+        </div>
+        <div id="annotations" class="rsec-body"><div class="no-anno">no annotations yet</div></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="popover">
+  <div class="pop-label">Selection</div>
+  <div id="selPreview" class="quote"></div>
+  <textarea id="commentInput" placeholder="Add a comment…"></textarea>
+  <div class="pop-foot">
+    <span class="pop-hint">esc to cancel</span>
+    <div class="pop-actions">
+      <button id="cancelAdd">Cancel</button>
+      <button id="addBtn" class="primary">Add</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
