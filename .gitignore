@@ -12,3 +12,8 @@ opensrc/
 # local Swift helper artifacts
 home/.hammerspoon/packages/stt/helper/.build/
 home/.hammerspoon/packages/stt/helper/.swiftpm/
+
+# pi local state / secrets
+home/.pi/agent/auth.json
+home/.pi/agent/sessions/
+home/.pi/agent/bin/
