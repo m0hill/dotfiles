@@ -4,7 +4,6 @@ import { matchesKey, Text } from "@mariozechner/pi-tui";
 const CODEX_PROVIDER = "openai-codex";
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const REQUEST_TIMEOUT_MS = 15_000;
-const BAR_SEGMENTS = 20;
 
 type OAuthCredential = {
 	type?: string;
@@ -102,7 +101,7 @@ function resetLabel(window: RateLimitWindow): string | undefined {
 		const now = new Date();
 		if (date.toDateString() === now.toDateString()) return time;
 		const day = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" }).format(date);
-		return `${time} on ${day}`;
+		return `${day} ${time}`;
 	}
 
 	const resetAfter = window.reset_after_seconds;
@@ -110,44 +109,46 @@ function resetLabel(window: RateLimitWindow): string | undefined {
 		return undefined;
 	}
 	const minutes = Math.round(resetAfter / 60);
-	if (minutes < 60) return `in ${minutes}m`;
+	if (minutes < 60) return `${minutes}m`;
 	const hours = Math.round(minutes / 60);
-	if (hours < 48) return `in ${hours}h`;
-	return `in ${Math.round(hours / 24)}d`;
-}
-
-function progressBar(percentRemaining: number): string {
-	const ratio = Math.max(0, Math.min(1, percentRemaining / 100));
-	const filled = Math.min(BAR_SEGMENTS, Math.round(ratio * BAR_SEGMENTS));
-	return `[${"█".repeat(filled)}${"░".repeat(BAR_SEGMENTS - filled)}]`;
+	if (hours < 48) return `${hours}h`;
+	return `${Math.round(hours / 24)}d`;
 }
 
 function formatWindow(window: RateLimitWindow): string {
 	const used = typeof window.used_percent === "number" ? window.used_percent : 0;
 	const remaining = Math.max(0, Math.min(100, 100 - used));
 	const reset = resetLabel(window);
-	return `${progressBar(remaining)} ${remaining.toFixed(0)}% left${reset ? ` (resets ${reset})` : ""}`;
+	return `${remaining.toFixed(0)}% left${reset ? ` · reset ${reset}` : ""}`;
+}
+
+function compactLimitName(name: string): string {
+	return name
+		.replace(/^GPT-[\d.]+-Codex-/i, "")
+		.replace(/^Codex[- ]/i, "")
+		.replace(/-/g, " ")
+		.trim()
+		.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function formatLimitGroup(group: LimitGroup): string[] {
 	const lines: string[] = [];
 	const primary = group.rateLimit?.primary_window ?? undefined;
 	const secondary = group.rateLimit?.secondary_window ?? undefined;
+	const name = group.name === "Codex" ? "Codex" : compactLimitName(group.name);
+	const windows = [
+		primary ? { label: durationLabel(primary.limit_window_seconds), window: primary } : undefined,
+		secondary ? { label: durationLabel(secondary.limit_window_seconds), window: secondary } : undefined,
+	].filter((item): item is { label: string; window: RateLimitWindow } => Boolean(item));
+	const labelWidth = Math.max(0, ...windows.map((item) => item.label.length));
 
-	if (group.name !== "Codex") {
-		lines.push(`${group.name} limit:`);
-	}
+	lines.push(`${name}:`);
 
-	if (primary) {
-		const label = durationLabel(primary.limit_window_seconds);
-		lines.push(`  ${label} limit: ${formatWindow(primary)}`);
+	for (const item of windows) {
+		lines.push(`${item.label.padEnd(labelWidth)}  ${formatWindow(item.window)}`);
 	}
-	if (secondary) {
-		const label = durationLabel(secondary.limit_window_seconds);
-		lines.push(`  ${label} limit: ${formatWindow(secondary)}`);
-	}
-	if (!primary && !secondary) {
-		lines.push(`  Limits: not available for ${group.name}`);
+	if (windows.length === 0) {
+		lines.push("No limit data");
 	}
 	return lines;
 }
@@ -163,13 +164,11 @@ function formatCredits(credits?: CreditsDetails | null): string[] {
 }
 
 function formatUsage(payload: UsagePayload): string {
-	const lines = ["Codex usage status", ""];
-	lines.push(`Plan: ${planName(payload.plan_type)}`);
+	const lines = [`Codex · ${planName(payload.plan_type)}`];
 	lines.push(...formatCredits(payload.credits));
 	if (payload.rate_limit_reached_type?.type) {
-		lines.push(`Limit state: ${payload.rate_limit_reached_type.type}`);
+		lines.push(`State: ${payload.rate_limit_reached_type.type}`);
 	}
-	lines.push("");
 
 	const groups: LimitGroup[] = [{ name: "Codex", rateLimit: payload.rate_limit }];
 	for (const additional of payload.additional_rate_limits ?? []) {
@@ -179,18 +178,10 @@ function formatUsage(payload: UsagePayload): string {
 		});
 	}
 
-	let wroteAnyLimit = false;
 	for (const group of groups) {
-		const groupLines = formatLimitGroup(group);
-		if (groupLines.length > 0) {
-			if (wroteAnyLimit) lines.push("");
-			lines.push(...groupLines);
-			wroteAnyLimit = true;
-		}
+		lines.push("", ...formatLimitGroup(group));
 	}
 
-	lines.push("");
-	lines.push(`Source: ${CODEX_USAGE_URL}`);
 	return lines.join("\n");
 }
 
@@ -255,7 +246,7 @@ async function showUsage(content: string, ctx: ExtensionCommandContext): Promise
 
 	await ctx.ui.custom((_tui, theme, _keybindings, done) => {
 		const [title, ...rest] = content.split("\n");
-		const body = `${theme.fg("accent", theme.bold(title))}\n${rest.join("\n")}\n\n${theme.fg("dim", "Press Enter or Esc to close")}`;
+		const body = `${theme.fg("accent", theme.bold(title))}\n${rest.join("\n")}`;
 		const text = new Text(body, 0, 0);
 
 		return {
