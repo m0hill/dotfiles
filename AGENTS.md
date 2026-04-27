@@ -17,7 +17,6 @@ dotfiles/
     ├── .config/
     │   ├── atuin/      # Shell history
     │   ├── mise/       # Runtime versions
-    │   ├── opencode/   # AI assistant config
     │   └── ...
     └── Library/Application Support/com.mitchellh.ghostty/
         └── config

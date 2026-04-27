@@ -10,7 +10,6 @@ alias gsr='git reset --soft HEAD~1'
 alias gca='git commit --amend --no-edit'
 alias gcm='git commit -m'
 alias gl='git log --graph --pretty="%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%ar) %C(bold blue)<%an>%Creset"'
-alias oc='opencode'
 
 [ -f "$HOME/.config/secrets.zsh" ] && source "$HOME/.config/secrets.zsh"
 
