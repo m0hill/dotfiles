@@ -1,5 +1,7 @@
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import tailwindcss from "@tailwindcss/vite"
+import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url))
@@ -8,6 +10,7 @@ const extensionRoot = resolve(rootDir, "agent/extensions", extension)
 
 export default defineConfig({
   root: extensionRoot,
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: "dist",
     emptyOutDir: true,
