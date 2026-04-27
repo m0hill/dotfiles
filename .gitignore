@@ -13,6 +13,9 @@ opensrc/
 home/.hammerspoon/packages/stt/helper/.build/
 home/.hammerspoon/packages/stt/helper/.swiftpm/
 
+# pi local project artifacts
+/.pi/
+
 # pi local state / secrets
 home/.pi/agent/auth.json
 home/.pi/agent/sessions/
