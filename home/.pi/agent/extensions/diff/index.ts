@@ -24,7 +24,7 @@ function runGit(cwd: string, args: string[]): string {
 }
 
 function projectDir(ctx: ExtensionCommandContext): string {
-	return join(ctx.cwd, ".pi-cache", "review-lite", "sessions");
+	return join(ctx.cwd, ".pi-cache", "diff", "sessions");
 }
 
 function writeSession(ctx: ExtensionCommandContext, opts: { title: string; mode: ReviewMode; patch: string; commit?: string; base?: string }): ReviewSession {
@@ -120,10 +120,10 @@ function openBrowser(url: string): void {
 	else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
 }
 async function openReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, session: ReviewSession): Promise<void> {
-	if (!existsSync(join(__dirname, "dist", "index.html"))) { ctx.ui.notify("review-lite UI is not built. Run npm install && npm run build in the extension folder.", "error"); return; }
+	if (!existsSync(join(__dirname, "dist", "index.html"))) { ctx.ui.notify("diff UI is not built. Run npm install && npm run build in the extension folder.", "error"); return; }
 	const port = await startServer(pi);
 	openBrowser(`http://127.0.0.1:${port}/?id=${encodeURIComponent(session.id)}`);
-	ctx.ui.notify(`Review opened: ${session.title}`, "info");
+	ctx.ui.notify(`Diff opened: ${session.title}`, "info");
 }
 
 function parseLog(output: string): string[] { return output.split("\n").map((l) => l.trim()).filter(Boolean); }
@@ -145,14 +145,14 @@ async function chooseBase(ctx: ExtensionCommandContext): Promise<string | undefi
 	return await ctx.ui.select("Choose base branch for PR-style review", items);
 }
 
-export default function reviewLite(pi: ExtensionAPI): void {
-	pi.registerCommand("review", { description: "Review staged + unstaged changes", handler: async (_args, ctx) => {
+export default function diff(pi: ExtensionAPI): void {
+	pi.registerCommand("diff", { description: "Review staged + unstaged changes", handler: async (_args, ctx) => {
 		try { const patch = runGit(ctx.cwd, ["diff", "HEAD", "--patch", "--find-renames", "--find-copies"]); if (!patch.trim()) return ctx.ui.notify("No changes against HEAD.", "info"); await openReview(pi, ctx, writeSession(ctx, { title: "Working tree vs HEAD", mode: "worktree", patch })); } catch (err) { ctx.ui.notify(err instanceof Error ? err.message : String(err), "error"); }
 	}});
-	pi.registerCommand("review-commit", { description: "Choose and review one commit", handler: async (_args, ctx) => {
+	pi.registerCommand("diff-commit", { description: "Choose and review one commit", handler: async (_args, ctx) => {
 		try { const commit = await chooseCommit(ctx); if (!commit) return; const patch = runGit(ctx.cwd, ["show", "--format=", "--patch", "--find-renames", "--find-copies", commit]); if (!patch.trim()) return ctx.ui.notify("Commit has no patch.", "info"); await openReview(pi, ctx, writeSession(ctx, { title: `Commit ${commit}`, mode: "commit", patch, commit })); } catch (err) { ctx.ui.notify(err instanceof Error ? err.message : String(err), "error"); }
 	}});
-	pi.registerCommand("review-base", { description: "Choose a base branch and review branch diff", handler: async (_args, ctx) => {
+	pi.registerCommand("diff-base", { description: "Choose a base branch and review branch diff", handler: async (_args, ctx) => {
 		try { const base = await chooseBase(ctx); if (!base) return; const patch = runGit(ctx.cwd, ["diff", `${base}...HEAD`, "--patch", "--find-renames", "--find-copies"]); if (!patch.trim()) return ctx.ui.notify(`No changes against ${base}.`, "info"); await openReview(pi, ctx, writeSession(ctx, { title: `HEAD vs ${base}`, mode: "base", patch, base })); } catch (err) { ctx.ui.notify(err instanceof Error ? err.message : String(err), "error"); }
 	}});
 }

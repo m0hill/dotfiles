@@ -34,7 +34,7 @@ let server: ReturnType<typeof createServer> | null = null;
 let serverPort: number | null = null;
 
 function projectDir(ctx: ExtensionCommandContext): string {
-	return join(ctx.cwd, ".pi-cache", "annotator-lite", "sessions");
+	return join(ctx.cwd, ".pi-cache", "feedback", "sessions");
 }
 
 function safeName(input: string): string {
@@ -193,7 +193,7 @@ function openBrowser(url: string): void {
 async function openSession(pi: ExtensionAPI, ctx: ExtensionCommandContext, session: Session): Promise<void> {
 	const port = await startServer(pi);
 	openBrowser(`http://127.0.0.1:${port}/?id=${encodeURIComponent(session.id)}`);
-	ctx.ui.notify(`Annotator opened: ${session.title}`, "info");
+	ctx.ui.notify(`Feedback opened: ${session.title}`, "info");
 }
 
 function resolveUserPath(ctx: ExtensionCommandContext, input: string): string {
@@ -201,7 +201,7 @@ function resolveUserPath(ctx: ExtensionCommandContext, input: string): string {
 	return resolve(ctx.cwd, cleaned);
 }
 
-export default function annotatorLite(pi: ExtensionAPI): void {
+export default function feedback(pi: ExtensionAPI): void {
 	pi.on("session_shutdown", async () => {
 		server?.close();
 		server = null;
@@ -209,8 +209,8 @@ export default function annotatorLite(pi: ExtensionAPI): void {
 		sessions.clear();
 	});
 
-	pi.registerCommand("annotate-last", {
-		description: "Open the last assistant message in a minimal browser annotator",
+	pi.registerCommand("feedback-last", {
+		description: "Open the last assistant message in a browser feedback tool",
 		handler: async (_args, ctx) => {
 			const markdown = lastAssistantText(ctx);
 			if (!markdown) {
@@ -222,13 +222,13 @@ export default function annotatorLite(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerCommand("annotate-file", {
-		description: "Open a markdown/text file in a minimal browser annotator",
+	pi.registerCommand("feedback-file", {
+		description: "Open a markdown/text file in a browser feedback tool",
 		handler: async (args, ctx) => {
 			const inputPath = args.trim();
 			if (!inputPath) {
-				ctx.ui.setEditorText("/annotate-file ");
-				ctx.ui.notify("Pick a file after /annotate-file, then submit again.", "info");
+				ctx.ui.setEditorText("/feedback-file ");
+				ctx.ui.notify("Pick a file after /feedback-file, then submit again.", "info");
 				return;
 			}
 			const filePath = resolveUserPath(ctx, inputPath);

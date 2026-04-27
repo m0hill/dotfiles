@@ -1,7 +1,7 @@
 import { FileDiff, parsePatchFiles, type FileDiffMetadata, type SelectedLineRange } from '@pierre/diffs';
 import './style.css';
 
-type Review = { id: string; title: string; mode: string; patch: string; base?: string; commit?: string };
+type DiffSession = { id: string; title: string; mode: string; patch: string; base?: string; commit?: string };
 type Ann = {
   id: string;
   file: string;
@@ -35,7 +35,7 @@ const DIFF_UNSAFE_CSS = `
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const id = new URLSearchParams(location.search).get('id') || '';
-let review: Review;
+let review: DiffSession;
 let files: FileDiffMetadata[] = [];
 let diffStyle: 'split' | 'unified' = 'split';
 let annotations: Ann[] = [];
@@ -75,15 +75,15 @@ function renderShell() {
   const s = stats();
   app.innerHTML = `
     <header id="topbar">
-      <div id="topbar-title"><span class="prompt">›</span><div><h1 id="title">REVIEW</h1><div id="subtitle">${esc(review.title)}</div></div></div>
+      <div id="topbar-title"><span class="prompt">›</span><div><h1 id="title">DIFF</h1><div id="subtitle">${esc(review.title)}</div></div></div>
       <div id="topbar-stats"><span>${s.files} files</span><span class="add">+${s.additions}</span><span class="del">-${s.deletions}</span><span>${esc(review.mode)}</span></div>
       <div id="topbar-actions"><button id="toggle">${diffStyle === 'split' ? 'Unified' : 'Split'}</button><button id="send" class="primary">Send Feedback</button></div>
     </header>
     <div id="shell">
       <aside class="sidebar" id="sidebar-left"><div class="sb-head"><span class="sb-label">Files</span><button class="sb-toggle" id="leftToggle">‹</button></div><div class="sb-scroll"><nav id="files"></nav></div></aside>
       <div id="diff-wrap"><div id="diff-bar"><span class="doc-bar-label">Diff</span><span class="hint">drag line numbers for ranges · use file actions for full-file comments</span></div><section id="diffs"></section></div>
-      <aside class="sidebar" id="sidebar-right"><div class="sb-head"><span class="sb-label">Review</span><div class="sb-head-actions"><span class="anno-badge" id="count">0</span><button class="sb-toggle" id="rightToggle">›</button></div></div><div id="sb-right-inner">
-        <div class="rsec"><div class="rsec-head"><span class="rsec-label">Global Feedback</span></div><div class="rsec-body"><textarea id="global" placeholder="Overall review notes…"></textarea></div></div>
+      <aside class="sidebar" id="sidebar-right"><div class="sb-head"><span class="sb-label">Diff</span><div class="sb-head-actions"><span class="anno-badge" id="count">0</span><button class="sb-toggle" id="rightToggle">›</button></div></div><div id="sb-right-inner">
+        <div class="rsec"><div class="rsec-head"><span class="rsec-label">Global Feedback</span></div><div class="rsec-body"><textarea id="global" placeholder="Overall diff notes…"></textarea></div></div>
         <div class="rsec"><div class="rsec-head"><span class="rsec-label">Selection</span></div><div id="selection" class="rsec-body"><div class="no-anno">select lines or choose a file action</div></div></div>
         <div class="rsec rsec-annotations"><div class="rsec-head"><span class="rsec-label">Annotations</span></div><div id="anns" class="rsec-body"></div></div>
       </div></aside>
@@ -237,7 +237,7 @@ function setMode(mode: 'comment' | 'ask') {
 }
 function renderCommentBox() {
   const box = document.querySelector('#actionBox')!;
-  box.innerHTML = `<textarea id="comment" class="comment-editor" placeholder="Add a review comment…"></textarea><button id="add" class="primary">Add Annotation</button>`;
+  box.innerHTML = `<textarea id="comment" class="comment-editor" placeholder="Add a diff comment…"></textarea><button id="add" class="primary">Add Annotation</button>`;
   document.querySelector('#add')!.addEventListener('click', addAnnotation);
 }
 function renderAskBox() {
@@ -311,10 +311,10 @@ async function askPi() {
 }
 
 async function boot() {
-  app.innerHTML = '<div class="loading"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>loading review…</span></div>';
+  app.innerHTML = '<div class="loading"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>loading diff…</span></div>';
   const res = await fetch('/api/review?id=' + encodeURIComponent(id));
   review = await res.json();
-  if (!res.ok) throw new Error((review as any).error || 'Failed to load review');
+  if (!res.ok) throw new Error((review as any).error || 'Failed to load diff');
   const patches = parsePatchFiles(review.patch, review.id, false) as any[];
   files = patches.flatMap((patch) => Array.isArray(patch?.files) ? patch.files : [patch]).filter(Boolean) as FileDiffMetadata[];
   renderShell(); renderDiffs(); renderAnnotations();

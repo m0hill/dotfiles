@@ -216,7 +216,7 @@ async function fetchUsage(ctx: ExtensionCommandContext): Promise<UsagePayload> {
 		const headers: Record<string, string> = {
 			Authorization: `Bearer ${token}`,
 			originator: "pi",
-			"User-Agent": "pi codex-status",
+			"User-Agent": "pi usage",
 			accept: "application/json",
 		};
 		if (accountId) {
@@ -262,7 +262,7 @@ async function showUsage(content: string, ctx: ExtensionCommandContext): Promise
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.registerCommand("codex-status", {
+	pi.registerCommand("usage", {
 		description: "Fetch ChatGPT Codex usage limits from the Codex backend",
 		handler: async (_args, ctx) => {
 			try {
