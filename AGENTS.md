@@ -25,6 +25,7 @@ dotfiles/
 ## Build/Test Commands
 
 ### Test Changes (Always dry-run first)
+
 ```bash
 # Preview what stow will do (NO changes made)
 cd ~/dotfiles
@@ -37,18 +38,21 @@ stow -v -t ~/Library/Application\ Support/com.mitchellh.ghostty --restow ghostty
 ```
 
 ### Single Package Testing
+
 ```bash
 stow -n -v -t ~ home          # Test only home package
 stow -n -v -t ~ config        # Test only config package
 ```
 
 ### Check Current State
+
 ```bash
 ls -la ~ | grep "dotfiles"    # See active symlinks
 git status                     # Check what's changed
 ```
 
 ### Bootstrap Testing (Fresh Machine Simulation)
+
 ```bash
 ./bootstrap.sh                 # Full setup: Homebrew + packages + stow
 ```
@@ -56,6 +60,7 @@ git status                     # Check what's changed
 ## Code Style Guidelines
 
 ### Shell Scripts (bootstrap.sh)
+
 - **Use `set -euo pipefail`** at top of all scripts
 - **Guard external commands**: `command -v tool >/dev/null && eval "..."`
 - **Quote variables**: `"$HOME"`, `"$0"`, not `$HOME`
@@ -63,20 +68,24 @@ git status                     # Check what's changed
 - **Non-interactive installs**: Use flags like `RUNZSH=no CHSH=no KEEP_ZSHRC=yes`
 
 ### Git Config
+
 - **Use `~` for paths**: `excludesfile = ~/.config/git/ignore`
 - **Never hardcode user paths**: Avoid `/Users/mohil/`
 
 ### Zsh Config
+
 - **Source with guards**: `[ -f "$file" ] && source "$file"`
 - **Check before eval**: `command -v tool >/dev/null && eval "$(...)"`
 - **macOS-specific guards**: `[[ -x /opt/homebrew/bin/brew ]] && ...`
 
 ### Brewfile
+
 - Group by type: `brew`, `cask`, `vscode`, `cargo`
 - Comment sections for clarity
 - Keep minimal: only essential tools
 
 ### Secrets Management
+
 - **Template pattern**: `secrets.zsh.template` with `=YOUR_VALUE_HERE`
 - **Gitignore**: Add `.config/secrets.zsh` to root `.gitignore`
 - **Never commit real values**: Check with `git diff --cached`
@@ -85,6 +94,7 @@ git status                     # Check what's changed
 ## Adding New Configs
 
 ### Standard ~/.config/ tool
+
 ```bash
 mkdir -p config/.config/toolname
 mv ~/.config/toolname/* config/.config/toolname/
@@ -93,6 +103,7 @@ stow -v -t ~ config       # Apply
 ```
 
 ### Non-standard location (like Ghostty)
+
 ```bash
 mkdir toolname
 mv ~/Library/Application\ Support/com.vendor.toolname/config toolname/
@@ -100,6 +111,7 @@ stow -v -t ~/Library/Application\ Support/com.vendor.toolname toolname
 ```
 
 ### Home directory dotfile
+
 ```bash
 mv ~/.mydotfile home/
 stow -v -t ~ home
@@ -108,6 +120,7 @@ stow -v -t ~ home
 ## Common Patterns
 
 ### Check for Sensitive Data Before Commit
+
 ```bash
 # Scan for tokens, keys, passwords
 grep -r "api_key\|token\|password\|secret" --include="*.sh" --include="*.zsh" .
@@ -116,12 +129,14 @@ git diff --name-only --cached
 ```
 
 ### Restore from Backup
+
 ```bash
 # If stow breaks something
 cp -a ~/dotfiles-backup-*/. ~/
 ```
 
 ### Clean Up Dead Symlinks
+
 ```bash
 find ~ -type l ! -exec test -e {} \; -print  # Find broken links
 find ~ -type l ! -exec test -e {} \; -delete # Remove them

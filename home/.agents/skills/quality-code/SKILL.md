@@ -16,11 +16,11 @@ Use the type system to make invalid states fail at compile time. Fewer reachable
 Brand primitives so they can't be mixed up. Validate once at the boundary; downstream code trusts the type.
 
 ```ts
-type PhoneNumber = string & { __brand: "PhoneNumber" };
+type PhoneNumber = string & { __brand: "PhoneNumber" }
 
 function parsePhone(input: string): PhoneNumber {
-  if (!/^\+?\d{10,15}$/.test(input)) throw new Error(`Invalid: ${input}`);
-  return input as PhoneNumber;
+  if (!/^\+?\d{10,15}$/.test(input)) throw new Error(`Invalid: ${input}`)
+  return input as PhoneNumber
 }
 
 function sendSMS(to: PhoneNumber, body: string) {
@@ -34,13 +34,13 @@ If the project already uses a library with native branded-type support (e.g. Eff
 
 ```ts
 // Don't — invalid combos representable
-type State = { loading: boolean; user?: User; error?: string };
+type State = { loading: boolean; user?: User; error?: string }
 
 // Do — only valid states exist
 type State =
   | { status: "loading" }
   | { status: "success"; user: User }
-  | { status: "error"; error: string };
+  | { status: "error"; error: string }
 ```
 
 ## Let the types flow end-to-end
@@ -51,13 +51,13 @@ Don't restate types you can derive. Reach for `Pick`, `Omit`, `Parameters`, `Ret
 
 ```ts
 // Don't — duplicate shape, drifts when the row changes
-type UserSummary = { id: string; email: Email };
+type UserSummary = { id: string; email: Email }
 function renderUser(u: UserSummary) {
   /* ... */
 }
 
 // Do — derive from the source of truth
-type User = Awaited<ReturnType<typeof db.query.users.findFirst>>;
+type User = Awaited<ReturnType<typeof db.query.users.findFirst>>
 function renderUser(u: Pick<User, "id" | "email">) {
   /* ... */
 }
@@ -67,9 +67,9 @@ function renderUser(u: Pick<User, "id" | "email">) {
 
 ```ts
 // Don't — swap two args, still compiles
-sendEmail("Welcome!", "Hi there");
+sendEmail("Welcome!", "Hi there")
 // Do — order-independent, self-documenting
-sendEmail({ to: "alice@x.com", body: "Hi there" });
+sendEmail({ to: "alice@x.com", body: "Hi there" })
 ```
 
 Skip on hot perf-critical paths; use elsewhere by default.

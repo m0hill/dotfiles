@@ -1,6 +1,7 @@
 # Agent Guidelines
 
 ## Project Structure
+
 ```
 power-spoons/
 ├── init.lua              # Hammerspoon entry point
@@ -18,6 +19,7 @@ power-spoons/
 ```
 
 ## Runtime Model
+
 - This repo is a plain `~/.hammerspoon` config
 - No Spoon packaging
 - No remote registry
@@ -26,6 +28,7 @@ power-spoons/
 - Each package keeps its JSON beside its code
 
 ## Build/Test/Lint Commands
+
 - **Reload config**: Open Hammerspoon console and click "Reload Config" or run `hs.reload()`
 - **Test script**: `hs /Users/mohil/.hammerspoon/init.lua`
 - **No formal tests**: Test manually in Hammerspoon
@@ -33,6 +36,7 @@ power-spoons/
 ## Code Style
 
 ### Language & Structure
+
 - Language: Lua 5.3+ (Hammerspoon runtime)
 - Packages live in `packages/`
 - Each package returns a factory function that takes the local controller
@@ -40,7 +44,9 @@ power-spoons/
 - Package pattern: `return function(manager) ... end`
 
 ### Docstrings (Optional)
+
 Packages can include docstrings at the top of init.lua for documentation:
+
 ```lua
 --- Package Name
 --- Brief description of what the package does.
@@ -51,28 +57,33 @@ Packages can include docstrings at the top of init.lua for documentation:
 ```
 
 ### Variables & Naming
+
 - `SCREAMING_SNAKE_CASE` for constants and config tables (e.g., `CONFIG`, `MODELS`, `LANGUAGES`)
 - `camelCase` for local functions (e.g., `createIndicator`, `updateMenuBar`, `formatTime`)
 - `snake_case` for module-level state variables (e.g., `currentTrackId`, `pollTimer`, `menubar`)
 - Prefix private settings keys with module name (e.g., `"lyrics.overlay.frame"`, `"whisper.aggressiveness"`)
 
 ### Imports & Dependencies
+
 - Access Hammerspoon APIs via `hs.*`
 - Use `manager.getSecret(key)` for package-owned secrets
 - Use `manager.getSetting(packageId, key, default)` for package settings
 
 ### Error Handling
+
 - Use `pcall()` for JSON parsing: `local ok, result = pcall(hs.json.decode, data)`
 - Check dependencies at init time (e.g., check for `sox` binary and API keys)
 - Validate state before operations (e.g., check if file exists with `hs.fs.attributes()`)
 - Gracefully handle missing data with fallback messages in UI
 
 ### Secrets Management
+
 - Secrets live in each package JSON file beside the package code
 - Access secrets via `manager.getSecret("KEY_NAME")`
 - Never hardcode API keys in source files
 
 ### Settings Management
+
 - Each package gets its own settings file: `packages/{packageId}/{packageId}.json`
 - Access via manager API:
   ```lua
@@ -83,12 +94,14 @@ Packages can include docstrings at the top of init.lua for documentation:
 - Settings persist across restarts automatically
 
 ### Menubar Integration
+
 - Packages can expose menu items via `getMenuItems()`
 - Menu items are plain tables: `{ title = "...", fn = function() ... end }`
 - Returned menu items are inserted into the package submenu automatically
 - The controller handles menu rendering and refresh
 
 ### Hotkeys (Configurable)
+
 Packages can expose configurable hotkeys using the Spoons-compatible `getHotkeySpec()` convention:
 
 ```lua
@@ -133,12 +146,14 @@ Users can customize hotkeys via the menubar UI. The controller stores custom hot
 ## Manager API Reference
 
 ### Secrets
+
 ```lua
 manager.getSecret(key)                    -- Get API key
 manager.setSecret(key, value)             -- Set API key (usually via GUI)
 ```
 
 ### Settings
+
 ```lua
 manager.getSetting(packageId, key, default)     -- Get setting with default
 manager.setSetting(packageId, key, value)       -- Set setting
@@ -147,6 +162,7 @@ manager.setSettings(packageId, table)           -- Set all settings
 ```
 
 ### Hotkeys
+
 ```lua
 manager.getHotkey(packageId, action, default)   -- Get configured hotkey with fallback
 manager.setHotkey(packageId, action, hotkeyDef) -- Set hotkey (nil to clear)

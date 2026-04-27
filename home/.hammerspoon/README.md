@@ -3,6 +3,7 @@
 This repo now acts as a plain `~/.hammerspoon` config.
 
 There is one local menubar controller and four local modules:
+
 - `packages/stt/`
 - `packages/whisper/`
 - `packages/gemini/`
@@ -34,6 +35,7 @@ No Spoon. No registry. No package versions.
 ```
 
 Each package owns its own JSON file beside its code. That JSON stores:
+
 - whether the module is enabled
 - package settings
 - package secrets
@@ -50,11 +52,13 @@ The controller menu always shows all local modules.
 ## Modules
 
 ### Whisper
+
 - hold `Option+/` to record
 - release to transcribe and paste
 - requires `sox` and `GROQ_API_KEY`
 
 ### STT
+
 - local Parakeet v3 speech-to-text
 - Apple Silicon and macOS 14+ only
 - default trigger is `Right Option` alone
@@ -63,12 +67,14 @@ The controller menu always shows all local modules.
 - stores the Parakeet model under `~/Library/Application Support/Hammerspoon/STT/cache`
 
 ### Gemini OCR
+
 - press `Cmd+Shift+S`
 - select a screen region
 - extracted text is copied and pasted
 - requires `GEMINI_API_KEY`
 
 ### Lyrics
+
 - floating synced Spotify lyrics overlay
 - remembers position, visibility, and scale
 
