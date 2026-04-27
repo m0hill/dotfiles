@@ -34,7 +34,7 @@ let server: ReturnType<typeof createServer> | null = null;
 let serverPort: number | null = null;
 
 function projectDir(ctx: ExtensionCommandContext): string {
-	return join(ctx.cwd, ".pi", "annotator-lite", "sessions");
+	return join(ctx.cwd, ".pi-cache", "annotator-lite", "sessions");
 }
 
 function safeName(input: string): string {

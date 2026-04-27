@@ -24,7 +24,7 @@ function runGit(cwd: string, args: string[]): string {
 }
 
 function projectDir(ctx: ExtensionCommandContext): string {
-	return join(ctx.cwd, ".pi", "review-lite", "sessions");
+	return join(ctx.cwd, ".pi-cache", "review-lite", "sessions");
 }
 
 function writeSession(ctx: ExtensionCommandContext, opts: { title: string; mode: ReviewMode; patch: string; commit?: string; base?: string }): ReviewSession {
