@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -116,13 +116,9 @@ function sendJson(res: ServerResponse, value: unknown, status = 200): void {
   res.end(JSON.stringify(value))
 }
 
-function sendText(
-  res: ServerResponse,
-  text: string,
-  contentType = "text/plain; charset=utf-8"
-): void {
+function sendFile(res: ServerResponse, path: string, contentType: string): void {
   res.writeHead(200, { "content-type": contentType })
-  res.end(text)
+  res.end(readFileSync(path))
 }
 
 function buildFeedback(session: Session, payload: SubmitPayload): string {
@@ -152,30 +148,10 @@ function buildFeedback(session: Session, payload: SubmitPayload): string {
 
 function startServer(pi: ExtensionAPI): Promise<number> {
   if (server && serverPort) return Promise.resolve(serverPort)
-  const uiPath = join(__dirname, "ui.html")
+  const dist = join(__dirname, "dist")
   server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1")
-      if (req.method === "GET" && url.pathname === "/") {
-        sendText(res, readFileSync(uiPath, "utf8"), "text/html; charset=utf-8")
-        return
-      }
-      if (req.method === "GET" && url.pathname === "/styles.css") {
-        sendText(
-          res,
-          readFileSync(join(__dirname, "styles.css"), "utf8"),
-          "text/css; charset=utf-8"
-        )
-        return
-      }
-      if (req.method === "GET" && url.pathname === "/app.js") {
-        sendText(
-          res,
-          readFileSync(join(__dirname, "app.js"), "utf8"),
-          "application/javascript; charset=utf-8"
-        )
-        return
-      }
       if (req.method === "GET" && url.pathname === "/api/doc") {
         const id = url.searchParams.get("id") ?? ""
         const session = sessions.get(id)
@@ -202,7 +178,17 @@ function startServer(pi: ExtensionAPI): Promise<number> {
         sendJson(res, { ok: true })
         return
       }
-      sendJson(res, { error: "Not found" }, 404)
+      const file = url.pathname === "/" ? join(dist, "index.html") : join(dist, url.pathname)
+      if (!file.startsWith(dist) || !existsSync(file)) {
+        sendJson(res, { error: "Not found" }, 404)
+        return
+      }
+      const contentType = file.endsWith(".js")
+        ? "text/javascript"
+        : file.endsWith(".css")
+          ? "text/css"
+          : "text/html; charset=utf-8"
+      sendFile(res, file, contentType)
     } catch (err) {
       sendJson(res, { error: err instanceof Error ? err.message : String(err) }, 500)
     }
@@ -230,6 +216,13 @@ async function openSession(
   ctx: ExtensionCommandContext,
   session: Session
 ): Promise<void> {
+  if (!existsSync(join(__dirname, "dist", "index.html"))) {
+    ctx.ui.notify(
+      "feedback UI is not built. Run PI_EXTENSION=feedback pnpm build:ui from ~/.pi.",
+      "error"
+    )
+    return
+  }
   const port = await startServer(pi)
   openBrowser(`http://127.0.0.1:${port}/?id=${encodeURIComponent(session.id)}`)
   ctx.ui.notify(`Feedback opened: ${session.title}`, "info")

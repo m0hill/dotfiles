@@ -3,16 +3,22 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:ui": "vite build",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "fmt": "oxfmt"
+    "format": "oxfmt"
   },
   "dependencies": {
+    "@pierre/diffs": "latest",
+    "dompurify": "latest",
+    "marked": "latest",
     "valibot": "^1.3.1"
   },
   "devDependencies": {
     "oxfmt": "^0.46.0",
-    "oxlint": "^1.61.0"
+    "oxlint": "^1.61.0",
+    "typescript": "latest",
+    "vite": "latest"
   },
   "packageManager": "pnpm@10.26.0"
 }

@@ -210,10 +210,7 @@ async function openReview(
   session: ReviewSession
 ): Promise<void> {
   if (!existsSync(join(__dirname, "dist", "index.html"))) {
-    ctx.ui.notify(
-      "diff UI is not built. Run npm install && npm run build in the extension folder.",
-      "error"
-    )
+    ctx.ui.notify("diff UI is not built. Run PI_EXTENSION=diff pnpm build:ui from ~/.pi.", "error")
     return
   }
   const port = await startServer(pi)

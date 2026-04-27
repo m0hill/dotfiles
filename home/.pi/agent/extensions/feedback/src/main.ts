@@ -1,3 +1,7 @@
+import DOMPurify from "dompurify"
+import { marked } from "marked"
+import "./style.css"
+
 document.documentElement.dataset.theme = "dark"
 
 const params = new URLSearchParams(location.search),
@@ -37,7 +41,6 @@ function esc(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c])
 }
 function renderMd(md) {
-  if (!window.marked || !window.DOMPurify) return `<pre>${esc(md)}</pre>`
   marked.setOptions({ gfm: true, breaks: false })
   return DOMPurify.sanitize(marked.parse(md))
 }

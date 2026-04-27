@@ -1,6 +1,6 @@
 {
   "lastChangelogVersion": "0.70.2",
-  "defaultThinkingLevel": "low",
+  "defaultThinkingLevel": "high",
   "hideThinkingBlock": false,
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5"
