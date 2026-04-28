@@ -386,6 +386,9 @@ function annotationTone(annotation: Ann): string {
 function crossIcon(): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>`
 }
+function pencilIcon(): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
+}
 function renderAnnotations() {
   const count = document.querySelector("#count")
   if (count) count.textContent = String(annotations.length)
@@ -395,12 +398,17 @@ function renderAnnotations() {
     annotations
       .map(
         (a, i) =>
-          `<div class="card annotation-card ${annotationTone(a)}" role="button" tabindex="0" data-jump="${i}"><button data-del="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button><div class="anno-top"><span class="anno-file" title="${esc(a.file)}">${esc(a.file)}</span></div><div class="anno-loc">${esc(lineLabel(a))}</div><div class="comment anno-comment">${esc(a.comment)}</div></div>`
+          `<div class="card annotation-card ${annotationTone(a)}" role="button" tabindex="0" data-jump="${i}"><button data-del="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button><div class="anno-top"><span class="anno-file" title="${esc(a.file)}">${esc(a.file)}</span></div><div class="anno-loc">${esc(lineLabel(a))}</div><div class="anno-comment-wrap"><button data-edit="${i}" class="icon-btn edit-btn" aria-label="Edit annotation">${pencilIcon()}</button><div class="comment anno-comment">${esc(a.comment)}</div></div></div>`
       )
       .join("") || '<div class="no-anno">no annotations yet</div>'
   root.querySelectorAll("[data-jump]").forEach((card) => {
     card.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement).closest("[data-del]")) return
+      if (
+        (event.target as HTMLElement).closest(
+          "[data-del],[data-edit],.edit-annotation-input,.edit-actions"
+        )
+      )
+        return
       jumpToAnnotation(annotations[Number((card as HTMLElement).dataset.jump)])
     })
     card.addEventListener("keydown", (event) => {
@@ -415,6 +423,29 @@ function renderAnnotations() {
       renderDiffs()
     })
   )
+  root
+    .querySelectorAll("[data-edit]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () => editAnnotation(Number((btn as HTMLElement).dataset.edit)))
+    )
+}
+
+function editAnnotation(index: number) {
+  const card = document.querySelector(`[data-edit="${index}"]`)?.closest(".annotation-card")
+  const wrap = card?.querySelector(".anno-comment-wrap") as HTMLElement | null
+  if (!wrap) return
+  wrap.innerHTML = `<textarea class="edit-annotation-input" wrap="soft">${esc(annotations[index].comment)}</textarea><div class="edit-actions"><button data-cancel-edit>Cancel</button><button data-save-edit class="primary">Save</button></div>`
+  const input = wrap.querySelector("textarea") as HTMLTextAreaElement
+  input.focus()
+  input.setSelectionRange(input.value.length, input.value.length)
+  ;(wrap.querySelector("[data-cancel-edit]") as HTMLButtonElement).onclick = renderAnnotations
+  ;(wrap.querySelector("[data-save-edit]") as HTMLButtonElement).onclick = () => {
+    const comment = input.value.trim()
+    if (!comment) return
+    annotations[index].comment = comment
+    renderAnnotations()
+    renderDiffs()
+  }
 }
 
 function jumpToAnnotation(annotation: Ann | undefined) {

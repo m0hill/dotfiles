@@ -187,7 +187,7 @@ function renderAnnotations() {
       <button data-i="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button>
       <div class="anno-top"><span class="anno-file">#${String(i + 1).padStart(2, "0")}</span></div>
       ${a.quote ? `<div class="quote anno-quote">${esc(a.quote.length > 280 ? a.quote.slice(0, 280) + "…" : a.quote)}</div>` : ""}
-      ${a.comment ? `<div class="comment anno-comment">${esc(a.comment)}</div>` : ""}
+      ${a.comment ? `<div class="anno-comment-wrap"><button data-edit="${i}" class="icon-btn edit-btn" aria-label="Edit annotation">${pencilIcon()}</button><div class="comment anno-comment">${esc(a.comment)}</div></div>` : ""}
     </div>`
     )
     .join("")
@@ -197,10 +197,34 @@ function renderAnnotations() {
       renderAnnotations()
     }
   })
+  annotationsEl.querySelectorAll("[data-edit]").forEach((b) => {
+    b.onclick = () => editAnnotation(+b.dataset.edit)
+  })
+}
+
+function editAnnotation(index) {
+  const card = annotationsEl.querySelector(`[data-edit="${index}"]`)?.closest(".annotation-card")
+  const wrap = card?.querySelector(".anno-comment-wrap")
+  if (!wrap) return
+  wrap.innerHTML = `<textarea class="edit-annotation-input" wrap="soft">${esc(annotations[index].comment)}</textarea><div class="edit-actions"><button data-cancel-edit>Cancel</button><button data-save-edit class="primary">Save</button></div>`
+  const input = wrap.querySelector("textarea")
+  input.focus()
+  input.setSelectionRange(input.value.length, input.value.length)
+  wrap.querySelector("[data-cancel-edit]").onclick = renderAnnotations
+  wrap.querySelector("[data-save-edit]").onclick = () => {
+    const comment = input.value.trim()
+    if (!comment) return
+    annotations[index].comment = comment
+    renderAnnotations()
+  }
 }
 
 function crossIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>`
+}
+
+function pencilIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
 }
 
 function hidePopover() {
