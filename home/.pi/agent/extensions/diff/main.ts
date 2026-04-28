@@ -33,6 +33,8 @@ const DIFF_UNSAFE_CSS = `
 
 const MAX_TREE_DEPTH = 6
 const DEFAULT_DIFF_SIDE: DiffSide = "additions"
+const LEFT_COLLAPSED_CLASS = "is-left-collapsed"
+const RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
 
 // Types
 
@@ -452,10 +454,10 @@ function renderShell(): void {
   })
   qs<HTMLButtonElement>("#send").addEventListener("click", sendFeedback)
   qs<HTMLButtonElement>("#leftToggle").addEventListener("click", () =>
-    document.body.classList.toggle("lc")
+    document.body.classList.toggle(LEFT_COLLAPSED_CLASS)
   )
   qs<HTMLButtonElement>("#rightToggle").addEventListener("click", () =>
-    document.body.classList.toggle("rc")
+    document.body.classList.toggle(RIGHT_COLLAPSED_CLASS)
   )
 }
 

@@ -2,6 +2,10 @@
   --bg: #0a0a0a;
   --surface: #111111;
   --surface-hover: #1a1a1a;
+  --surface-inset: #0d0d0d;
+  --surface-card: #151515;
+  --surface-card-hover: #181818;
+  --border-subtle: #1f1f1f;
   --border: #262626;
   --border-strong: #404040;
   --fg: #f6fff5;
@@ -14,19 +18,18 @@
   --link: #60a5fa;
   --code: #f87171;
   --quote: #a3a3a3;
-  --toc-active: #60a5fa;
   --pre-bg: #0f0f0f;
   --highlight: #facc15;
+  --annotation-active: crimson;
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
   --radius-sm: 6px;
   --radius: 10px;
-  --radius-lg: 14px;
   --header-h: 60px;
-  --lw: 260px;
-  --rw: 340px;
-  --sc: 44px;
+  --sidebar-left-width: 260px;
+  --sidebar-right-width: 340px;
+  --sidebar-collapsed-width: 44px;
   --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -112,7 +115,13 @@ button {
   padding: 8px 16px;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.15s ease;
   white-space: nowrap;
   line-height: 1;
 }
@@ -136,17 +145,6 @@ button.primary:hover {
   opacity: 0.92;
   transform: translateY(-0.5px);
   box-shadow: var(--shadow);
-}
-
-button.danger {
-  color: var(--danger);
-  border-color: transparent;
-  background: transparent;
-}
-
-button.danger:hover {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 button:disabled {
@@ -176,21 +174,21 @@ button:disabled {
 }
 
 #sidebar-left {
-  width: var(--lw);
+  width: var(--sidebar-left-width);
   border-right: 1px solid var(--border);
 }
 
 #sidebar-right {
-  width: var(--rw);
+  width: var(--sidebar-right-width);
   border-left: 1px solid var(--border);
 }
 
-body.lc #sidebar-left {
-  width: var(--sc);
+body.is-left-collapsed #sidebar-left {
+  width: var(--sidebar-collapsed-width);
 }
 
-body.rc #sidebar-right {
-  width: var(--sc);
+body.is-right-collapsed #sidebar-right {
+  width: var(--sidebar-collapsed-width);
 }
 
 .sb-head {
@@ -204,8 +202,8 @@ body.rc #sidebar-right {
   overflow: hidden;
 }
 
-body.lc #sidebar-left .sb-head,
-body.rc #sidebar-right .sb-head {
+body.is-left-collapsed #sidebar-left .sb-head,
+body.is-right-collapsed #sidebar-right .sb-head {
   justify-content: center;
   padding: 0;
 }
@@ -221,10 +219,10 @@ body.rc #sidebar-right .sb-head {
   overflow: hidden;
 }
 
-body.lc #sidebar-left .sb-label,
-body.lc #sidebar-left .sb-scroll,
-body.rc #sidebar-right .sb-label,
-body.rc #sidebar-right #sb-right-inner {
+body.is-left-collapsed #sidebar-left .sb-label,
+body.is-left-collapsed #sidebar-left .sb-scroll,
+body.is-right-collapsed #sidebar-right .sb-label,
+body.is-right-collapsed #sidebar-right #sb-right-inner {
   display: none;
 }
 
@@ -243,7 +241,9 @@ body.rc #sidebar-right #sb-right-inner {
   font-size: 14px;
   font-family: var(--font-mono);
   padding: 0;
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .sb-toggle:hover {
@@ -300,7 +300,9 @@ body.rc #sidebar-right #sb-right-inner {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: all 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
 #toc a:hover {
@@ -640,7 +642,7 @@ mark,
 }
 
 ::highlight(annotation-active-highlight) {
-  background: color-mix(in srgb, crimson 45%, transparent);
+  background: color-mix(in srgb, var(--annotation-active) 45%, transparent);
   color: inherit;
 }
 
@@ -664,7 +666,10 @@ textarea {
   border-radius: var(--radius-sm);
   resize: vertical;
   min-height: 92px;
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 textarea:focus {
@@ -675,8 +680,8 @@ textarea:focus {
 
 .rsec:first-child textarea,
 #commentInput {
-  background: #0d0d0d;
-  border-color: #1f1f1f;
+  background: var(--surface-inset);
+  border-color: var(--border-subtle);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
 }
 
@@ -687,7 +692,9 @@ textarea:focus {
   border-radius: var(--radius);
   padding: 14px 16px;
   margin-bottom: 10px;
-  transition: all 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   box-shadow: var(--shadow-sm);
 }
 
@@ -703,7 +710,7 @@ textarea:focus {
 .annotation-card {
   position: relative;
   overflow: hidden;
-  background: #151515;
+  background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: none;
@@ -714,11 +721,11 @@ textarea:focus {
 .annotation-card.active {
   border-color: var(--border-strong);
   box-shadow: none;
-  background: #181818;
+  background: var(--surface-card-hover);
 }
 
 .annotation-card.active {
-  border-color: color-mix(in srgb, crimson 55%, var(--border));
+  border-color: color-mix(in srgb, var(--annotation-active) 55%, var(--border));
 }
 
 .anno-top {
@@ -761,7 +768,7 @@ textarea:focus {
   opacity: 0.92;
   border-left: 0;
   border-radius: var(--radius-sm);
-  background: #0d0d0d;
+  background: var(--surface-inset);
 }
 
 .comment {
@@ -815,12 +822,6 @@ textarea:focus {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
-}
-
-.card-foot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
 }
 
 .no-anno {

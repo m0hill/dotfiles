@@ -2,6 +2,10 @@
   --bg: #0a0a0a;
   --surface: #111111;
   --surface-hover: #1a1a1a;
+  --surface-inset: #0d0d0d;
+  --surface-card: #151515;
+  --surface-card-hover: #181818;
+  --border-subtle: #1f1f1f;
   --border: #262626;
   --border-strong: #404040;
   --fg: #f6fff5;
@@ -20,9 +24,9 @@
   --radius: 10px;
   --radius-lg: 14px;
   --header-h: 60px;
-  --lw: 280px;
-  --rw: 380px;
-  --sc: 44px;
+  --sidebar-left-width: 280px;
+  --sidebar-right-width: 380px;
+  --sidebar-collapsed-width: 44px;
   --font-ui: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -118,7 +122,13 @@ button {
   padding: 8px 14px;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.15s ease;
   white-space: nowrap;
   line-height: 1;
 }
@@ -139,16 +149,6 @@ button.primary:hover {
   opacity: 0.92;
   box-shadow: var(--shadow);
 }
-button.danger {
-  color: var(--danger);
-  border-color: transparent;
-  background: transparent;
-}
-button.danger:hover {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
-}
-
 #shell {
   display: flex;
   padding-top: var(--header-h);
@@ -164,18 +164,18 @@ button.danger:hover {
   background: var(--surface);
 }
 #sidebar-left {
-  width: var(--lw);
+  width: var(--sidebar-left-width);
   border-right: 1px solid var(--border);
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 #sidebar-right {
-  width: var(--rw);
+  width: var(--sidebar-right-width);
   border-left: 1px solid var(--border);
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-body.lc #sidebar-left,
-body.rc #sidebar-right {
-  width: var(--sc);
+body.is-left-collapsed #sidebar-left,
+body.is-right-collapsed #sidebar-right {
+  width: var(--sidebar-collapsed-width);
 }
 .sb-head {
   height: 48px;
@@ -187,16 +187,16 @@ body.rc #sidebar-right {
   border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
-body.lc #sidebar-left .sb-head,
-body.rc #sidebar-right .sb-head {
+body.is-left-collapsed #sidebar-left .sb-head,
+body.is-right-collapsed #sidebar-right .sb-head {
   justify-content: center;
   padding: 0;
 }
-body.lc #sidebar-left .sb-label,
-body.lc #sidebar-left .sb-scroll,
-body.rc #sidebar-right .sb-label,
-body.rc #sidebar-right #sb-right-inner,
-body.rc #sidebar-right .anno-badge {
+body.is-left-collapsed #sidebar-left .sb-label,
+body.is-left-collapsed #sidebar-left .sb-scroll,
+body.is-right-collapsed #sidebar-right .sb-label,
+body.is-right-collapsed #sidebar-right #sb-right-inner,
+body.is-right-collapsed #sidebar-right .anno-badge {
   display: none;
 }
 .sb-head-actions {
@@ -221,7 +221,9 @@ body.rc #sidebar-right .anno-badge {
   font-family: var(--font-mono);
   padding: 0;
   line-height: 1;
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 .sb-toggle:hover {
   background: var(--surface-hover);
@@ -231,8 +233,7 @@ body.rc #sidebar-right .anno-badge {
 }
 .sb-label,
 .rsec-label,
-.doc-bar-label,
-.pop-label {
+.doc-bar-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -447,7 +448,10 @@ select {
   line-height: 1.5;
   outline: none;
   border-radius: var(--radius-sm);
-  transition: all 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 textarea {
   resize: vertical;
@@ -466,8 +470,8 @@ select:focus {
 /* Recessed editor surfaces */
 .rsec:first-child textarea,
 .comment-editor {
-  background: #0d0d0d;
-  border-color: #1f1f1f;
+  background: var(--surface-inset);
+  border-color: var(--border-subtle);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
 }
 
@@ -478,7 +482,9 @@ select:focus {
   border-radius: var(--radius);
   padding: 14px 16px;
   margin-bottom: 10px;
-  transition: all 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   box-shadow: var(--shadow-sm);
 }
 .card:hover,
@@ -500,18 +506,10 @@ select:focus {
   box-shadow: none;
   background: transparent;
 }
-.card-num {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  margin-bottom: 8px;
-  letter-spacing: 0.02em;
-}
 .annotation-card {
   position: relative;
   overflow: hidden;
-  background: #151515;
+  background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: none;
@@ -521,7 +519,7 @@ select:focus {
 .annotation-card:hover {
   border-color: var(--border-strong);
   box-shadow: none;
-  background: #181818;
+  background: var(--surface-card-hover);
 }
 .annotation-card:focus-visible {
   outline: 2px solid var(--border-strong);
@@ -574,14 +572,6 @@ select:focus {
   margin: 10px 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   font-family: var(--font-mono);
-}
-.anno-quote {
-  max-height: 92px;
-  font-size: 12px;
-  opacity: 0.92;
-  border-left: 0;
-  border-radius: var(--radius-sm);
-  background: #0d0d0d;
 }
 .comment {
   font-size: 14px;
@@ -665,27 +655,6 @@ select:focus {
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.card-foot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-.selection-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.selection-kind {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--fg-muted);
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  line-height: 1.3;
 }
 .selection-meta {
   display: flex;
@@ -776,16 +745,6 @@ select:focus {
   background: var(--surface-hover);
   color: var(--fg);
 }
-.choice-row,
-.row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 10px;
-}
-.choice-row button {
-  flex: 1;
-}
 #actionBox {
   margin-top: 12px;
 }
@@ -842,8 +801,8 @@ select:focus {
 
 @media (max-width: 1200px) {
   :root {
-    --lw: 220px;
-    --rw: 340px;
+    --sidebar-left-width: 220px;
+    --sidebar-right-width: 340px;
   }
   #topbar-stats {
     display: none;

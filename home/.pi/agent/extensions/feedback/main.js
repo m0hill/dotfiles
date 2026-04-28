@@ -1,4 +1,5 @@
-document.documentElement.dataset.theme = "dark"
+const LEFT_COLLAPSED_CLASS = "is-left-collapsed",
+  RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
 
 const params = new URLSearchParams(location.search),
   id = params.get("id")
@@ -20,23 +21,29 @@ let annotations = [],
   annotationAnchors = []
 
 function updateToggles() {
-  const lc = document.body.classList.contains("lc"),
-    rc = document.body.classList.contains("rc")
-  document.getElementById("leftToggle").textContent = lc ? "›" : "‹"
-  document.getElementById("rightToggle").textContent = rc ? "‹" : "›"
+  const leftCollapsed = document.body.classList.contains(LEFT_COLLAPSED_CLASS),
+    rightCollapsed = document.body.classList.contains(RIGHT_COLLAPSED_CLASS)
+  document.getElementById("leftToggle").textContent = leftCollapsed ? "›" : "‹"
+  document.getElementById("rightToggle").textContent = rightCollapsed ? "‹" : "›"
 }
 document.getElementById("leftToggle").onclick = () => {
-  document.body.classList.toggle("lc")
-  localStorage.setItem("ann-lc", document.body.classList.contains("lc") ? "1" : "0")
+  document.body.classList.toggle(LEFT_COLLAPSED_CLASS)
+  localStorage.setItem(
+    "ann-lc",
+    document.body.classList.contains(LEFT_COLLAPSED_CLASS) ? "1" : "0"
+  )
   updateToggles()
 }
 document.getElementById("rightToggle").onclick = () => {
-  document.body.classList.toggle("rc")
-  localStorage.setItem("ann-rc", document.body.classList.contains("rc") ? "1" : "0")
+  document.body.classList.toggle(RIGHT_COLLAPSED_CLASS)
+  localStorage.setItem(
+    "ann-rc",
+    document.body.classList.contains(RIGHT_COLLAPSED_CLASS) ? "1" : "0"
+  )
   updateToggles()
 }
-if (localStorage.getItem("ann-lc") === "1") document.body.classList.add("lc")
-if (localStorage.getItem("ann-rc") === "1") document.body.classList.add("rc")
+if (localStorage.getItem("ann-lc") === "1") document.body.classList.add(LEFT_COLLAPSED_CLASS)
+if (localStorage.getItem("ann-rc") === "1") document.body.classList.add(RIGHT_COLLAPSED_CLASS)
 updateToggles()
 
 function esc(s) {
