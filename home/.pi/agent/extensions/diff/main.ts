@@ -8,6 +8,8 @@ import {
   type ParsedPatch,
   type SelectedLineRange,
 } from "@pierre/diffs"
+import { Type, type Static, type TUnsafe } from "typebox"
+import { Compile } from "typebox/compile"
 import "./style.css"
 
 // Constants
@@ -35,6 +37,7 @@ const MAX_TREE_DEPTH = 6
 const DEFAULT_DIFF_SIDE: DiffSide = "additions"
 const LEFT_COLLAPSED_CLASS = "is-left-collapsed"
 const RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
+const AI_REVIEW_POLL_MS = 1500
 
 // Types
 
@@ -143,6 +146,7 @@ type AppState = {
   files: FileDiffMetadata[]
   diffStyle: DiffStyle
   annotations: Annotation[]
+  aiReview: AiReviewState
   currentSelection: Selection | null
   instances: Array<FileDiff<LineAnnotationMetadata>>
   globalComment: string
@@ -155,6 +159,106 @@ type AskResponse = {
   message?: string
 }
 
+type AiReviewStatus = "idle" | "running" | "done" | "error"
+type ReviewSide = "additions" | "deletions"
+
+type AiReviewAnchor =
+  | { kind: "global" }
+  | { kind: "file"; file: string }
+  | { kind: "line"; file: string; side: ReviewSide; line: number }
+  | { kind: "range"; file: string; side: ReviewSide; start: number; end: number }
+
+type AiReviewComment = {
+  id: string
+  createdAt: number
+  anchor: AiReviewAnchor
+  category: string
+  severity: string
+  title: string
+  body: string
+  recommendation?: string
+  confidence: string
+}
+
+type AiReviewState = {
+  status: AiReviewStatus
+  comments: AiReviewComment[]
+  summary?: string
+  error?: string
+}
+
+function stringEnum<T extends readonly string[]>(
+  values: T,
+  options?: { description?: string }
+): TUnsafe<T[number]> {
+  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options })
+}
+
+const diffSessionSchema = Type.Object({
+  id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  title: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  mode: stringEnum(["worktree", "commit", "base"] as const),
+  patch: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  commit: Type.Optional(Type.String()),
+  base: Type.Optional(Type.String()),
+})
+
+type DiffSessionInput = Static<typeof diffSessionSchema>
+
+const askResponseSchema = Type.Object({
+  ok: Type.Boolean(),
+  message: Type.Optional(Type.String()),
+})
+
+const aiReviewAnchorSchema = Type.Union([
+  Type.Object({ kind: Type.Literal("global") }),
+  Type.Object({
+    kind: Type.Literal("file"),
+    file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  }),
+  Type.Object({
+    kind: Type.Literal("line"),
+    file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+    side: stringEnum(["additions", "deletions"] as const),
+    line: Type.Integer({ minimum: 1 }),
+  }),
+  Type.Object({
+    kind: Type.Literal("range"),
+    file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+    side: stringEnum(["additions", "deletions"] as const),
+    start: Type.Integer({ minimum: 1 }),
+    end: Type.Integer({ minimum: 1 }),
+  }),
+])
+
+const aiReviewCommentSchema = Type.Object({
+  id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  createdAt: Type.Optional(Type.Number()),
+  anchor: aiReviewAnchorSchema,
+  category: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  severity: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  title: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  body: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  recommendation: Type.Optional(Type.String()),
+  confidence: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+})
+
+const aiReviewStateSchema = Type.Object({
+  status: stringEnum(["idle", "running", "done", "error"] as const),
+  comments: Type.Array(aiReviewCommentSchema),
+  summary: Type.Optional(Type.String()),
+  error: Type.Optional(Type.String()),
+})
+
+type AiReviewStateInput = Static<typeof aiReviewStateSchema>
+
+const errorResponseSchema = Type.Object({ error: Type.Optional(Type.String()) })
+
+const diffSessionValidator = Compile(diffSessionSchema)
+const askResponseValidator = Compile(askResponseSchema)
+const aiReviewStateValidator = Compile(aiReviewStateSchema)
+const errorResponseValidator = Compile(errorResponseSchema)
+
 // State
 
 const app = getAppElement()
@@ -164,22 +268,16 @@ const state: AppState = {
   files: [],
   diffStyle: "split",
   annotations: [],
+  aiReview: { status: "idle", comments: [] },
   currentSelection: null,
   instances: [],
   globalComment: "",
   draftComment: "",
   draftQuestion: "",
 }
+let aiReviewPollTimer: number | undefined
 
 // Generic helpers
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
 
 function escapeHtml(value: string): string {
   return value.replace(
@@ -232,42 +330,70 @@ function setText(selector: string, text: string): void {
 
 // API helpers
 
+function validationMessage(label: string, errors: Array<{ message: string }>): string {
+  const first = errors[0]
+  return first ? `${label}: ${first.message}` : `${label}: invalid response`
+}
+
 function parseDiffSession(value: unknown): DiffSession {
-  if (!isRecord(value)) throw new Error("Review response was not an object.")
-
-  const id = stringValue(value.id)
-  const title = stringValue(value.title)
-  const patch = stringValue(value.patch)
-  if (!id || !title || !patch) throw new Error("Review response was missing required fields.")
-
-  switch (value.mode) {
-    case "worktree":
-      return { id, title, mode: "worktree", patch }
-    case "commit": {
-      const commit = stringValue(value.commit)
-      if (!commit) throw new Error("Commit review response was missing commit.")
-      return { id, title, mode: "commit", commit, patch }
-    }
-    case "base": {
-      const base = stringValue(value.base)
-      if (!base) throw new Error("Base review response was missing base.")
-      return { id, title, mode: "base", base, patch }
-    }
-    default:
-      throw new Error("Review response had an unknown mode.")
+  if (!diffSessionValidator.Check(value)) {
+    throw new Error(validationMessage("Review response", diffSessionValidator.Errors(value)))
   }
+  return normalizeDiffSession(value)
+}
+
+function normalizeDiffSession(value: DiffSessionInput): DiffSession {
+  if (value.mode === "worktree")
+    return { id: value.id, title: value.title, mode: "worktree", patch: value.patch }
+  if (value.mode === "commit") {
+    if (!value.commit) throw new Error("Review response: commit is required for commit mode")
+    return {
+      id: value.id,
+      title: value.title,
+      mode: "commit",
+      commit: value.commit,
+      patch: value.patch,
+    }
+  }
+  if (!value.base) throw new Error("Review response: base is required for base mode")
+  return { id: value.id, title: value.title, mode: "base", base: value.base, patch: value.patch }
 }
 
 function parseAskResponse(value: unknown): AskResponse {
-  if (!isRecord(value)) throw new Error("Ask response was not an object.")
-  return { ok: value.ok === true, message: stringValue(value.message) || undefined }
+  if (!askResponseValidator.Check(value)) {
+    throw new Error(validationMessage("Ask response", askResponseValidator.Errors(value)))
+  }
+  return { ok: value.ok, message: value.message || undefined }
+}
+
+function parseAiReviewState(value: unknown): AiReviewState {
+  if (!aiReviewStateValidator.Check(value)) {
+    throw new Error(validationMessage("AI review response", aiReviewStateValidator.Errors(value)))
+  }
+  return normalizeAiReviewState(value)
+}
+
+function normalizeAiReviewState(value: AiReviewStateInput): AiReviewState {
+  return {
+    status: value.status,
+    comments: value.comments.map((comment) => ({
+      id: comment.id,
+      createdAt: comment.createdAt ?? 0,
+      anchor: comment.anchor,
+      category: comment.category,
+      severity: comment.severity,
+      title: comment.title,
+      body: comment.body,
+      recommendation: comment.recommendation || undefined,
+      confidence: comment.confidence,
+    })),
+    summary: value.summary || undefined,
+    error: value.error || undefined,
+  }
 }
 
 function responseError(value: unknown, fallback: string): string {
-  if (isRecord(value)) {
-    const error = stringValue(value.error)
-    if (error) return error
-  }
+  if (errorResponseValidator.Check(value) && value.error) return value.error
   return fallback
 }
 
@@ -439,6 +565,7 @@ function renderShell(): void {
       <aside class="sidebar" id="sidebar-left"><div class="sb-head"><span class="sb-label">Files</span><button class="sb-toggle" id="leftToggle">‹</button></div><div class="sb-scroll"><nav id="files"></nav></div></aside>
       <div id="diff-wrap"><div id="diff-bar"><span class="doc-bar-label">Diff</span><span class="hint">drag line numbers for ranges · use file actions for full-file comments</span></div><section id="diffs"></section></div>
       <aside class="sidebar" id="sidebar-right"><div class="sb-head"><span class="sb-label">Diff</span><div class="sb-head-actions"><span class="anno-badge" id="count">0</span><button class="sb-toggle" id="rightToggle">›</button></div></div><div id="sb-right-inner">
+        <div class="rsec"><div class="rsec-head"><span class="rsec-label">AI Review</span><span id="aiReviewStatus" class="ai-status">idle</span></div><div id="aiReview" class="rsec-body"><div class="no-anno">waiting for AI review…</div></div></div>
         <div class="rsec"><div class="rsec-head"><span class="rsec-label">Global Feedback</span></div><div class="rsec-body"><textarea id="global" placeholder="Overall diff notes…">${escapeHtml(state.globalComment)}</textarea></div></div>
         <div class="rsec"><div class="rsec-head"><span class="rsec-label">Selection</span></div><div id="selection" class="rsec-body"><div class="no-anno">select lines or choose a file action</div></div></div>
         <div class="rsec rsec-annotations"><div class="rsec-head"><span class="rsec-label">Annotations</span></div><div id="anns" class="rsec-body"></div></div>
@@ -459,6 +586,7 @@ function renderShell(): void {
   qs<HTMLButtonElement>("#rightToggle").addEventListener("click", () =>
     document.body.classList.toggle(RIGHT_COLLAPSED_CLASS)
   )
+  renderAiReview()
 }
 
 function visualDepth(depth: number): number {
@@ -546,11 +674,17 @@ function makeOptions(file: FileDiffMetadata): FileDiffOptions<LineAnnotationMeta
   }
 }
 
+function aiLineNumber(anchor: AiReviewAnchor): number | undefined {
+  if (anchor.kind === "line") return anchor.line
+  if (anchor.kind === "range") return anchor.start
+  return undefined
+}
+
 function lineAnnotationsFor(
   file: FileDiffMetadata
 ): Array<DiffLineAnnotation<LineAnnotationMetadata>> {
   const name = fileName(file)
-  return state.annotations.filter(isLineAnnotation).flatMap((annotation) =>
+  const human = state.annotations.filter(isLineAnnotation).flatMap((annotation) =>
     annotation.file === name
       ? [
           {
@@ -561,6 +695,19 @@ function lineAnnotationsFor(
         ]
       : []
   )
+  const ai = state.aiReview.comments.flatMap((comment) => {
+    const lineNumber = aiLineNumber(comment.anchor)
+    return lineNumber !== undefined && "file" in comment.anchor && comment.anchor.file === name
+      ? [
+          {
+            side: comment.anchor.side,
+            lineNumber,
+            metadata: { comment: `🤖 ${comment.title}` },
+          },
+        ]
+      : []
+  })
+  return [...human, ...ai]
 }
 
 function renderDiffs(): void {
@@ -747,6 +894,82 @@ function renderAnnotations(): void {
   )
 }
 
+// Rendering: AI review
+
+function aiAnchorLabel(anchor: AiReviewAnchor): string {
+  switch (anchor.kind) {
+    case "global":
+      return "Global finding"
+    case "file":
+      return anchor.file
+    case "line":
+      return `${anchor.file} ${anchor.side} line ${anchor.line}`
+    case "range":
+      return `${anchor.file} ${anchor.side} lines ${anchor.start}-${anchor.end}`
+  }
+}
+
+function aiCommentTone(comment: AiReviewComment): string {
+  if (comment.severity === "critical" || comment.severity === "major") return "ai-major"
+  if (comment.category === "positive") return "ai-positive"
+  if (comment.severity === "minor") return "ai-minor"
+  return "ai-info"
+}
+
+function aiReviewStatusText(): string {
+  const count = state.aiReview.comments.length
+  if (state.aiReview.status === "running") return `running · ${count}`
+  if (state.aiReview.status === "done") return `done · ${count}`
+  if (state.aiReview.status === "error") return "error"
+  return "idle"
+}
+
+function renderAiReview(): void {
+  setText("#aiReviewStatus", aiReviewStatusText())
+  const root = document.querySelector("#aiReview")
+  if (!root) return
+
+  const parts: string[] = []
+  if (state.aiReview.status === "running") {
+    parts.push('<div class="ai-running"><span class="ai-dot"></span>AI agent is reviewing…</div>')
+  } else if (state.aiReview.status === "idle") {
+    parts.push('<div class="no-anno">AI review not started</div>')
+  } else if (state.aiReview.status === "error") {
+    parts.push(
+      `<div class="ai-error">${escapeHtml(state.aiReview.error || "AI review failed")}</div>`
+    )
+  }
+
+  if (state.aiReview.summary) {
+    parts.push(
+      `<div class="ai-summary"><strong>Summary</strong><p>${escapeHtml(state.aiReview.summary)}</p></div>`
+    )
+  }
+
+  parts.push(
+    ...state.aiReview.comments.map(
+      (
+        comment
+      ) => `<div class="card ai-card ${aiCommentTone(comment)}" role="button" tabindex="0" data-ai-id="${escapeHtml(comment.id)}">
+        <div class="ai-card-top"><span class="ai-severity">${escapeHtml(comment.severity)}</span><span>${escapeHtml(comment.category)}</span><span>${escapeHtml(comment.confidence)} confidence</span></div>
+        <div class="ai-title">${escapeHtml(comment.title)}</div>
+        <div class="anno-loc">${escapeHtml(aiAnchorLabel(comment.anchor))}</div>
+        <div class="comment ai-body">${escapeHtml(comment.body)}</div>
+        ${comment.recommendation ? `<div class="ai-rec"><strong>Recommendation:</strong> ${escapeHtml(comment.recommendation)}</div>` : ""}
+      </div>`
+    )
+  )
+
+  root.innerHTML = parts.join("") || '<div class="no-anno">no AI comments yet</div>'
+  root.querySelectorAll("[data-ai-id]").forEach((card) => {
+    const open = () => jumpToAiComment((card as HTMLElement).dataset.aiId ?? "")
+    card.addEventListener("click", open)
+    card.addEventListener("keydown", (event) => {
+      if (event instanceof KeyboardEvent && event.key === "Enter") open()
+    })
+  })
+}
+
 // Actions
 
 function globalCommentValue(): string {
@@ -789,6 +1012,14 @@ function editAnnotation(index: number): void {
 function jumpToAnnotation(annotation: Annotation | undefined): void {
   if (!annotation) return
   const index = state.files.findIndex((file) => fileName(file) === annotation.file)
+  if (index < 0) return
+  document.querySelector(`#file-${index}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+}
+
+function jumpToAiComment(id: string): void {
+  const comment = state.aiReview.comments.find((item) => item.id === id)
+  if (!comment || comment.anchor.kind === "global") return
+  const index = state.files.findIndex((file) => fileName(file) === comment.anchor.file)
   if (index < 0) return
   document.querySelector(`#file-${index}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
 }
@@ -839,6 +1070,45 @@ async function askPi(): Promise<void> {
   }
 }
 
+// AI review polling
+
+function aiReviewSignature(reviewState: AiReviewState): string {
+  return [
+    reviewState.status,
+    reviewState.summary ?? "",
+    reviewState.error ?? "",
+    ...reviewState.comments.map((c) => c.id),
+  ].join("|")
+}
+
+function scheduleAiReviewPoll(): void {
+  if (aiReviewPollTimer !== undefined) window.clearTimeout(aiReviewPollTimer)
+  aiReviewPollTimer = window.setTimeout(refreshAiReview, AI_REVIEW_POLL_MS)
+}
+
+async function refreshAiReview(): Promise<void> {
+  try {
+    const before = aiReviewSignature(state.aiReview)
+    state.aiReview = parseAiReviewState(
+      await requestJson(`/api/ai-review?id=${encodeURIComponent(review().id)}`)
+    )
+    const after = aiReviewSignature(state.aiReview)
+    if (before !== after) {
+      renderAiReview()
+      const diffRoot = document.querySelector<HTMLElement>("#diffs")
+      const scrollTop = diffRoot?.scrollTop
+      renderDiffs()
+      if (diffRoot && scrollTop !== undefined) diffRoot.scrollTop = scrollTop
+    } else {
+      renderAiReview()
+    }
+  } catch {
+    // Keep polling; the browser may have loaded before the server session was ready.
+  } finally {
+    scheduleAiReviewPoll()
+  }
+}
+
 // Boot
 
 async function boot(): Promise<void> {
@@ -851,6 +1121,7 @@ async function boot(): Promise<void> {
   renderShell()
   renderDiffs()
   renderAnnotations()
+  await refreshAiReview()
 }
 
 boot().catch((error) => {

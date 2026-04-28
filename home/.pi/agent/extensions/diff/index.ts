@@ -4,6 +4,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { join } from "node:path"
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
+import { Type, type Static, type TUnsafe } from "typebox"
+import { Compile } from "typebox/compile"
+import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pierre/diffs"
 
 // Constants
 
@@ -11,37 +14,90 @@ const REQUEST_BODY_LIMIT_BYTES = 2_000_000
 const GIT_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 const MAX_BRANCH_OPTIONS = 80
 
+const ANCHOR_KINDS = ["line", "range", "file", "global"] as const
+const REVIEW_CATEGORIES = [
+  "bug",
+  "risk",
+  "question",
+  "unnecessary",
+  "style",
+  "test",
+  "positive",
+  "context",
+] as const
+const REVIEW_SEVERITIES = ["info", "minor", "major", "critical"] as const
+const REVIEW_CONFIDENCE = ["low", "medium", "high"] as const
+const REVIEW_SIDES = ["additions", "deletions"] as const
+
 // Types
 
-type WorktreeReviewSession = {
-  id: string
-  title: string
-  mode: "worktree"
-  patchPath: string
+type AiReviewStatus = "idle" | "running" | "done" | "error"
+
+type ReviewCategory = (typeof REVIEW_CATEGORIES)[number]
+type ReviewSeverity = (typeof REVIEW_SEVERITIES)[number]
+type ReviewConfidence = (typeof REVIEW_CONFIDENCE)[number]
+type ReviewSide = (typeof REVIEW_SIDES)[number]
+
+type GlobalReviewAnchor = { kind: "global" }
+type FileReviewAnchor = { kind: "file"; file: string }
+type LineReviewAnchor = { kind: "line"; file: string; side: ReviewSide; line: number }
+type RangeReviewAnchor = {
+  kind: "range"
+  file: string
+  side: ReviewSide
+  start: number
+  end: number
 }
 
-type CommitReviewSession = {
+type ReviewAnchor = GlobalReviewAnchor | FileReviewAnchor | LineReviewAnchor | RangeReviewAnchor
+
+type AiReviewComment = {
+  id: string
+  createdAt: number
+  anchor: ReviewAnchor
+  category: ReviewCategory
+  severity: ReviewSeverity
+  title: string
+  body: string
+  recommendation?: string
+  confidence: ReviewConfidence
+}
+
+type AiReviewState = {
+  status: AiReviewStatus
+  comments: AiReviewComment[]
+  summary?: string
+  error?: string
+}
+
+type ReviewSessionBase = {
   id: string
   title: string
+  patchPath: string
+  command: string
+  aiReview: AiReviewState
+}
+
+type WorktreeReviewSession = ReviewSessionBase & {
+  mode: "worktree"
+}
+
+type CommitReviewSession = ReviewSessionBase & {
   mode: "commit"
   commit: string
-  patchPath: string
 }
 
-type BaseReviewSession = {
-  id: string
-  title: string
+type BaseReviewSession = ReviewSessionBase & {
   mode: "base"
   base: string
-  patchPath: string
 }
 
 type ReviewSession = WorktreeReviewSession | CommitReviewSession | BaseReviewSession
 
 type NewReviewSession =
-  | { title: string; mode: "worktree"; patch: string }
-  | { title: string; mode: "commit"; patch: string; commit: string }
-  | { title: string; mode: "base"; patch: string; base: string }
+  | { title: string; mode: "worktree"; patch: string; command: string }
+  | { title: string; mode: "commit"; patch: string; commit: string; command: string }
+  | { title: string; mode: "base"; patch: string; base: string; command: string }
 
 type SelectionScope = "lines" | "file"
 
@@ -77,6 +133,105 @@ type StaticFile = {
   contentType: string
 }
 
+function stringEnum<T extends readonly string[]>(
+  values: T,
+  options?: { description?: string }
+): TUnsafe<T[number]> {
+  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options })
+}
+
+const reviewCommentSchema = Type.Object({
+  reviewId: Type.String({
+    minLength: 1,
+    pattern: ".*\\S.*",
+    description: "Diff review id shown in the kickoff prompt.",
+  }),
+  anchorKind: stringEnum(ANCHOR_KINDS, {
+    description:
+      "Use global when the finding is caused by the diff but not tied to one changed line.",
+  }),
+  file: Type.Optional(
+    Type.String({ description: "Diff file path for file, line, or range anchors." })
+  ),
+  side: Type.Optional(stringEnum(REVIEW_SIDES)),
+  line: Type.Optional(
+    Type.Integer({ minimum: 1, description: "Changed line number for line anchors." })
+  ),
+  start: Type.Optional(
+    Type.Integer({ minimum: 1, description: "Start changed line number for range anchors." })
+  ),
+  end: Type.Optional(
+    Type.Integer({ minimum: 1, description: "End changed line number for range anchors." })
+  ),
+  category: stringEnum(REVIEW_CATEGORIES),
+  severity: stringEnum(REVIEW_SEVERITIES),
+  title: Type.String({
+    minLength: 1,
+    pattern: ".*\\S.*",
+    description: "Short review-comment title.",
+  }),
+  body: Type.String({
+    minLength: 1,
+    pattern: ".*\\S.*",
+    description: "Concise explanation of the finding.",
+  }),
+  recommendation: Type.Optional(
+    Type.String({ description: "Concrete suggested next step, if any." })
+  ),
+  confidence: stringEnum(REVIEW_CONFIDENCE),
+})
+
+type ReviewCommentInput = Static<typeof reviewCommentSchema>
+
+const reviewDoneSchema = Type.Object({
+  reviewId: Type.String({
+    minLength: 1,
+    pattern: ".*\\S.*",
+    description: "Diff review id shown in the kickoff prompt.",
+  }),
+  summary: Type.String({
+    minLength: 1,
+    pattern: ".*\\S.*",
+    description: "Final concise summary of the AI review.",
+  }),
+})
+
+type ReviewDoneInput = Static<typeof reviewDoneSchema>
+
+type AnchorValidationResult = { ok: true; anchor: ReviewAnchor } | { ok: false; reason: string }
+
+const reviewAnnotationSchema = Type.Object({
+  file: Type.String({ default: "" }),
+  scope: Type.Optional(stringEnum(["lines", "file"] as const)),
+  side: Type.Optional(Type.String()),
+  start: Type.Optional(Type.Number()),
+  end: Type.Optional(Type.Number()),
+  quote: Type.String({ default: "" }),
+  comment: Type.String({ default: "" }),
+})
+
+const feedbackPayloadSchema = Type.Object({
+  id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  annotations: Type.Array(reviewAnnotationSchema),
+  globalComment: Type.String({ default: "" }),
+})
+
+type FeedbackPayloadInput = Static<typeof feedbackPayloadSchema>
+
+const askPayloadSchema = Type.Object({
+  id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  file: Type.String({ default: "" }),
+  scope: Type.Optional(stringEnum(["lines", "file"] as const)),
+  side: Type.Optional(Type.String()),
+  start: Type.Optional(Type.Number()),
+  end: Type.Optional(Type.Number()),
+  quote: Type.String({ default: "" }),
+  question: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+})
+
+const feedbackPayloadValidator = Compile(feedbackPayloadSchema)
+const askPayloadValidator = Compile(askPayloadSchema)
+
 declare const __dirname: string
 
 // State
@@ -92,21 +247,13 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
-
-function optionalString(value: unknown): string | undefined {
-  const text = stringValue(value).trim()
+function optionalString(value: string | undefined): string | undefined {
+  const text = value?.trim()
   return text || undefined
 }
 
-function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+function optionalNumber(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isFinite(value) ? value : undefined
 }
 
 function parseJsonBody(body: string): unknown | null {
@@ -193,60 +340,44 @@ function branchOptions(ctx: ExtensionCommandContext): string[] {
 
 // Payload parsing
 
-function parseScope(value: unknown): SelectionScope {
-  return value === "file" ? "file" : "lines"
-}
-
-function parseAnnotation(value: unknown): ReviewAnnotation | undefined {
-  if (!isRecord(value)) return undefined
+function normalizeAnnotation(
+  annotation: FeedbackPayloadInput["annotations"][number]
+): ReviewAnnotation {
   return {
-    file: stringValue(value.file),
-    scope: parseScope(value.scope),
-    side: optionalString(value.side),
-    start: optionalNumber(value.start),
-    end: optionalNumber(value.end),
-    quote: stringValue(value.quote),
-    comment: stringValue(value.comment),
+    file: annotation.file,
+    scope: annotation.scope ?? "lines",
+    side: optionalString(annotation.side),
+    start: optionalNumber(annotation.start),
+    end: optionalNumber(annotation.end),
+    quote: annotation.quote,
+    comment: annotation.comment,
   }
 }
 
 function parseFeedbackPayload(body: string): FeedbackPayload | null {
   const value = parseJsonBody(body)
-  if (!isRecord(value)) return null
-
-  const id = stringValue(value.id).trim()
-  if (!id) return null
-
-  const annotations = Array.isArray(value.annotations)
-    ? value.annotations
-        .map(parseAnnotation)
-        .filter((annotation): annotation is ReviewAnnotation => Boolean(annotation))
-    : []
+  if (!feedbackPayloadValidator.Check(value)) return null
 
   return {
-    id,
-    annotations,
-    globalComment: stringValue(value.globalComment),
+    id: value.id.trim(),
+    annotations: value.annotations.map(normalizeAnnotation),
+    globalComment: value.globalComment,
   }
 }
 
 function parseAskPayload(body: string): AskPayload | null {
   const value = parseJsonBody(body)
-  if (!isRecord(value)) return null
-
-  const id = stringValue(value.id).trim()
-  const question = stringValue(value.question).trim()
-  if (!id || !question) return null
+  if (!askPayloadValidator.Check(value)) return null
 
   return {
-    id,
-    file: stringValue(value.file),
-    scope: parseScope(value.scope),
+    id: value.id.trim(),
+    file: value.file,
+    scope: value.scope ?? "lines",
     side: optionalString(value.side),
     start: optionalNumber(value.start),
     end: optionalNumber(value.end),
-    quote: stringValue(value.quote),
-    question,
+    quote: value.quote,
+    question: value.question.trim(),
   }
 }
 
@@ -259,15 +390,170 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
   const patchPath = join(dir, `${id}.patch`)
   writeFileSync(patchPath, opts.patch, "utf8")
 
+  const aiReview: AiReviewState = { status: "idle", comments: [] }
   const session: ReviewSession =
     opts.mode === "commit"
-      ? { id, title: opts.title, mode: "commit", commit: opts.commit, patchPath }
+      ? {
+          id,
+          title: opts.title,
+          mode: "commit",
+          commit: opts.commit,
+          patchPath,
+          command: opts.command,
+          aiReview,
+        }
       : opts.mode === "base"
-        ? { id, title: opts.title, mode: "base", base: opts.base, patchPath }
-        : { id, title: opts.title, mode: "worktree", patchPath }
+        ? {
+            id,
+            title: opts.title,
+            mode: "base",
+            base: opts.base,
+            patchPath,
+            command: opts.command,
+            aiReview,
+          }
+        : { id, title: opts.title, mode: "worktree", patchPath, command: opts.command, aiReview }
 
   sessions.set(id, session)
   return session
+}
+
+// AI review helpers
+
+function integerValue(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isInteger(value) || value < 1) return undefined
+  return value
+}
+
+function fileDisplayName(file: FileDiffMetadata): string {
+  return file.name || file.prevName || "file"
+}
+
+function findDiffFile(session: ReviewSession, name: string): FileDiffMetadata | undefined {
+  const files = parsePatchFiles(readFileSync(session.patchPath, "utf8"), session.id, false).flatMap(
+    (patch) => patch.files
+  )
+  return files.find((file) => file.name === name || file.prevName === name)
+}
+
+function changedLineRanges(file: FileDiffMetadata, side: AnnotationSide): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  for (const hunk of file.hunks) {
+    let additionLine = hunk.additionStart
+    let deletionLine = hunk.deletionStart
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        additionLine += content.lines
+        deletionLine += content.lines
+        continue
+      }
+
+      if (side === "additions" && content.additions > 0) {
+        ranges.push([additionLine, additionLine + content.additions - 1])
+      }
+      if (side === "deletions" && content.deletions > 0) {
+        ranges.push([deletionLine, deletionLine + content.deletions - 1])
+      }
+      additionLine += content.additions
+      deletionLine += content.deletions
+    }
+  }
+  return ranges
+}
+
+function rangeContains(ranges: Array<[number, number]>, start: number, end: number): boolean {
+  return ranges.some(([rangeStart, rangeEnd]) => start >= rangeStart && end <= rangeEnd)
+}
+
+function rangeListText(ranges: Array<[number, number]>): string {
+  if (!ranges.length) return "none"
+  return ranges
+    .map(([start, end]) => (start === end ? String(start) : `${start}-${end}`))
+    .join(", ")
+}
+
+function validateReviewAnchor(
+  session: ReviewSession,
+  input: Pick<ReviewCommentInput, "anchorKind" | "file" | "side" | "line" | "start" | "end">
+): AnchorValidationResult {
+  if (input.anchorKind === "global") return { ok: true, anchor: { kind: "global" } }
+
+  const requestedFile = (input.file ?? "").trim()
+  if (!requestedFile) return { ok: false, reason: "file is required for this anchor kind." }
+
+  const file = findDiffFile(session, requestedFile)
+  if (!file) return { ok: false, reason: `${requestedFile} is not in this diff.` }
+
+  const fileName = fileDisplayName(file)
+  if (input.anchorKind === "file") return { ok: true, anchor: { kind: "file", file: fileName } }
+
+  if (input.side !== "additions" && input.side !== "deletions") {
+    return { ok: false, reason: "side must be additions or deletions for line/range anchors." }
+  }
+
+  const start = integerValue(input.anchorKind === "line" ? input.line : input.start)
+  const end = integerValue(input.anchorKind === "line" ? input.line : input.end)
+  if (start === undefined || end === undefined) {
+    return { ok: false, reason: "valid positive integer line/start/end values are required." }
+  }
+  if (end < start) return { ok: false, reason: "range end must be greater than or equal to start." }
+
+  const ranges = changedLineRanges(file, input.side)
+  if (!rangeContains(ranges, start, end)) {
+    return {
+      ok: false,
+      reason: `${fileName} ${input.side} ${start === end ? start : `${start}-${end}`} is not a changed line range in this diff. Valid changed ranges: ${rangeListText(ranges)}. Use a file/global anchor for contextual findings that are not tied to changed lines.`,
+    }
+  }
+
+  return input.anchorKind === "line"
+    ? { ok: true, anchor: { kind: "line", file: fileName, side: input.side, line: start } }
+    : { ok: true, anchor: { kind: "range", file: fileName, side: input.side, start, end } }
+}
+
+function compactSessionMode(session: ReviewSession): string {
+  if (session.mode === "commit") return `commit ${session.commit}`
+  if (session.mode === "base") return `base ${session.base}`
+  return "working tree vs HEAD"
+}
+
+function aiReviewPrompt(session: ReviewSession): string {
+  return [
+    `Review this diff session and leave PR-style comments in the diff UI.`,
+    "",
+    `Review id: ${session.id}`,
+    `Mode: ${compactSessionMode(session)}`,
+    `Title: ${session.title}`,
+    `Exact patch snapshot shown in the browser: ${session.patchPath}`,
+    `Patch command: ${session.command}`,
+    "",
+    "You may inspect the repository normally with the available tools to understand global context.",
+    "Use diff_review_comment for each useful finding. Use diff_review_done when finished, even if there are no findings.",
+    "Anchor comments to line/range/file only when the finding is directly tied to the diff. Use a global anchor for findings caused by the diff but not located on a changed line.",
+    "For line/range anchors, use line numbers from the additions or deletions side of the patch.",
+    "Keep comments concise, actionable, non-duplicative, and honest about uncertainty.",
+    "This is a review task; focus on inspecting and commenting rather than changing files.",
+  ].join("\n")
+}
+
+async function maybeStartAiReview(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  session: ReviewSession
+): Promise<void> {
+  if (!ctx.hasUI) return
+  const wantsReview = await ctx.ui.confirm(
+    "AI Review",
+    "Run AI review agent for this diff? Comments will stream into the diff UI."
+  )
+  if (!wantsReview) return
+
+  session.aiReview = { status: "running", comments: [] }
+  const prompt = aiReviewPrompt(session)
+  if (ctx.isIdle()) pi.sendUserMessage(prompt)
+  else pi.sendUserMessage(prompt, { deliverAs: "followUp" })
+  notify(ctx, "AI review started. Watch the diff UI for comments.", "info")
 }
 
 // Prompt construction
@@ -386,6 +672,13 @@ function startServer(pi: ExtensionAPI): Promise<number> {
         })
       }
 
+      if (req.method === "GET" && url.pathname === "/api/ai-review") {
+        const id = url.searchParams.get("id") ?? ""
+        const session = sessions.get(id)
+        if (!session) return sendJson(res, { error: "Unknown review" }, 404)
+        return sendJson(res, session.aiReview)
+      }
+
       if (req.method === "POST" && url.pathname === "/api/close") {
         return sendJson(res, { ok: true })
       }
@@ -488,16 +781,20 @@ async function chooseBase(ctx: ExtensionCommandContext): Promise<string | undefi
 // Command handlers
 
 async function openWorktreeReview(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+  const command = "git diff HEAD --patch --find-renames --find-copies"
   const patch = runGit(ctx.cwd, ["diff", "HEAD", "--patch", "--find-renames", "--find-copies"])
   if (!patch.trim()) {
     notify(ctx, "No changes against HEAD.", "info")
     return
   }
-  await openReview(
-    pi,
-    ctx,
-    writeSession(ctx, { title: "Working tree vs HEAD", mode: "worktree", patch })
-  )
+  const session = writeSession(ctx, {
+    title: "Working tree vs HEAD",
+    mode: "worktree",
+    patch,
+    command,
+  })
+  await openReview(pi, ctx, session)
+  await maybeStartAiReview(pi, ctx, session)
 }
 
 async function openCommitReview(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
@@ -516,11 +813,15 @@ async function openCommitReview(pi: ExtensionAPI, ctx: ExtensionCommandContext):
     notify(ctx, "Commit has no patch.", "info")
     return
   }
-  await openReview(
-    pi,
-    ctx,
-    writeSession(ctx, { title: `Commit ${commit}`, mode: "commit", patch, commit })
-  )
+  const session = writeSession(ctx, {
+    title: `Commit ${commit}`,
+    mode: "commit",
+    patch,
+    commit,
+    command: `git show --format= --patch --find-renames --find-copies ${commit}`,
+  })
+  await openReview(pi, ctx, session)
+  await maybeStartAiReview(pi, ctx, session)
 }
 
 async function openBaseReview(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
@@ -538,11 +839,15 @@ async function openBaseReview(pi: ExtensionAPI, ctx: ExtensionCommandContext): P
     notify(ctx, `No changes against ${base}.`, "info")
     return
   }
-  await openReview(
-    pi,
-    ctx,
-    writeSession(ctx, { title: `HEAD vs ${base}`, mode: "base", patch, base })
-  )
+  const session = writeSession(ctx, {
+    title: `HEAD vs ${base}`,
+    mode: "base",
+    patch,
+    base,
+    command: `git diff ${base}...HEAD --patch --find-renames --find-copies`,
+  })
+  await openReview(pi, ctx, session)
+  await maybeStartAiReview(pi, ctx, session)
 }
 
 async function runCommand(
@@ -561,6 +866,84 @@ async function runCommand(
 export default function diff(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async () => {
     await stopServer()
+  })
+
+  pi.on("agent_end", async () => {
+    for (const session of sessions.values()) {
+      if (session.aiReview.status === "running") {
+        session.aiReview.status = "done"
+        session.aiReview.summary ||= "AI review finished without a final summary."
+      }
+    }
+  })
+
+  pi.registerTool({
+    name: "diff_review_comment",
+    label: "Diff Review Comment",
+    description: "Leave a PR-style comment on an open diff review session.",
+    promptSnippet: "Leave PR-style comments on the active diff review UI.",
+    promptGuidelines: [
+      "Use diff_review_comment to leave concise, actionable comments during a diff review task.",
+      "Use a global diff_review_comment anchor for findings caused by the diff but not tied to a changed line.",
+    ],
+    parameters: reviewCommentSchema,
+    async execute(_toolCallId, params: ReviewCommentInput) {
+      const reviewId = params.reviewId.trim()
+      const session = sessions.get(reviewId)
+      if (!session) throw new Error(`Unknown diff review id: ${reviewId}`)
+
+      const validation = validateReviewAnchor(session, params)
+      if (!validation.ok) throw new Error(validation.reason)
+
+      const title = params.title.trim()
+      const body = params.body.trim()
+      if (!title) throw new Error("title is required")
+      if (!body) throw new Error("body is required")
+
+      if (session.aiReview.status === "idle") session.aiReview.status = "running"
+      session.aiReview.comments.push({
+        id: randomUUID(),
+        createdAt: Date.now(),
+        anchor: validation.anchor,
+        category: params.category,
+        severity: params.severity,
+        title,
+        body,
+        recommendation: optionalString(params.recommendation),
+        confidence: params.confidence,
+      })
+
+      return {
+        content: [{ type: "text", text: `Added diff review comment: ${title}` }],
+        details: { reviewId, commentCount: session.aiReview.comments.length },
+      }
+    },
+  })
+
+  pi.registerTool({
+    name: "diff_review_done",
+    label: "Diff Review Done",
+    description: "Mark an open AI diff review as complete with a final summary.",
+    promptSnippet: "Finish an AI diff review after leaving comments.",
+    promptGuidelines: [
+      "Use diff_review_done when a diff review task is finished, even with no findings.",
+    ],
+    parameters: reviewDoneSchema,
+    async execute(_toolCallId, params: ReviewDoneInput) {
+      const reviewId = params.reviewId.trim()
+      const session = sessions.get(reviewId)
+      if (!session) throw new Error(`Unknown diff review id: ${reviewId}`)
+
+      session.aiReview.status = "done"
+      session.aiReview.summary = params.summary.trim() || "AI review complete."
+      session.aiReview.error = undefined
+
+      return {
+        content: [{ type: "text", text: `Marked diff review ${reviewId} as done.` }],
+        details: { reviewId, commentCount: session.aiReview.comments.length },
+        terminate: true,
+      }
+    },
   })
 
   pi.registerCommand("diff", {

@@ -28,10 +28,7 @@ function updateToggles() {
 }
 document.getElementById("leftToggle").onclick = () => {
   document.body.classList.toggle(LEFT_COLLAPSED_CLASS)
-  localStorage.setItem(
-    "ann-lc",
-    document.body.classList.contains(LEFT_COLLAPSED_CLASS) ? "1" : "0"
-  )
+  localStorage.setItem("ann-lc", document.body.classList.contains(LEFT_COLLAPSED_CLASS) ? "1" : "0")
   updateToggles()
 }
 document.getElementById("rightToggle").onclick = () => {
