@@ -15,6 +15,8 @@ let annotations = [],
   selectedQuote = "",
   selectedRange = null,
   annotationHighlight = null,
+  activeAnnotationHighlight = null,
+  activeAnnotationIndex = null,
   annotationAnchors = []
 
 function updateToggles() {
@@ -186,7 +188,7 @@ function renderAnnotations() {
   annotationsEl.innerHTML = annotations
     .map(
       (a, i) => `
-    <div class="card annotation-card" role="button" tabindex="0" data-jump="${i}">
+    <div class="card annotation-card ${activeAnnotationIndex === i ? "active" : ""}" role="button" tabindex="0" data-jump="${i}">
       <button data-i="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button>
       <div class="anno-top"><span class="anno-file">#${String(i + 1).padStart(2, "0")}</span></div>
       ${a.quote ? `<div class="quote anno-quote">${esc(a.quote.length > 280 ? a.quote.slice(0, 280) + "…" : a.quote)}</div>` : ""}
@@ -205,8 +207,12 @@ function renderAnnotations() {
   })
   annotationsEl.querySelectorAll("[data-i]").forEach((b) => {
     b.onclick = () => {
-      annotations.splice(+b.dataset.i, 1)
-      annotationAnchors.splice(+b.dataset.i, 1)
+      const index = +b.dataset.i
+      annotations.splice(index, 1)
+      annotationAnchors.splice(index, 1)
+      if (activeAnnotationIndex === index) activeAnnotationIndex = null
+      else if (activeAnnotationIndex > index) activeAnnotationIndex--
+      rebuildHighlights()
       renderAnnotations()
     }
   })
@@ -218,9 +224,32 @@ function renderAnnotations() {
 function jumpToAnnotation(index) {
   const range = annotationAnchors[index]
   if (!range) return
+  activeAnnotationIndex = index
+  setActiveHighlight(range)
+  renderAnnotations()
   const rect = range.getBoundingClientRect()
-  const target = rect.top ? rect.top + window.scrollY - 96 : 0
-  document.getElementById("doc-wrap").scrollTo({ top: Math.max(0, target), behavior: "smooth" })
+  const scroller = document.getElementById("doc-wrap")
+  const scrollerRect = scroller.getBoundingClientRect()
+  const target = rect.top - scrollerRect.top + scroller.scrollTop - 96
+  scroller.scrollTo({ top: Math.max(0, target), behavior: "smooth" })
+}
+
+function rebuildHighlights() {
+  if (!CSS.highlights || !window.Highlight) return
+  annotationHighlight = new Highlight(...annotationAnchors)
+  CSS.highlights.set("annotation-highlight", annotationHighlight)
+  if (activeAnnotationIndex == null || !annotationAnchors[activeAnnotationIndex]) {
+    CSS.highlights.delete("annotation-active-highlight")
+    activeAnnotationHighlight = null
+  } else {
+    setActiveHighlight(annotationAnchors[activeAnnotationIndex])
+  }
+}
+
+function setActiveHighlight(range) {
+  if (!CSS.highlights || !window.Highlight) return
+  activeAnnotationHighlight = new Highlight(range)
+  CSS.highlights.set("annotation-active-highlight", activeAnnotationHighlight)
 }
 
 function editAnnotation(index) {
@@ -262,9 +291,7 @@ function highlightSelectedRange() {
 
   annotationAnchors.push(range.cloneRange())
   if (CSS.highlights && window.Highlight) {
-    annotationHighlight ??= new Highlight()
-    annotationHighlight.add(range)
-    CSS.highlights.set("annotation-highlight", annotationHighlight)
+    rebuildHighlights()
     return
   }
 

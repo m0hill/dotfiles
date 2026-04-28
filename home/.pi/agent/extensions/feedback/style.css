@@ -635,7 +635,12 @@ body.rc #sidebar-right #sb-right-inner {
 ::highlight(annotation-highlight),
 mark,
 .annotation-highlight {
-  background: color-mix(in srgb, var(--highlight) 55%, transparent);
+  background: color-mix(in srgb, var(--highlight) 38%, transparent);
+  color: inherit;
+}
+
+::highlight(annotation-active-highlight) {
+  background: color-mix(in srgb, var(--link) 50%, transparent);
   color: inherit;
 }
 
@@ -705,10 +710,15 @@ textarea:focus {
   padding: 10px 12px;
 }
 
-.annotation-card:hover {
+.annotation-card:hover,
+.annotation-card.active {
   border-color: var(--border-strong);
   box-shadow: none;
   background: #181818;
+}
+
+.annotation-card.active {
+  border-color: color-mix(in srgb, var(--link) 55%, var(--border));
 }
 
 .anno-top {
