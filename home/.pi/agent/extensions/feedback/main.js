@@ -14,7 +14,8 @@ const annotationsEl = document.getElementById("annotations"),
 let annotations = [],
   selectedQuote = "",
   selectedRange = null,
-  annotationHighlight = null
+  annotationHighlight = null,
+  annotationAnchors = []
 
 function updateToggles() {
   const lc = document.body.classList.contains("lc"),
@@ -185,7 +186,7 @@ function renderAnnotations() {
   annotationsEl.innerHTML = annotations
     .map(
       (a, i) => `
-    <div class="card annotation-card">
+    <div class="card annotation-card" role="button" tabindex="0" data-jump="${i}">
       <button data-i="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button>
       <div class="anno-top"><span class="anno-file">#${String(i + 1).padStart(2, "0")}</span></div>
       ${a.quote ? `<div class="quote anno-quote">${esc(a.quote.length > 280 ? a.quote.slice(0, 280) + "…" : a.quote)}</div>` : ""}
@@ -193,15 +194,33 @@ function renderAnnotations() {
     </div>`
     )
     .join("")
+  annotationsEl.querySelectorAll("[data-jump]").forEach((card) => {
+    card.onclick = (event) => {
+      if (event.target.closest("button,.edit-annotation-input,.edit-actions")) return
+      jumpToAnnotation(+card.dataset.jump)
+    }
+    card.onkeydown = (event) => {
+      if (event.key === "Enter") jumpToAnnotation(+card.dataset.jump)
+    }
+  })
   annotationsEl.querySelectorAll("[data-i]").forEach((b) => {
     b.onclick = () => {
       annotations.splice(+b.dataset.i, 1)
+      annotationAnchors.splice(+b.dataset.i, 1)
       renderAnnotations()
     }
   })
   annotationsEl.querySelectorAll("[data-edit]").forEach((b) => {
     b.onclick = () => editAnnotation(+b.dataset.edit)
   })
+}
+
+function jumpToAnnotation(index) {
+  const range = annotationAnchors[index]
+  if (!range) return
+  const rect = range.getBoundingClientRect()
+  const target = rect.top ? rect.top + window.scrollY - 96 : 0
+  document.getElementById("doc-wrap").scrollTo({ top: Math.max(0, target), behavior: "smooth" })
 }
 
 function editAnnotation(index) {
@@ -241,6 +260,7 @@ function highlightSelectedRange() {
   const range = selectedRange.cloneRange()
   selectedRange = null
 
+  annotationAnchors.push(range.cloneRange())
   if (CSS.highlights && window.Highlight) {
     annotationHighlight ??= new Highlight()
     annotationHighlight.add(range)
