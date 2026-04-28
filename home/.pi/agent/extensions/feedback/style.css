@@ -257,24 +257,26 @@ body.rc #sidebar-right #sb-right-inner {
   overflow-x: hidden;
 }
 
-.sb-scroll::-webkit-scrollbar,
-.rsec-annotations .rsec-body::-webkit-scrollbar {
-  width: 5px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-.sb-scroll::-webkit-scrollbar-track,
-.rsec-annotations .rsec-body::-webkit-scrollbar-track {
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.sb-scroll::-webkit-scrollbar-thumb,
-.rsec-annotations .rsec-body::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
 }
 
-.sb-scroll::-webkit-scrollbar-thumb:hover,
-.rsec-annotations .rsec-body::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
 
@@ -722,7 +724,7 @@ textarea:focus {
   display: none;
   position: fixed;
   z-index: 200;
-  width: 400px;
+  width: min(400px, calc(100vw - 16px));
   background: var(--surface);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
@@ -730,6 +732,7 @@ textarea:focus {
   padding: 16px;
   flex-direction: column;
   gap: 12px;
+  overflow: auto;
 }
 
 .pop-label {
@@ -741,9 +744,57 @@ textarea:focus {
   text-transform: uppercase;
 }
 
+.selection-preview-wrap {
+  position: relative;
+}
+
 #popover .quote {
   margin: 0;
   max-height: 100px;
+  padding-right: 36px;
+}
+
+.icon-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.icon-btn:hover {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.copy-selection {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  color: var(--fg-muted);
+}
+
+.copy-selection:hover,
+.icon-btn.copied {
+  color: var(--fg);
 }
 
 #popover textarea {

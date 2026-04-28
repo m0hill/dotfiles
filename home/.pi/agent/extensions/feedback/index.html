@@ -71,7 +71,20 @@
 
     <div id="popover">
       <div class="pop-label">Selection</div>
-      <div id="selPreview" class="quote"></div>
+      <div class="selection-preview-wrap">
+        <button
+          id="copySelectionBtn"
+          class="icon-btn copy-selection"
+          title="Copy selection"
+          aria-label="Copy selection"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+            <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+          </svg>
+        </button>
+        <div id="selPreview" class="quote"></div>
+      </div>
       <textarea id="commentInput" placeholder="Add a comment…"></textarea>
       <div class="pop-foot">
         <span class="pop-hint">esc to cancel</span>

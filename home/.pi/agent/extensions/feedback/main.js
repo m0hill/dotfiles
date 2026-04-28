@@ -9,7 +9,8 @@ const sourceEl = document.getElementById("source"),
 const selPreview = document.getElementById("selPreview"),
   commentInput = document.getElementById("commentInput")
 const annotationsEl = document.getElementById("annotations"),
-  countEl = document.getElementById("count")
+  countEl = document.getElementById("count"),
+  copySelectionBtn = document.getElementById("copySelectionBtn")
 let annotations = [],
   selectedQuote = ""
 
@@ -204,16 +205,25 @@ function hidePopover() {
   commentInput.value = ""
 }
 
+function positionPopover(rect) {
+  popover.style.display = "flex"
+  popover.style.maxHeight = Math.max(260, window.innerHeight - 16) + "px"
+  const popoverRect = popover.getBoundingClientRect()
+  const left = Math.min(Math.max(rect.left, 8), window.innerWidth - popoverRect.width - 8)
+  let top = rect.bottom + 10
+  if (top + popoverRect.height > window.innerHeight - 8) top = rect.top - popoverRect.height - 10
+  if (top < 8) top = 8
+  popover.style.left = left + "px"
+  popover.style.top = top + "px"
+}
+
 document.addEventListener("mouseup", () => {
   const sel = window.getSelection(),
     text = sel?.toString().trim()
   if (!text || !docEl.contains(sel.anchorNode)) return
   selectedQuote = text
   selPreview.textContent = text.length > 360 ? text.slice(0, 360) + "…" : text
-  const r = sel.getRangeAt(0).getBoundingClientRect()
-  popover.style.left = Math.min(Math.max(r.left, 8), window.innerWidth - 348) + "px"
-  popover.style.top = Math.min(r.bottom + 10, window.innerHeight - 240) + "px"
-  popover.style.display = "flex"
+  positionPopover(sel.getRangeAt(0).getBoundingClientRect())
   setTimeout(() => commentInput.focus(), 0)
 })
 document.addEventListener("mousedown", (e) => {
@@ -222,6 +232,13 @@ document.addEventListener("mousedown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") hidePopover()
 })
+
+copySelectionBtn.onclick = async () => {
+  if (!selectedQuote) return
+  await navigator.clipboard.writeText(selectedQuote)
+  copySelectionBtn.classList.add("copied")
+  setTimeout(() => copySelectionBtn.classList.remove("copied"), 900)
+}
 
 document.getElementById("cancelAdd").onclick = hidePopover
 document.getElementById("addBtn").onclick = () => {
