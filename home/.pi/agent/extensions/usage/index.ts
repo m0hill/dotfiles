@@ -1,18 +1,32 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  OAuthCredential,
+} from "@mariozechner/pi-coding-agent"
+import type { Api, Model } from "@mariozechner/pi-ai"
 import { matchesKey, Text } from "@mariozechner/pi-tui"
 
+// Constants
+
 const CODEX_PROVIDER = "openai-codex"
+const CODEX_MODEL_IDS = ["gpt-5.3-codex-spark", "gpt-5.5"] as const
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 const REQUEST_TIMEOUT_MS = 15_000
+
+// Types
 
 type Brand<T, Name extends string> = T & { readonly __brand: Name }
 type OAuthToken = Brand<string, "OAuthToken">
 type ChatGptAccountId = Brand<string, "ChatGptAccountId">
 
-type OAuthCredential = {
-  type?: string
-  access?: string
-  accountId?: string
+type CodexAuth = {
+  token: OAuthToken
+  accountId?: ChatGptAccountId
+}
+
+type UsageFetchRequest = {
+  auth: CodexAuth
+  fetchImpl?: typeof fetch
 }
 
 type RateLimitWindow = {
@@ -54,20 +68,14 @@ type LimitGroup = {
   rateLimit?: RateLimitDetails | null
 }
 
-type CodexAuth = {
-  token: OAuthToken
-  accountId?: ChatGptAccountId
+// Generic helpers
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
-type UsageFetchRequest = {
-  auth: CodexAuth
-  fetchImpl?: typeof fetch
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -81,6 +89,16 @@ function optionalNumber(value: unknown): number | undefined {
 function optionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined
 }
+
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body)
+  } catch (error) {
+    throw new Error(`Codex usage response was invalid JSON: ${errorMessage(error)}`)
+  }
+}
+
+// Auth helpers
 
 function parseOAuthToken(value: string | undefined): OAuthToken {
   if (!value?.trim()) {
@@ -106,80 +124,112 @@ function extractAccountId(token: OAuthToken): ChatGptAccountId | undefined {
   try {
     const [, payload] = token.split(".")
     if (!payload) return undefined
-    const decoded = asRecord(JSON.parse(decodeBase64Url(payload)))
-    const auth = asRecord(decoded?.["https://api.openai.com/auth"])
-    return parseAccountId(auth?.chatgpt_account_id)
+
+    const decoded: unknown = JSON.parse(decodeBase64Url(payload))
+    if (!isRecord(decoded)) return undefined
+
+    const auth = decoded["https://api.openai.com/auth"]
+    if (!isRecord(auth)) return undefined
+
+    return parseAccountId(auth.chatgpt_account_id)
   } catch {
     return undefined
   }
 }
 
+function findCodexModel(ctx: ExtensionCommandContext): Model<Api> | undefined {
+  for (const modelId of CODEX_MODEL_IDS) {
+    const model = ctx.modelRegistry.find(CODEX_PROVIDER, modelId)
+    if (model) return model
+  }
+  return ctx.modelRegistry.getAll().find((candidate) => candidate.provider === CODEX_PROVIDER)
+}
+
+function getStoredCodexOAuth(ctx: ExtensionCommandContext): OAuthCredential | undefined {
+  const credential = ctx.modelRegistry.authStorage.get(CODEX_PROVIDER)
+  return credential?.type === "oauth" ? credential : undefined
+}
+
+async function getCodexAuth(ctx: ExtensionCommandContext): Promise<CodexAuth> {
+  const model = findCodexModel(ctx)
+  if (!model) throw new Error("No openai-codex model is registered in pi.")
+
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model)
+  if (!auth.ok) throw new Error(auth.error)
+  const token = parseOAuthToken(auth.apiKey)
+
+  const stored = getStoredCodexOAuth(ctx)
+  return { token, accountId: parseAccountId(stored?.accountId) ?? extractAccountId(token) }
+}
+
+// Usage payload parsing
+
 function parseRateLimitWindow(value: unknown): RateLimitWindow | null | undefined {
   if (value === null) return null
-  const record = asRecord(value)
-  if (!record) return undefined
+  if (!isRecord(value)) return undefined
   return {
-    used_percent: optionalNumber(record.used_percent),
-    limit_window_seconds: optionalNumber(record.limit_window_seconds),
-    reset_after_seconds: optionalNumber(record.reset_after_seconds),
-    reset_at: optionalNumber(record.reset_at),
+    used_percent: optionalNumber(value.used_percent),
+    limit_window_seconds: optionalNumber(value.limit_window_seconds),
+    reset_after_seconds: optionalNumber(value.reset_after_seconds),
+    reset_at: optionalNumber(value.reset_at),
   }
 }
 
 function parseRateLimitDetails(value: unknown): RateLimitDetails | null | undefined {
   if (value === null) return null
-  const record = asRecord(value)
-  if (!record) return undefined
+  if (!isRecord(value)) return undefined
   return {
-    allowed: optionalBoolean(record.allowed),
-    limit_reached: optionalBoolean(record.limit_reached),
-    primary_window: parseRateLimitWindow(record.primary_window),
-    secondary_window: parseRateLimitWindow(record.secondary_window),
+    allowed: optionalBoolean(value.allowed),
+    limit_reached: optionalBoolean(value.limit_reached),
+    primary_window: parseRateLimitWindow(value.primary_window),
+    secondary_window: parseRateLimitWindow(value.secondary_window),
   }
 }
 
 function parseCreditsDetails(value: unknown): CreditsDetails | null | undefined {
   if (value === null) return null
-  const record = asRecord(value)
-  if (!record) return undefined
+  if (!isRecord(value)) return undefined
   return {
-    has_credits: optionalBoolean(record.has_credits),
-    unlimited: optionalBoolean(record.unlimited),
-    balance: record.balance === null ? null : optionalString(record.balance),
+    has_credits: optionalBoolean(value.has_credits),
+    unlimited: optionalBoolean(value.unlimited),
+    balance: value.balance === null ? null : optionalString(value.balance),
   }
 }
 
 function parseAdditionalRateLimit(value: unknown): AdditionalRateLimit | undefined {
-  const record = asRecord(value)
-  if (!record) return undefined
+  if (!isRecord(value)) return undefined
   return {
-    limit_name: optionalString(record.limit_name),
-    metered_feature: optionalString(record.metered_feature),
-    rate_limit: parseRateLimitDetails(record.rate_limit),
+    limit_name: optionalString(value.limit_name),
+    metered_feature: optionalString(value.metered_feature),
+    rate_limit: parseRateLimitDetails(value.rate_limit),
   }
 }
 
 function parseUsagePayload(value: unknown): UsagePayload {
-  const record = asRecord(value)
-  if (!record) throw new Error("Codex usage response was not a JSON object.")
-  const reachedType = asRecord(record.rate_limit_reached_type)
-  const additional = Array.isArray(record.additional_rate_limits)
-    ? record.additional_rate_limits
+  if (!isRecord(value)) throw new Error("Codex usage response was not a JSON object.")
+
+  const reachedTypeValue = value.rate_limit_reached_type
+  const reachedType = isRecord(reachedTypeValue) ? reachedTypeValue : undefined
+  const additional = Array.isArray(value.additional_rate_limits)
+    ? value.additional_rate_limits
         .map(parseAdditionalRateLimit)
         .filter((item): item is AdditionalRateLimit => Boolean(item))
     : undefined
+
   return {
-    plan_type: optionalString(record.plan_type),
-    rate_limit: parseRateLimitDetails(record.rate_limit),
-    credits: parseCreditsDetails(record.credits),
+    plan_type: optionalString(value.plan_type),
+    rate_limit: parseRateLimitDetails(value.rate_limit),
+    credits: parseCreditsDetails(value.credits),
     additional_rate_limits: additional,
     rate_limit_reached_type: reachedType
       ? { type: optionalString(reachedType.type) }
-      : record.rate_limit_reached_type === null
+      : reachedTypeValue === null
         ? null
         : undefined,
   }
 }
+
+// Usage formatting
 
 function planName(planType?: string): string {
   if (!planType) return "unknown"
@@ -289,23 +339,7 @@ function formatUsage(payload: UsagePayload): string {
   return lines.join("\n")
 }
 
-async function getCodexAuth(ctx: ExtensionCommandContext): Promise<CodexAuth> {
-  const model =
-    ctx.modelRegistry.find(CODEX_PROVIDER, "gpt-5.3-codex-spark") ??
-    ctx.modelRegistry.find(CODEX_PROVIDER, "gpt-5.5") ??
-    ctx.modelRegistry.getAll().find((candidate) => candidate.provider === CODEX_PROVIDER)
-  if (!model) throw new Error("No openai-codex model is registered in pi.")
-
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model)
-  if (!auth.ok) throw new Error(auth.error)
-  const token = parseOAuthToken(auth.apiKey)
-
-  const storage = ctx.modelRegistry.authStorage as {
-    get?: (provider: string) => OAuthCredential | undefined
-  }
-  const stored = storage.get?.(CODEX_PROVIDER)
-  return { token, accountId: parseAccountId(stored?.accountId) ?? extractAccountId(token) }
-}
+// Usage fetching
 
 async function fetchUsage({ auth, fetchImpl = fetch }: UsageFetchRequest): Promise<UsagePayload> {
   const controller = new AbortController()
@@ -329,17 +363,14 @@ async function fetchUsage({ auth, fetchImpl = fetch }: UsageFetchRequest): Promi
       throw new Error(
         `GET ${CODEX_USAGE_URL} failed: ${response.status} ${response.statusText}\n${body}`
       )
-    try {
-      return parseUsagePayload(JSON.parse(body))
-    } catch (error) {
-      throw new Error(
-        `Codex usage response was invalid JSON: ${error instanceof Error ? error.message : String(error)}`
-      )
-    }
+
+    return parseUsagePayload(parseJson(body))
   } finally {
     clearTimeout(timeout)
   }
 }
+
+// UI rendering
 
 async function showUsage(content: string, ctx: ExtensionCommandContext): Promise<void> {
   if (!ctx.hasUI) {
@@ -362,7 +393,15 @@ async function showUsage(content: string, ctx: ExtensionCommandContext): Promise
   })
 }
 
-export default function usage(pi: ExtensionAPI) {
+function reportUsageError(ctx: ExtensionCommandContext, error: unknown): void {
+  const message = `Codex usage fetch failed: ${errorMessage(error)}`
+  if (ctx.hasUI) ctx.ui.notify(message, "error")
+  else console.error(message)
+}
+
+// Extension entrypoint
+
+export default function usage(pi: ExtensionAPI): void {
   pi.registerCommand("usage", {
     description: "Fetch ChatGPT Codex usage limits from the Codex backend",
     handler: async (_args, ctx) => {
@@ -371,9 +410,7 @@ export default function usage(pi: ExtensionAPI) {
         const payload = await fetchUsage({ auth })
         await showUsage(formatUsage(payload), ctx)
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (ctx.hasUI) ctx.ui.notify(`Codex usage fetch failed: ${message}`, "error")
-        else console.error(`Codex usage fetch failed: ${message}`)
+        reportUsageError(ctx, error)
       }
     },
   })
