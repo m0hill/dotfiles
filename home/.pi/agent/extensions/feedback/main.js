@@ -12,7 +12,9 @@ const annotationsEl = document.getElementById("annotations"),
   countEl = document.getElementById("count"),
   copySelectionBtn = document.getElementById("copySelectionBtn")
 let annotations = [],
-  selectedQuote = ""
+  selectedQuote = "",
+  selectedRange = null,
+  annotationHighlight = null
 
 function updateToggles() {
   const lc = document.body.classList.contains("lc"),
@@ -230,7 +232,31 @@ function pencilIcon() {
 function hidePopover() {
   popover.style.display = "none"
   selectedQuote = ""
+  selectedRange = null
   commentInput.value = ""
+}
+
+function highlightSelectedRange() {
+  if (!selectedRange || selectedRange.collapsed) return
+  const range = selectedRange.cloneRange()
+  selectedRange = null
+
+  if (CSS.highlights && window.Highlight) {
+    annotationHighlight ??= new Highlight()
+    annotationHighlight.add(range)
+    CSS.highlights.set("annotation-highlight", annotationHighlight)
+    return
+  }
+
+  const mark = document.createElement("mark")
+  mark.className = "annotation-highlight"
+  try {
+    range.surroundContents(mark)
+  } catch {
+    const fragment = range.extractContents()
+    mark.appendChild(fragment)
+    range.insertNode(mark)
+  }
 }
 
 function positionPopover(rect) {
@@ -250,6 +276,7 @@ document.addEventListener("mouseup", () => {
     text = sel?.toString().trim()
   if (!text || !docEl.contains(sel.anchorNode)) return
   selectedQuote = text
+  selectedRange = sel.getRangeAt(0).cloneRange()
   selPreview.textContent = text.length > 360 ? text.slice(0, 360) + "…" : text
   positionPopover(sel.getRangeAt(0).getBoundingClientRect())
   setTimeout(() => commentInput.focus(), 0)
@@ -273,6 +300,7 @@ document.getElementById("addBtn").onclick = () => {
   const c = commentInput.value.trim()
   if (!selectedQuote && !c) return
   annotations.push({ quote: selectedQuote, comment: c })
+  highlightSelectedRange()
   hidePopover()
   window.getSelection()?.removeAllRanges()
   renderAnnotations()

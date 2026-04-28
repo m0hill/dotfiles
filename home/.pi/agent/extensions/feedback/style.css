@@ -632,10 +632,16 @@ body.rc #sidebar-right #sb-right-inner {
   border-radius: var(--radius-sm);
 }
 
-mark {
-  background: var(--highlight);
-  color: #000;
-  padding: 1px 4px;
+::highlight(annotation-highlight),
+mark,
+.annotation-highlight {
+  background: color-mix(in srgb, var(--highlight) 55%, transparent);
+  color: inherit;
+}
+
+mark,
+.annotation-highlight {
+  padding: 1px 3px;
   border-radius: 3px;
 }
 
