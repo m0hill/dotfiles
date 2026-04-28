@@ -183,11 +183,11 @@ function renderAnnotations() {
   annotationsEl.innerHTML = annotations
     .map(
       (a, i) => `
-    <div class="card">
-      <div class="card-num">#${String(i + 1).padStart(2, "0")}</div>
-      ${a.quote ? `<div class="quote">${esc(a.quote.length > 280 ? a.quote.slice(0, 280) + "…" : a.quote)}</div>` : ""}
-      ${a.comment ? `<div class="comment">${esc(a.comment)}</div>` : ""}
-      <div class="card-foot"><button class="danger" data-i="${i}">Delete</button></div>
+    <div class="card annotation-card">
+      <button data-i="${i}" class="icon-btn close-btn" aria-label="Delete annotation">${crossIcon()}</button>
+      <div class="anno-top"><span class="anno-file">#${String(i + 1).padStart(2, "0")}</span></div>
+      ${a.quote ? `<div class="quote anno-quote">${esc(a.quote.length > 280 ? a.quote.slice(0, 280) + "…" : a.quote)}</div>` : ""}
+      ${a.comment ? `<div class="comment anno-comment">${esc(a.comment)}</div>` : ""}
     </div>`
     )
     .join("")
@@ -197,6 +197,10 @@ function renderAnnotations() {
       renderAnnotations()
     }
   })
+}
+
+function crossIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>`
 }
 
 function hidePopover() {

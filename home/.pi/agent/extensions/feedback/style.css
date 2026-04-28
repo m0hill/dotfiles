@@ -341,10 +341,17 @@ body.rc #sidebar-right #sb-right-inner {
 .rsec {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+}
+
+.rsec:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 .rsec-annotations {
-  border-bottom: none;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -355,8 +362,7 @@ body.rc #sidebar-right #sb-right-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
 
@@ -370,7 +376,7 @@ body.rc #sidebar-right #sb-right-inner {
 }
 
 .rsec-body {
-  padding: 16px;
+  padding: 0;
 }
 
 .rsec-annotations .rsec-body {
@@ -381,13 +387,12 @@ body.rc #sidebar-right #sb-right-inner {
 
 .anno-badge {
   font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg-secondary);
+  font-weight: 700;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
 }
 
 #sb-right-inner {
@@ -396,6 +401,7 @@ body.rc #sidebar-right #sb-right-inner {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  padding: 14px;
 }
 
 /* DOCUMENT */
@@ -639,14 +645,14 @@ textarea {
   background: var(--surface);
   color: var(--fg);
   border: 1px solid var(--border);
-  padding: 12px 14px;
+  padding: 10px 12px;
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.5;
   outline: none;
   border-radius: var(--radius-sm);
   resize: vertical;
-  min-height: 100px;
+  min-height: 92px;
   transition: all 0.15s ease;
 }
 
@@ -654,6 +660,13 @@ textarea:focus {
   border-color: var(--border-strong);
   background: var(--surface);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 15%, transparent);
+}
+
+.rsec:first-child textarea,
+#commentInput {
+  background: #0d0d0d;
+  border-color: #1f1f1f;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
 }
 
 /* ANNOTATION CARDS */
@@ -676,13 +689,39 @@ textarea:focus {
   box-shadow: var(--shadow);
 }
 
-.card-num {
+.annotation-card {
+  position: relative;
+  overflow: hidden;
+  background: #151515;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  padding: 10px 12px;
+}
+
+.annotation-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: none;
+  background: #181818;
+}
+
+.anno-top {
+  display: block;
+  margin-bottom: 4px;
+  min-width: 0;
+  padding-right: 24px;
+}
+
+.anno-file {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-secondary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--fg-muted);
-  margin-bottom: 8px;
-  letter-spacing: 0.02em;
 }
 
 .quote {
@@ -695,8 +734,18 @@ textarea:focus {
   white-space: pre-wrap;
   max-height: 120px;
   overflow: auto;
-  margin-bottom: 10px;
+  margin: 10px 0;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--font-mono);
+}
+
+.anno-quote {
+  max-height: 92px;
+  font-size: 12px;
+  opacity: 0.92;
+  border-left: 0;
+  border-radius: var(--radius-sm);
+  background: #0d0d0d;
 }
 
 .comment {
@@ -704,6 +753,19 @@ textarea:focus {
   color: var(--fg);
   white-space: pre-wrap;
   line-height: 1.55;
+}
+
+.anno-comment {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 8px 10px;
+  margin-top: 8px;
+  white-space: pre-wrap;
 }
 
 .card-foot {
@@ -716,7 +778,7 @@ textarea:focus {
   color: var(--fg-muted);
   font-size: 13px;
   text-align: center;
-  padding: 32px 0;
+  padding: 26px 0;
 }
 
 /* POPOVER */
@@ -784,6 +846,13 @@ textarea:focus {
   stroke-linejoin: round;
 }
 
+.close-btn {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  color: var(--fg-muted);
+}
+
 .copy-selection {
   position: absolute;
   top: 8px;
@@ -792,9 +861,10 @@ textarea:focus {
   color: var(--fg-muted);
 }
 
+.close-btn:hover,
 .copy-selection:hover,
 .icon-btn.copied {
-  color: var(--fg);
+  color: var(--fg-secondary);
 }
 
 #popover textarea {
