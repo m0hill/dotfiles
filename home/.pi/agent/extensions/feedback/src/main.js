@@ -1,7 +1,3 @@
-import DOMPurify from "dompurify"
-import { marked } from "marked"
-import "./style.css"
-
 document.documentElement.dataset.theme = "dark"
 
 const params = new URLSearchParams(location.search),
@@ -40,9 +36,111 @@ updateToggles()
 function esc(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c])
 }
+function inlineMd(text) {
+  return esc(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noreferrer">$1</a>'
+    )
+}
+function renderParagraph(lines) {
+  return lines.length ? `<p>${inlineMd(lines.join("\n")).replace(/\n/g, "<br>")}</p>` : ""
+}
 function renderMd(md) {
-  marked.setOptions({ gfm: true, breaks: false })
-  return DOMPurify.sanitize(marked.parse(md))
+  const out = []
+  let para = []
+  let list = null
+  let quote = []
+  let code = []
+  let inCode = false
+  const flushPara = () => {
+    const html = renderParagraph(para)
+    if (html) out.push(html)
+    para = []
+  }
+  const flushList = () => {
+    if (list)
+      out.push(
+        `<${list.type}>${list.items.map((x) => `<li>${inlineMd(x)}</li>`).join("")}</${list.type}>`
+      )
+    list = null
+  }
+  const flushQuote = () => {
+    if (quote.length) out.push(`<blockquote>${quote.map(inlineMd).join("<br>")}</blockquote>`)
+    quote = []
+  }
+  for (const raw of String(md).split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, "")
+    if (line.startsWith("```")) {
+      if (inCode) {
+        out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`)
+        code = []
+        inCode = false
+      } else {
+        flushPara()
+        flushList()
+        flushQuote()
+        inCode = true
+      }
+      continue
+    }
+    if (inCode) {
+      code.push(raw)
+      continue
+    }
+    if (!line.trim()) {
+      flushPara()
+      flushList()
+      flushQuote()
+      continue
+    }
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line)
+    if (heading) {
+      flushPara()
+      flushList()
+      flushQuote()
+      out.push(`<h${heading[1].length}>${inlineMd(heading[2])}</h${heading[1].length}>`)
+      continue
+    }
+    if (/^---+$/.test(line)) {
+      flushPara()
+      flushList()
+      flushQuote()
+      out.push("<hr>")
+      continue
+    }
+    const quoted = /^>\s?(.*)$/.exec(line)
+    if (quoted) {
+      flushPara()
+      flushList()
+      quote.push(quoted[1])
+      continue
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line)
+    const ordered = /^\d+[.)]\s+(.+)$/.exec(line)
+    if (bullet || ordered) {
+      flushPara()
+      flushQuote()
+      const type = bullet ? "ul" : "ol"
+      if (!list || list.type !== type) {
+        flushList()
+        list = { type, items: [] }
+      }
+      list.items.push((bullet || ordered)[1])
+      continue
+    }
+    flushList()
+    flushQuote()
+    para.push(line)
+  }
+  flushPara()
+  flushList()
+  flushQuote()
+  if (inCode) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`)
+  return out.join("\n")
 }
 function slugify(t, m) {
   const b =

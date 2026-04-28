@@ -148,7 +148,7 @@ function buildFeedback(session: Session, payload: SubmitPayload): string {
 
 function startServer(pi: ExtensionAPI): Promise<number> {
   if (server && serverPort) return Promise.resolve(serverPort)
-  const dist = join(__dirname, "dist")
+  const root = __dirname
   server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1")
@@ -178,8 +178,8 @@ function startServer(pi: ExtensionAPI): Promise<number> {
         sendJson(res, { ok: true })
         return
       }
-      const file = url.pathname === "/" ? join(dist, "index.html") : join(dist, url.pathname)
-      if (!file.startsWith(dist) || !existsSync(file)) {
+      const file = url.pathname === "/" ? join(root, "index.html") : join(root, url.pathname)
+      if (!file.startsWith(root) || !existsSync(file)) {
         sendJson(res, { error: "Not found" }, 404)
         return
       }
@@ -216,13 +216,6 @@ async function openSession(
   ctx: ExtensionCommandContext,
   session: Session
 ): Promise<void> {
-  if (!existsSync(join(__dirname, "dist", "index.html"))) {
-    ctx.ui.notify(
-      "feedback UI is not built. Run PI_EXTENSION=feedback pnpm build:ui from ~/.pi.",
-      "error"
-    )
-    return
-  }
   const port = await startServer(pi)
   openBrowser(`http://127.0.0.1:${port}/?id=${encodeURIComponent(session.id)}`)
   ctx.ui.notify(`Feedback opened: ${session.title}`, "info")
