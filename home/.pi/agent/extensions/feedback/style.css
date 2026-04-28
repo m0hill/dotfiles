@@ -640,7 +640,7 @@ mark,
 }
 
 ::highlight(annotation-active-highlight) {
-  background: color-mix(in srgb, var(--link) 50%, transparent);
+  background: color-mix(in srgb, crimson 45%, transparent);
   color: inherit;
 }
 
@@ -718,7 +718,7 @@ textarea:focus {
 }
 
 .annotation-card.active {
-  border-color: color-mix(in srgb, var(--link) 55%, var(--border));
+  border-color: color-mix(in srgb, crimson 55%, var(--border));
 }
 
 .anno-top {
