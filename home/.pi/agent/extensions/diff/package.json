@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild main.ts --bundle --format=esm --target=es2022 --outfile=dist/main.js"
+    "build": "esbuild main.ts --bundle --format=esm --target=es2022 --minify --outfile=dist/main.js"
   },
   "dependencies": {
     "@pierre/diffs": "latest"
