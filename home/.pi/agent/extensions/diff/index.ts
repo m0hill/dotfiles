@@ -10,12 +10,7 @@ import {
 } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { join } from "node:path"
-import {
-  DynamicBorder,
-  type ExtensionAPI,
-  type ExtensionCommandContext,
-} from "@mariozechner/pi-coding-agent"
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui"
+import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
 import { Type, type Static, type TUnsafe } from "typebox"
 import { Compile } from "typebox/compile"
 import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pierre/diffs"
@@ -25,6 +20,7 @@ import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pi
 const REQUEST_BODY_LIMIT_BYTES = 2_000_000
 const GIT_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 const MAX_BRANCH_OPTIONS = 80
+const TOP_BASE_BRANCH_OPTIONS = 10
 
 const ANCHOR_KINDS = ["line", "range", "file", "global"] as const
 const REVIEW_CATEGORIES = [
@@ -1353,66 +1349,19 @@ async function chooseBase(ctx: ExtensionCommandContext): Promise<string | undefi
 
   if (!ctx.hasUI) return branches[0]
 
-  const current = currentBranch(ctx)
-  const items: SelectItem[] = branches.map((branch, index) => ({
-    value: branch,
-    label: branch,
-    description:
-      branch === "origin/main" || branch === "main"
-        ? "recommended: PR diff from main's merge-base"
-        : current && (branch === `origin/${current}` || branch === current)
-          ? "current branch/upstream"
-          : index < 4
-            ? "common base"
-            : undefined,
-  }))
+  const topBranches = branches.slice(0, TOP_BASE_BRANCH_OPTIONS)
+  if (branches.length <= TOP_BASE_BRANCH_OPTIONS) {
+    return await ctx.ui.select("Choose base branch for PR-style review", topBranches)
+  }
 
-  const selected = await ctx.ui.custom<string | null>(
-    (tui, theme, _keybindings, done) => {
-      const container = new Container()
-      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)))
-      container.addChild(
-        new Text(theme.fg("accent", theme.bold("Choose base branch for PR-style review")), 1, 0)
-      )
-      container.addChild(
-        new Text(
-          theme.fg(
-            "dim",
-            "Top choices are prioritized. Type to search; ↑↓ navigate; enter select; esc cancel."
-          ),
-          1,
-          0
-        )
-      )
+  const showMore = `Show all ${branches.length} branches…`
+  const selected = await ctx.ui.select("Choose base branch for PR-style review", [
+    ...topBranches,
+    showMore,
+  ])
+  if (!selected || selected !== showMore) return selected
 
-      const selectList = new SelectList(items, Math.min(items.length, 12), {
-        selectedPrefix: (text) => theme.fg("accent", text),
-        selectedText: (text) => theme.fg("accent", text),
-        description: (text) => theme.fg("muted", text),
-        scrollInfo: (text) => theme.fg("dim", text),
-        noMatch: (text) => theme.fg("warning", text),
-      })
-      selectList.onSelect = (item) => done(item.value)
-      selectList.onCancel = () => done(null)
-      container.addChild(selectList)
-      container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)))
-
-      return {
-        render: (width: number) => container.render(width),
-        invalidate: () => container.invalidate(),
-        handleInput: (data: string) => {
-          selectList.handleInput?.(data)
-          tui.requestRender()
-        },
-      }
-    },
-    {
-      overlay: true,
-      overlayOptions: { width: "70%", minWidth: 60, maxHeight: "80%" },
-    }
-  )
-
-  return selected ?? undefined
+  return await ctx.ui.select("Choose base branch for PR-style review (all branches)", branches)
 }
 
 // Command handlers
