@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.70.5",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.72.1",
+  "defaultThinkingLevel": "low",
   "hideThinkingBlock": false,
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5"
+  "defaultProvider": "opencode-go",
+  "defaultModel": "kimi-k2.6"
 }
