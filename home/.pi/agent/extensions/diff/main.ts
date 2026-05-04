@@ -424,117 +424,26 @@ function escapeHtml(value: string): string {
   )
 }
 
-function inlineMarkdown(text: string): string {
-  return escapeHtml(text)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(
-      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noreferrer">$1</a>'
-    )
-}
-
-function markdownParagraph(lines: string[]): string {
-  return lines.length ? `<p>${inlineMarkdown(lines.join("\n")).replace(/\n/g, "<br>")}</p>` : ""
+declare global {
+  interface Window {
+    marked?: {
+      parse(markdown: string, options?: Record<string, unknown>): string
+      parseInline(markdown: string, options?: Record<string, unknown>): string
+      setOptions(options: Record<string, unknown>): void
+    }
+  }
 }
 
 function renderMarkdown(markdown: string): string {
-  const out: string[] = []
-  let paragraph: string[] = []
-  let list: { type: "ul" | "ol"; items: string[] } | null = null
-  let quote: string[] = []
-  let code: string[] = []
-  let inCode = false
+  if (!window.marked) return `<pre>${escapeHtml(markdown)}</pre>`
+  window.marked.setOptions({ gfm: true, breaks: false })
+  return window.marked.parse(String(markdown))
+}
 
-  const flushParagraph = () => {
-    const html = markdownParagraph(paragraph)
-    if (html) out.push(html)
-    paragraph = []
-  }
-  const flushList = () => {
-    if (list) {
-      out.push(
-        `<${list.type}>${list.items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${list.type}>`
-      )
-    }
-    list = null
-  }
-  const flushQuote = () => {
-    if (quote.length) out.push(`<blockquote>${quote.map(inlineMarkdown).join("<br>")}</blockquote>`)
-    quote = []
-  }
-
-  for (const raw of String(markdown).split(/\r?\n/)) {
-    const line = raw.replace(/\s+$/, "")
-    if (line.startsWith("```")) {
-      if (inCode) {
-        out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`)
-        code = []
-        inCode = false
-      } else {
-        flushParagraph()
-        flushList()
-        flushQuote()
-        inCode = true
-      }
-      continue
-    }
-    if (inCode) {
-      code.push(raw)
-      continue
-    }
-    if (!line.trim()) {
-      flushParagraph()
-      flushList()
-      flushQuote()
-      continue
-    }
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line)
-    if (heading) {
-      flushParagraph()
-      flushList()
-      flushQuote()
-      out.push(`<h${heading[1].length}>${inlineMarkdown(heading[2])}</h${heading[1].length}>`)
-      continue
-    }
-    if (/^---+$/.test(line)) {
-      flushParagraph()
-      flushList()
-      flushQuote()
-      out.push("<hr>")
-      continue
-    }
-    const quoted = /^>\s?(.*)$/.exec(line)
-    if (quoted) {
-      flushParagraph()
-      flushList()
-      quote.push(quoted[1])
-      continue
-    }
-    const bullet = /^[-*]\s+(.+)$/.exec(line)
-    const ordered = /^\d+[.)]\s+(.+)$/.exec(line)
-    if (bullet || ordered) {
-      flushParagraph()
-      flushQuote()
-      const type = bullet ? "ul" : "ol"
-      if (!list || list.type !== type) {
-        flushList()
-        list = { type, items: [] }
-      }
-      list.items.push((bullet || ordered)?.[1] ?? "")
-      continue
-    }
-    flushList()
-    flushQuote()
-    paragraph.push(line)
-  }
-
-  flushParagraph()
-  flushList()
-  flushQuote()
-  if (inCode) out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`)
-  return out.join("\n")
+function renderInlineMarkdown(markdown: string): string {
+  if (!window.marked) return escapeHtml(markdown)
+  window.marked.setOptions({ gfm: true, breaks: false })
+  return window.marked.parseInline(String(markdown))
 }
 
 function isLineAnnotation(annotation: Annotation): annotation is LineAnnotation {
@@ -1247,7 +1156,7 @@ function statusText(status: AiReviewStatus, count: number): string {
 
 function summaryList(items: string[]): string {
   if (!items.length) return ""
-  return `<ol>${items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ol>`
+  return `<ol>${items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ol>`
 }
 
 function renderSummaryTop(): void {

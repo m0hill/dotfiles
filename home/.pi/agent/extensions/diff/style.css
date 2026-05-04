@@ -915,6 +915,34 @@ select:focus {
   font-size: inherit;
   font-weight: 400;
 }
+.md table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 13px;
+  white-space: normal;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  color: var(--fg);
+  background: var(--surface-hover);
+  font-weight: 700;
+}
+.md tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.025);
+}
+.md {
+  white-space: normal;
+}
 .summary-running {
   margin-top: 12px;
 }
@@ -1054,6 +1082,13 @@ select:focus {
 }
 .ai-info {
   border-left-color: var(--fg-muted);
+}
+.file-summary-card.md,
+.inline-ann-body.md,
+.ai-body.md,
+.ai-rec.md,
+.ai-summary.md {
+  white-space: normal;
 }
 
 .loading {
