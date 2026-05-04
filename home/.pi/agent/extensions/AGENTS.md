@@ -28,6 +28,14 @@ Important principles here:
 - Avoid unnecessary type assertions.
 - Prefer small, clear helpers over clever abstractions.
 
+## Browser UI style
+
+When creating or changing a browser-based extension UI, read and follow:
+
+`/Users/mohil/dotfiles/home/.pi/agent/extensions/UI_STYLE.md`
+
+This style guide captures the design language used by the `feedback`, `diff`, and `phone` extensions: dark terminal-native surfaces, quiet graphite cards, mono labels, restrained motion, and polished markdown/code rendering.
+
 ## Extension style
 
 Keep each extension easy to scan. For single-file extensions, organize `index.ts` in this order when applicable:
