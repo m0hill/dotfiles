@@ -2,8 +2,6 @@
 
 [ -f "$HOME/.vite-plus/env" ] && . "$HOME/.vite-plus/env"
 
-export OPENSRC_HOME="$HOME/.pi/opensrc"
-
 path=(
   "$HOME/.local/bin"
   "/opt/homebrew/opt/postgresql@15/bin"

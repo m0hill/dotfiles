@@ -1,0 +1,4 @@
+# opensrc cache: source snapshots are fetched on demand and should not be committed.
+*
+!.gitignore
+!README.md
