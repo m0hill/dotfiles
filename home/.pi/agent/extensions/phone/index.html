@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi Phone</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/speed-highlight/core/dist/themes/github-dark.css"
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <header id="topbar">
+      <div id="topbar-title">
+        <span class="prompt">π</span>
+        <div>
+          <div id="title">phone handoff</div>
+          <div id="status">Connecting…</div>
+        </div>
+      </div>
+      <div id="topbar-actions">
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <div id="shell">
+      <main id="messages" aria-live="polite"></main>
+    </div>
+
+    <button id="jump-latest" type="button" hidden>New messages ↓</button>
+
+    <form id="composer">
+      <textarea id="prompt" rows="1" placeholder="Message Pi…"></textarea>
+      <canvas id="waveform" aria-hidden="true"></canvas>
+      <button id="mic" type="button" aria-label="Record voice" title="Record voice">
+        <svg class="mic-icon mic-icon-record" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 14.5a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 0 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z" />
+          <path d="M5.75 10.75v.35a6.25 6.25 0 0 0 12.5 0v-.35" />
+          <path d="M12 17.35v3" />
+          <path d="M8.75 20.35h6.5" />
+        </svg>
+        <svg class="mic-icon mic-icon-stop" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="8" y="8" width="8" height="8" rx="1.5" />
+        </svg>
+      </button>
+      <button id="send" class="primary" type="submit">Send</button>
+    </form>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
