@@ -1,7 +1,0 @@
-{
-  "lastChangelogVersion": "0.72.1",
-  "defaultThinkingLevel": "low",
-  "hideThinkingBlock": false,
-  "defaultProvider": "opencode-go",
-  "defaultModel": "kimi-k2.6"
-}
