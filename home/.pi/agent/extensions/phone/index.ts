@@ -207,7 +207,7 @@ function toolSummary(toolName: string, args: unknown): string {
 }
 
 function toolText(status: ToolActivityStatus, toolName: string, args: unknown): string {
-  const icon = status === "running" ? "🔧" : status === "success" ? "✓" : "✗"
+  const icon = status === "running" ? "⚙︎" : status === "success" ? "✓" : "✗"
   return `${icon} ${toolName} ${toolSummary(toolName, args)}`
 }
 
@@ -425,7 +425,7 @@ export default function phone(pi: ExtensionAPI): void {
     const icon = status === "success" ? "✓" : "✗"
     feedItems = feedItems.map((item) =>
       item.id === event.toolCallId && item.role === "tool"
-        ? { ...item, status, text: item.text.replace(/^🔧/, icon) }
+        ? { ...item, status, text: item.text.replace(/^⚙︎/, icon) }
         : item
     )
     broadcast("snapshot", snapshot())
