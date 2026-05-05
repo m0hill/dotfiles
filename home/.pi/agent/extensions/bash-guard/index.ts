@@ -57,6 +57,11 @@ const SENSITIVE_RULES: SensitiveRule[] = [
     pattern: commandPattern("aws"),
   },
   {
+    id: "assume",
+    reason: "AWS assume wrapper command; may run commands with assumed cloud credentials",
+    pattern: commandPattern("assume"),
+  },
+  {
     id: "psql",
     reason: "Postgres command; may access or mutate database data",
     pattern: commandPattern("psql"),
