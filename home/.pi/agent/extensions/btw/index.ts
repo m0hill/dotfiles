@@ -132,7 +132,6 @@ export default function (pi: ExtensionAPI) {
           label: "BTW side question",
           prompt: buildPrompt(question, paths),
           systemPrompt: BTW_SYSTEM_PROMPT,
-          thinkingLevel: pi.getThinkingLevel(),
           tools: ["read", "bash"],
         })
         const answer = result.text

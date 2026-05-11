@@ -50,6 +50,8 @@ type Store = {
   ui?: Pick<ExtensionContext["ui"], "setWidget" | "setStatus">
   frame: number
   timer?: ReturnType<typeof setInterval>
+  runtimeRegistered: boolean
+  getThinkingLevel?: () => ThinkingLevel | undefined
 }
 
 export type TrackedSubagentOptions = {
@@ -84,6 +86,7 @@ function store(): Store {
   const created: Store = {
     runs: new Map(),
     frame: 0,
+    runtimeRegistered: false,
   }
   globalStore[STORE_KEY] = created
   return created
@@ -322,6 +325,7 @@ export async function runTrackedAgent(
 
   const current = store()
   if (options.ctx.hasUI) current.ui = options.ctx.ui
+  const thinkingLevel = options.thinkingLevel ?? current.getThinkingLevel?.()
 
   const record: TrackedRunRecord = {
     id: runId(),
@@ -360,7 +364,7 @@ export async function runTrackedAgent(
       sessionManager: SessionManager.inMemory(options.ctx.cwd),
       model: options.ctx.model,
       modelRegistry: options.ctx.modelRegistry as never,
-      thinkingLevel: options.thinkingLevel,
+      thinkingLevel,
       tools: [...(options.tools ?? []), ...(options.customTools ?? []).map((tool) => tool.name)],
       customTools: options.customTools,
       resourceLoader: createSystemPromptResourceLoader(options.systemPrompt),
@@ -469,6 +473,11 @@ function clearTerminalRuns(): void {
 }
 
 export function registerSubagentRuntime(pi: ExtensionAPI): void {
+  const current = store()
+  current.getThinkingLevel = () => pi.getThinkingLevel()
+  if (current.runtimeRegistered) return
+  current.runtimeRegistered = true
+
   pi.registerCommand("subagents", {
     description: "Show or clear tracked helper subagents.",
     handler: async (args, ctx) => {
@@ -500,5 +509,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI): void {
     if (current.timer) clearInterval(current.timer)
     current.timer = undefined
     current.ui = undefined
+    current.runtimeRegistered = false
   })
 }

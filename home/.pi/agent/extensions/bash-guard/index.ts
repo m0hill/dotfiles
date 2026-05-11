@@ -1,13 +1,10 @@
-import {
-  createAgentSession,
-  createExtensionRuntime,
-  SessionManager,
-  type ExtensionAPI,
-  type ExtensionContext,
-  type ResourceLoader,
-  type SessionEntry,
-  type SessionMessageEntry,
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionEntry,
+  SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent"
+import { registerSubagentRuntime, runTrackedAgent } from "../shared/subagent-runner"
 
 // Constants
 
@@ -180,34 +177,6 @@ function buildExplanationPrompt(
 
 // Subagent explanation
 
-function createExplanationResourceLoader(): ResourceLoader {
-  const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }
-
-  return {
-    getExtensions: () => extensionsResult,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => EXPLAIN_SYSTEM_PROMPT,
-    getAppendSystemPrompt: () => [],
-    extendResources: () => {},
-    reload: async () => {},
-  }
-}
-
-function lastAssistantText(session: {
-  state: { messages: Array<{ role?: string; content?: unknown }> }
-}): string {
-  for (let i = session.state.messages.length - 1; i >= 0; i--) {
-    const message = session.state.messages[i]
-    if (message.role !== "assistant") continue
-    const text = textFromContent(message.content).trim()
-    if (text) return text
-  }
-  return "I could not generate an explanation for this command."
-}
-
 async function explainCommand(
   command: string,
   matches: SensitiveMatch[],
@@ -220,41 +189,31 @@ async function explainCommand(
   const onAbort = () => controller.abort()
   ctx.signal?.addEventListener("abort", onAbort, { once: true })
 
-  let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined
   try {
-    const created = await createAgentSession({
-      cwd: ctx.cwd,
-      sessionManager: SessionManager.inMemory(ctx.cwd),
-      model: ctx.model,
-      modelRegistry: ctx.modelRegistry as never,
+    const result = await runTrackedAgent({
+      ctx,
+      label: "Bash guard explanation",
+      prompt: buildExplanationPrompt(command, matches, ctx),
+      systemPrompt: EXPLAIN_SYSTEM_PROMPT,
       thinkingLevel: "low",
       tools: [],
-      resourceLoader: createExplanationResourceLoader(),
+      signal: controller.signal,
     })
-    session = created.session
-
-    await session.prompt(buildExplanationPrompt(command, matches, ctx), { source: "extension" })
-    return lastAssistantText(session)
+    return result.text || "I could not generate an explanation for this command."
   } catch (error) {
     if (controller.signal.aborted) return "Explanation request was cancelled or timed out."
     return `I could not generate an explanation: ${error instanceof Error ? error.message : String(error)}`
   } finally {
     clearTimeout(timeout)
     ctx.signal?.removeEventListener("abort", onAbort)
-    if (session) {
-      try {
-        await session.abort()
-      } catch {
-        // Ignore cleanup errors.
-      }
-      session.dispose()
-    }
   }
 }
 
 // Extension entrypoint
 
 export default function bashGuardExtension(pi: ExtensionAPI): void {
+  registerSubagentRuntime(pi)
+
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") return
 
