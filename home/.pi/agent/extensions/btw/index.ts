@@ -1,11 +1,5 @@
-import {
-  createAgentSession,
-  createExtensionRuntime,
-  SessionManager,
-  type ExtensionAPI,
-  type ExtensionCommandContext,
-  type ResourceLoader,
-} from "@mariozechner/pi-coding-agent"
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
+import { registerSubagentRuntime, runTrackedAgent } from "../shared/subagent-runner"
 const BTW_MESSAGE_TYPE = "btw-note"
 
 const BTW_SYSTEM_PROMPT = [
@@ -23,22 +17,6 @@ type BtwDetails = {
   answer: string
   paths: string[]
   timestamp: number
-}
-
-function createBtwResourceLoader(): ResourceLoader {
-  const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }
-
-  return {
-    getExtensions: () => extensionsResult,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => BTW_SYSTEM_PROMPT,
-    getAppendSystemPrompt: () => [],
-    extendResources: () => {},
-    reload: async () => {},
-  }
 }
 
 function textFromContent(content: unknown): string {
@@ -110,19 +88,6 @@ function extractUniquePaths(ctx: ExtensionCommandContext): string[] {
   return [...paths].sort().slice(0, 200)
 }
 
-function getLastAssistantText(session: {
-  state: { messages: Array<{ role?: string; content?: unknown }> }
-}): string {
-  for (let i = session.state.messages.length - 1; i >= 0; i--) {
-    const message = session.state.messages[i]
-    if (message.role === "assistant") {
-      const text = textFromContent(message.content).trim()
-      return text || "(No text response)"
-    }
-  }
-  return "(No response)"
-}
-
 function buildPrompt(question: string, paths: string[]): string {
   const pathSection = paths.length > 0 ? paths.map((path) => `- ${path}`).join("\n") : "(none)"
 
@@ -140,6 +105,8 @@ function buildPrompt(question: string, paths: string[]): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  registerSubagentRuntime(pi)
+
   pi.registerCommand("btw", {
     description:
       "Ask an isolated side question. Previous chat is not sent; only unique file paths are provided as hints.",
@@ -159,21 +126,16 @@ export default function (pi: ExtensionAPI) {
       const paths = extractUniquePaths(ctx)
       ctx.ui.notify("Running isolated /btw side question...", "info")
 
-      let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined
       try {
-        const created = await createAgentSession({
-          cwd: ctx.cwd,
-          sessionManager: SessionManager.inMemory(ctx.cwd),
-          model: ctx.model,
-          modelRegistry: ctx.modelRegistry as never,
+        const result = await runTrackedAgent({
+          ctx,
+          label: "BTW side question",
+          prompt: buildPrompt(question, paths),
+          systemPrompt: BTW_SYSTEM_PROMPT,
           thinkingLevel: pi.getThinkingLevel(),
           tools: ["read", "bash"],
-          resourceLoader: createBtwResourceLoader(),
         })
-        session = created.session
-
-        await session.prompt(buildPrompt(question, paths), { source: "extension" })
-        const answer = getLastAssistantText(session)
+        const answer = result.text
         const content = `Q: ${question}\n\nA: ${answer}`
         const details: BtwDetails = { question, answer, paths, timestamp: Date.now() }
 
@@ -185,15 +147,6 @@ export default function (pi: ExtensionAPI) {
         })
       } catch (error) {
         ctx.ui.notify(error instanceof Error ? error.message : String(error), "error")
-      } finally {
-        if (session) {
-          try {
-            await session.abort()
-          } catch {
-            // Ignore cleanup errors.
-          }
-          session.dispose()
-        }
       }
     },
   })
