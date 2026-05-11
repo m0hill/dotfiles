@@ -1,11 +1,11 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core"
-import type { Usage } from "@mariozechner/pi-ai"
 import {
   createAgentSession,
+  createBashToolDefinition,
   createExtensionRuntime,
+  createLocalBashOperations,
   SessionManager,
   type AgentSessionEvent,
-  type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
   type ResourceLoader,
@@ -19,6 +19,34 @@ const WIDGET_KEY = "subagents"
 const DONE_LINGER_MS = 45_000
 const RUN_RETENTION_MS = 10 * 60_000
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+const READ_ONLY_DENIED_TOOLS = new Set(["edit", "write"])
+const READ_ONLY_BASH_DENIED_CUSTOM_TOOLS = new Set(["bash", "edit", "write"])
+const READ_ONLY_BASH_FORBIDDEN_SHELL_SYNTAX = /[\n;&|<>`]|\$\(|\$\{/u
+const READ_ONLY_BASH_ALLOWED_COMMANDS = new Set([
+  "cat",
+  "fd",
+  "find",
+  "git",
+  "grep",
+  "head",
+  "ls",
+  "pwd",
+  "rg",
+  "sed",
+  "tail",
+  "wc",
+])
+const READ_ONLY_GIT_SUBCOMMANDS = new Set([
+  "blame",
+  "branch",
+  "diff",
+  "grep",
+  "log",
+  "ls-files",
+  "rev-parse",
+  "show",
+  "status",
+])
 
 // Types
 
@@ -27,7 +55,9 @@ type ThinkingLevel = NonNullable<AgentSessionOptions["thinkingLevel"]>
 
 type RunStatus = "running" | "completed" | "error" | "cancelled"
 
+type AssistantMessage = Extract<AgentMessage, { role: "assistant" }>
 type MessageWithContent = Extract<AgentMessage, { content: unknown }>
+type Usage = AssistantMessage["usage"]
 
 type TrackedRunRecord = {
   id: string
@@ -50,8 +80,6 @@ type Store = {
   ui?: Pick<ExtensionContext["ui"], "setWidget" | "setStatus">
   frame: number
   timer?: ReturnType<typeof setInterval>
-  runtimeRegistered: boolean
-  getThinkingLevel?: () => ThinkingLevel | undefined
 }
 
 export type TrackedSubagentOptions = {
@@ -62,6 +90,7 @@ export type TrackedSubagentOptions = {
   tools?: string[]
   customTools?: ToolDefinition[]
   thinkingLevel?: ThinkingLevel
+  readOnly?: boolean
   timeoutMs?: number
   signal?: AbortSignal
 }
@@ -86,7 +115,6 @@ function store(): Store {
   const created: Store = {
     runs: new Map(),
     frame: 0,
-    runtimeRegistered: false,
   }
   globalStore[STORE_KEY] = created
   return created
@@ -298,6 +326,83 @@ function runId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
 
+function validateReadOnlyTools(tools: string[], customTools: ToolDefinition[]): void {
+  const denied = [
+    ...tools.filter((tool) => READ_ONLY_DENIED_TOOLS.has(tool)),
+    ...customTools
+      .map((tool) => tool.name)
+      .filter((tool) => READ_ONLY_BASH_DENIED_CUSTOM_TOOLS.has(tool)),
+  ]
+  if (denied.length > 0) {
+    throw new Error(
+      `Read-only subagent cannot use these tools: ${[...new Set(denied)].sort().join(", ")}. ` +
+        "Use read, grep, find, ls, policy-wrapped bash, or purpose-built non-mutating custom tools instead."
+    )
+  }
+}
+
+export function readOnlyBashBlockReason(command: string): string | undefined {
+  const trimmed = command.trim()
+  if (!trimmed) return "Empty bash command."
+  if (READ_ONLY_BASH_FORBIDDEN_SHELL_SYNTAX.test(trimmed)) {
+    return "Read-only bash allows one simple command only; shell control operators, pipes, redirects, and command substitution are blocked."
+  }
+
+  const match = trimmed.match(/^(?:command\s+)?([A-Za-z0-9_.+-]+)(?:\s+([\s\S]*))?$/u)
+  if (!match) return "Could not parse command as a simple read-only command."
+
+  const executable = match[1] ?? ""
+  const args = match[2] ?? ""
+  if (!READ_ONLY_BASH_ALLOWED_COMMANDS.has(executable)) {
+    return `Command '${executable}' is not in the read-only bash allowlist.`
+  }
+
+  if (/\b(--output|-o)\b/u.test(args))
+    return "Output-writing options are blocked in read-only bash."
+  if (executable === "find" && /(?:^|\s)-(?:delete|exec|execdir|ok|okdir)(?:\s|$)/u.test(args)) {
+    return "Mutating find actions are blocked in read-only bash."
+  }
+  if (executable === "fd" && /(?:^|\s)(?:-x|--exec|-X)(?:\s|$)/u.test(args)) {
+    return "fd exec actions are blocked in read-only bash."
+  }
+  if (executable === "sed" && /(?:^|\s)-[^\s]*i[^\s]*(?:\s|$)/u.test(args)) {
+    return "sed in-place editing is blocked in read-only bash."
+  }
+  if (executable === "git") {
+    const subcommand = args.trim().split(/\s+/u)[0] ?? ""
+    if (!READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) {
+      return `git ${subcommand || "(no subcommand)"} is not in the read-only git allowlist.`
+    }
+  }
+
+  return undefined
+}
+
+function createReadOnlyBashTool(cwd: string): ToolDefinition {
+  const local = createLocalBashOperations()
+  return createBashToolDefinition(cwd, {
+    operations: {
+      exec(command, cwd, options) {
+        const reason = readOnlyBashBlockReason(command)
+        if (reason) throw new Error(`Read-only bash blocked command: ${reason}`)
+        return local.exec(command, cwd, options)
+      },
+    },
+  }) as ToolDefinition
+}
+
+function appendReadOnlyBoundary(systemPrompt: string, hasReadOnlyBash: boolean): string {
+  const bashBoundary = hasReadOnlyBash
+    ? "Bash is available only through a strict read-only allowlist for simple inspection commands such as git status/diff/log/show, rg, grep, find, ls, cat, head, tail, wc, and pwd. If bash blocks a command, use read/grep/find/ls instead or report the limitation."
+    : "Shell execution is unavailable in this subagent."
+
+  return [
+    systemPrompt,
+    "",
+    `Read-only runtime boundary: mutating tools are unavailable. ${bashBoundary}`,
+  ].join("\n")
+}
+
 // Resource helpers
 
 export function createSystemPromptResourceLoader(systemPrompt: string): ResourceLoader {
@@ -325,7 +430,15 @@ export async function runTrackedAgent(
 
   const current = store()
   if (options.ctx.hasUI) current.ui = options.ctx.ui
-  const thinkingLevel = options.thinkingLevel ?? current.getThinkingLevel?.()
+  const thinkingLevel = options.thinkingLevel
+  const requestedTools = options.tools ?? []
+  const customTools = options.customTools ?? []
+  const hasReadOnlyBash = options.readOnly === true && requestedTools.includes("bash")
+  if (options.readOnly) validateReadOnlyTools(requestedTools, customTools)
+  const tools = hasReadOnlyBash ? requestedTools.filter((tool) => tool !== "bash") : requestedTools
+  const effectiveCustomTools = hasReadOnlyBash
+    ? [...customTools, createReadOnlyBashTool(options.ctx.cwd)]
+    : customTools
 
   const record: TrackedRunRecord = {
     id: runId(),
@@ -333,7 +446,7 @@ export async function runTrackedAgent(
     status: "running",
     startedAt: Date.now(),
     cwd: options.ctx.cwd,
-    tools: options.tools ?? [],
+    tools: requestedTools,
     toolCount: 0,
     turnCount: 0,
     recentOutput: [],
@@ -365,9 +478,13 @@ export async function runTrackedAgent(
       model: options.ctx.model,
       modelRegistry: options.ctx.modelRegistry as never,
       thinkingLevel,
-      tools: [...(options.tools ?? []), ...(options.customTools ?? []).map((tool) => tool.name)],
-      customTools: options.customTools,
-      resourceLoader: createSystemPromptResourceLoader(options.systemPrompt),
+      tools: [...tools, ...effectiveCustomTools.map((tool) => tool.name)],
+      customTools: effectiveCustomTools,
+      resourceLoader: createSystemPromptResourceLoader(
+        options.readOnly
+          ? appendReadOnlyBoundary(options.systemPrompt, hasReadOnlyBash)
+          : options.systemPrompt
+      ),
     })
     session = created.session
     if (controller.signal.aborted) throw new Error("Cancelled.")
@@ -436,79 +553,4 @@ export async function runTrackedAgent(
     }
     setTimeout(updateWidget, DONE_LINGER_MS + 250).unref?.()
   }
-}
-
-// Extension registration
-
-function renderStatusForCommand(): string {
-  pruneRuns()
-  const runs = [...store().runs.values()].sort((left, right) => right.startedAt - left.startedAt)
-  if (runs.length === 0) return "No tracked subagents yet."
-
-  return runs
-    .slice(0, 20)
-    .map((record) => {
-      const elapsedMs = (record.completedAt ?? Date.now()) - record.startedAt
-      const tokens = formatTokens(record.usage)
-      const parts = [
-        `id: ${record.id}`,
-        `status: ${record.status}`,
-        `${record.toolCount} tools`,
-        `${record.turnCount} turns`,
-        tokens,
-        formatDuration(elapsedMs),
-        record.error ? `error: ${record.error}` : undefined,
-      ].filter((part): part is string => Boolean(part))
-      return `- ${record.label} — ${parts.join(" | ")}`
-    })
-    .join("\n")
-}
-
-function clearTerminalRuns(): void {
-  const current = store()
-  for (const [id, record] of current.runs) {
-    if (isTerminal(record.status)) current.runs.delete(id)
-  }
-  updateWidget()
-}
-
-export function registerSubagentRuntime(pi: ExtensionAPI): void {
-  const current = store()
-  current.getThinkingLevel = () => pi.getThinkingLevel()
-  if (current.runtimeRegistered) return
-  current.runtimeRegistered = true
-
-  pi.registerCommand("subagents", {
-    description: "Show or clear tracked helper subagents.",
-    handler: async (args, ctx) => {
-      if (ctx.hasUI) store().ui = ctx.ui
-      if (args.trim() === "clear") {
-        clearTerminalRuns()
-        ctx.ui.notify("Cleared completed subagent runs.", "success")
-        return
-      }
-      pi.sendMessage({
-        customType: "subagents-status",
-        display: true,
-        content: renderStatusForCommand(),
-        details: { timestamp: Date.now() },
-      })
-    },
-  })
-
-  pi.on("session_shutdown", () => {
-    const current = store()
-    for (const record of current.runs.values()) {
-      if (record.status !== "running") continue
-      record.status = "cancelled"
-      record.completedAt = Date.now()
-      record.error = "Session shut down."
-    }
-    current.ui?.setWidget(WIDGET_KEY, undefined)
-    current.ui?.setStatus(WIDGET_KEY, undefined)
-    if (current.timer) clearInterval(current.timer)
-    current.timer = undefined
-    current.ui = undefined
-    current.runtimeRegistered = false
-  })
 }

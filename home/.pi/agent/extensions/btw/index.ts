@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
-import { registerSubagentRuntime, runTrackedAgent } from "../shared/subagent-runner"
+import { runTrackedAgent } from "../shared/subagent"
 const BTW_MESSAGE_TYPE = "btw-note"
 
 const BTW_SYSTEM_PROMPT = [
@@ -7,8 +7,8 @@ const BTW_SYSTEM_PROMPT = [
   "This side question is intentionally isolated from the main conversation.",
   "Do not assume or reference prior chat context.",
   "The only prior-context-derived information you may use is the unique file path list included in the user's prompt.",
-  "If you need file contents, inspect them yourself with read or safe bash commands.",
-  "Do not modify files. Do not run commands that write, edit, delete, install, or mutate state.",
+  "If you need file contents, inspect them yourself with read, grep, find, ls, or read-only bash.",
+  "Do not modify files. Bash is limited to a strict read-only allowlist.",
   "Keep the answer concise unless the user asks for detail.",
 ].join("\n")
 
@@ -94,7 +94,7 @@ function buildPrompt(question: string, paths: string[]): string {
   return [
     "Answer this side question without using prior chat context.",
     "You may only use the unique file paths below as prior-context-derived hints.",
-    "If file contents matter, inspect files yourself with read or safe bash.",
+    "If file contents matter, inspect files yourself with read, grep, find, ls, or read-only bash.",
     "",
     "Unique file paths:",
     pathSection,
@@ -105,8 +105,6 @@ function buildPrompt(question: string, paths: string[]): string {
 }
 
 export default function (pi: ExtensionAPI) {
-  registerSubagentRuntime(pi)
-
   pi.registerCommand("btw", {
     description:
       "Ask an isolated side question. Previous chat is not sent; only unique file paths are provided as hints.",
@@ -132,7 +130,9 @@ export default function (pi: ExtensionAPI) {
           label: "BTW side question",
           prompt: buildPrompt(question, paths),
           systemPrompt: BTW_SYSTEM_PROMPT,
-          tools: ["read", "bash"],
+          thinkingLevel: pi.getThinkingLevel(),
+          tools: ["read", "grep", "find", "ls", "bash"],
+          readOnly: true,
         })
         const answer = result.text
         const content = `Q: ${question}\n\nA: ${answer}`

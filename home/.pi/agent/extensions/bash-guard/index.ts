@@ -4,7 +4,7 @@ import type {
   SessionEntry,
   SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent"
-import { registerSubagentRuntime, runTrackedAgent } from "../shared/subagent-runner"
+import { runTrackedAgent } from "../shared/subagent"
 
 // Constants
 
@@ -197,6 +197,7 @@ async function explainCommand(
       systemPrompt: EXPLAIN_SYSTEM_PROMPT,
       thinkingLevel: "low",
       tools: [],
+      readOnly: true,
       signal: controller.signal,
     })
     return result.text || "I could not generate an explanation for this command."
@@ -212,8 +213,6 @@ async function explainCommand(
 // Extension entrypoint
 
 export default function bashGuardExtension(pi: ExtensionAPI): void {
-  registerSubagentRuntime(pi)
-
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") return
 
