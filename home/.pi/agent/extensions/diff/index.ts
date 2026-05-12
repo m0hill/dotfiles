@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
@@ -19,6 +20,7 @@ import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pi
 
 const REQUEST_BODY_LIMIT_BYTES = 2_000_000
 const GIT_MAX_BUFFER_BYTES = 50 * 1024 * 1024
+const MAX_UNTRACKED_TEXT_BYTES = 500 * 1024
 const MAX_BRANCH_OPTIONS = 80
 const TOP_BASE_BRANCH_OPTIONS = 10
 
@@ -508,6 +510,40 @@ function gitOutputOrUndefined(cwd: string, args: string[]): string | undefined {
   } catch {
     return undefined
   }
+}
+
+function untrackedTextPatch(cwd: string, path: string): string | undefined {
+  const fullPath = join(cwd, path)
+  const stat = statSync(fullPath)
+  if (!stat.isFile() || stat.size > MAX_UNTRACKED_TEXT_BYTES) return undefined
+
+  const buffer = readFileSync(fullPath)
+  if (buffer.includes(0)) return undefined
+
+  const text = buffer.toString("utf8")
+  const lines = text.length ? text.replace(/\n$/, "").split("\n") : []
+  return [
+    `diff --git a/${path} b/${path}`,
+    "new file mode 100644",
+    "index 0000000..0000000",
+    "--- /dev/null",
+    `+++ b/${path}`,
+    lines.length ? `@@ -0,0 +1,${lines.length} @@` : undefined,
+    ...lines.map((line) => `+${line}`),
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n")
+}
+
+function untrackedPatches(cwd: string): string {
+  const paths = parseLog(runGit(cwd, ["ls-files", "--others", "--exclude-standard"]))
+  return paths.flatMap((path) => untrackedTextPatch(cwd, path) ?? []).join("\n")
+}
+
+function worktreePatch(cwd: string): string {
+  const tracked = runGit(cwd, ["diff", "HEAD", "--patch", "--find-renames", "--find-copies"])
+  const untracked = untrackedPatches(cwd)
+  return [tracked.trim(), untracked.trim()].filter(Boolean).join("\n")
 }
 
 function currentBranch(ctx: ExtensionCommandContext): string | undefined {
@@ -1367,8 +1403,8 @@ async function chooseBase(ctx: ExtensionCommandContext): Promise<string | undefi
 // Command handlers
 
 async function openWorktreeReview(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
-  const command = "git diff HEAD --patch --find-renames --find-copies"
-  const patch = runGit(ctx.cwd, ["diff", "HEAD", "--patch", "--find-renames", "--find-copies"])
+  const command = "git diff HEAD --patch --find-renames --find-copies + text untracked files"
+  const patch = worktreePatch(ctx.cwd)
   if (!patch.trim()) {
     notify(ctx, "No changes against HEAD.", "info")
     return
