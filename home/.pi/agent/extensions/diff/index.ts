@@ -21,6 +21,7 @@ import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pi
 const REQUEST_BODY_LIMIT_BYTES = 2_000_000
 const GIT_MAX_BUFFER_BYTES = 50 * 1024 * 1024
 const MAX_UNTRACKED_TEXT_BYTES = 500 * 1024
+const MAX_CONTEXT_TEXT_BYTES = 2 * 1024 * 1024
 const MAX_BRANCH_OPTIONS = 80
 const TOP_BASE_BRANCH_OPTIONS = 10
 
@@ -127,11 +128,22 @@ type SummaryState = AnalysisProgress & {
   error?: string
 }
 
+type FileContentSnapshot = {
+  file: string
+  prevFile?: string
+  oldContentPath?: string
+  newContentPath?: string
+  oldAvailable: boolean
+  newAvailable: boolean
+  unavailableReason?: string
+}
+
 type ReviewSessionBase = {
   id: string
   title: string
   patchPath: string
   command: string
+  contentSnapshots: FileContentSnapshot[]
 }
 
 type WorktreeReviewSession = ReviewSessionBase & {
@@ -182,6 +194,15 @@ type AskPayload = {
   end?: number
   quote: string
   question: string
+}
+
+type FileContentResponse = {
+  file: string
+  oldAvailable: boolean
+  newAvailable: boolean
+  oldContent?: string
+  newContent?: string
+  unavailableReason?: string
 }
 
 type StaticFile = {
@@ -380,6 +401,14 @@ function patchPathFor(cwd: string, id: string): string {
   return join(projectDirForCwd(cwd), `${id}.patch`)
 }
 
+function contentDirFor(cwd: string, id: string): string {
+  return join(projectDirForCwd(cwd), `${id}.contents`)
+}
+
+function contentPathFor(cwd: string, id: string, index: number, side: "old" | "new"): string {
+  return join(contentDirFor(cwd, id), `${index}.${side}.txt`)
+}
+
 function sessionPathFor(cwd: string, id: string): string {
   return join(projectDirForCwd(cwd), `${id}.json`)
 }
@@ -497,6 +526,74 @@ function runGit(cwd: string, args: string[]): string {
   return result.stdout
 }
 
+type TextReadResult = { ok: true; content: string } | { ok: false; reason: string }
+
+function lineArrayFromContent(content: string): string[] {
+  const lines: string[] = []
+  let start = 0
+  for (let index = 0; index < content.length; index++) {
+    if (content[index] !== "\n") continue
+    lines.push(content.slice(start, index + 1))
+    start = index + 1
+  }
+  if (start < content.length) lines.push(content.slice(start))
+  return lines
+}
+
+function textFromBuffer(buffer: Buffer, label: string): TextReadResult {
+  if (buffer.length > MAX_CONTEXT_TEXT_BYTES) {
+    return { ok: false, reason: `${label} is larger than ${MAX_CONTEXT_TEXT_BYTES} bytes` }
+  }
+  if (buffer.includes(0)) return { ok: false, reason: `${label} appears to be binary` }
+  return { ok: true, content: buffer.toString("utf8") }
+}
+
+function readGitText(cwd: string, rev: string, path: string): TextReadResult {
+  const result = spawnSync("git", ["show", `${rev}:${path}`], {
+    cwd,
+    encoding: "buffer",
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+  })
+  if (result.error) return { ok: false, reason: result.error.message }
+  if (result.status !== 0) return { ok: false, reason: `git show ${rev}:${path} failed` }
+  return textFromBuffer(result.stdout, `${rev}:${path}`)
+}
+
+function isZeroObjectId(objectId: string | undefined): boolean {
+  return objectId === undefined || /^0+$/.test(objectId)
+}
+
+function readGitObjectText(cwd: string, objectId: string | undefined): TextReadResult | undefined {
+  if (isZeroObjectId(objectId) || objectId === undefined) return undefined
+  const result = spawnSync("git", ["cat-file", "-p", objectId], {
+    cwd,
+    encoding: "buffer",
+    maxBuffer: GIT_MAX_BUFFER_BYTES,
+  })
+  if (result.error) return { ok: false, reason: result.error.message }
+  if (result.status !== 0) return { ok: false, reason: `git cat-file ${objectId} failed` }
+  return textFromBuffer(result.stdout, objectId)
+}
+
+function gitRoot(cwd: string): string {
+  return gitOutputOrUndefined(cwd, ["rev-parse", "--show-toplevel"]) ?? cwd
+}
+
+function readWorktreeText(cwd: string, path: string): TextReadResult {
+  try {
+    const fullPath = join(gitRoot(cwd), path)
+    if (!existsSync(fullPath)) return { ok: false, reason: `${path} does not exist in worktree` }
+    const stat = statSync(fullPath)
+    if (!stat.isFile()) return { ok: false, reason: `${path} is not a regular file` }
+    if (stat.size > MAX_CONTEXT_TEXT_BYTES) {
+      return { ok: false, reason: `${path} is larger than ${MAX_CONTEXT_TEXT_BYTES} bytes` }
+    }
+    return textFromBuffer(readFileSync(fullPath), path)
+  } catch (error) {
+    return { ok: false, reason: errorMessage(error) }
+  }
+}
+
 function parseLog(output: string): string[] {
   return output
     .split("\n")
@@ -513,7 +610,7 @@ function gitOutputOrUndefined(cwd: string, args: string[]): string | undefined {
 }
 
 function untrackedTextPatch(cwd: string, path: string): string | undefined {
-  const fullPath = join(cwd, path)
+  const fullPath = join(gitRoot(cwd), path)
   const stat = statSync(fullPath)
   if (!stat.isFile() || stat.size > MAX_UNTRACKED_TEXT_BYTES) return undefined
 
@@ -536,8 +633,165 @@ function untrackedTextPatch(cwd: string, path: string): string | undefined {
 }
 
 function untrackedPatches(cwd: string): string {
-  const paths = parseLog(runGit(cwd, ["ls-files", "--others", "--exclude-standard"]))
+  const paths = parseLog(runGit(cwd, ["ls-files", "--full-name", "--others", "--exclude-standard"]))
   return paths.flatMap((path) => untrackedTextPatch(cwd, path) ?? []).join("\n")
+}
+
+function emptyText(): TextReadResult {
+  return { ok: true, content: "" }
+}
+
+function contentForFileSide(
+  cwd: string,
+  opts: NewReviewSession,
+  file: FileDiffMetadata,
+  side: "old" | "new"
+): TextReadResult {
+  const name = fileDisplayName(file)
+  const oldName = file.prevName || name
+
+  if (side === "old" && file.type === "new") return emptyText()
+  if (side === "new" && file.type === "deleted") return emptyText()
+
+  const objectText = readGitObjectText(cwd, side === "old" ? file.prevObjectId : file.newObjectId)
+  if (objectText?.ok || (objectText && opts.mode !== "worktree")) return objectText
+
+  if (opts.mode === "worktree") {
+    if (side === "old") return readGitText(cwd, "HEAD", oldName)
+    return readWorktreeText(cwd, name)
+  }
+
+  if (opts.mode === "commit") {
+    if (side === "old") return readGitText(cwd, `${opts.commit}^`, oldName)
+    return readGitText(cwd, opts.commit, name)
+  }
+
+  const mergeBase = gitOutputOrUndefined(cwd, ["merge-base", opts.base, "HEAD"]) ?? opts.base
+  if (side === "old") return readGitText(cwd, mergeBase, oldName)
+  return readGitText(cwd, "HEAD", name)
+}
+
+function writeContentSnapshot(
+  cwd: string,
+  id: string,
+  index: number,
+  side: "old" | "new",
+  content: string
+): string {
+  const dir = contentDirFor(cwd, id)
+  mkdirSync(dir, { recursive: true })
+  const path = contentPathFor(cwd, id, index, side)
+  writeFileSync(path, content, "utf8")
+  return path
+}
+
+function validatePatchLine(
+  actual: string | undefined,
+  expected: string | undefined,
+  label: string
+): string | undefined {
+  if (actual === expected) return undefined
+  return `${label} does not match the saved patch`
+}
+
+function validateSnapshotAgainstPatch(
+  file: FileDiffMetadata,
+  oldContent: string,
+  newContent: string
+): string | undefined {
+  const oldLines = lineArrayFromContent(oldContent)
+  const newLines = lineArrayFromContent(newContent)
+
+  for (const [hunkIndex, hunk] of file.hunks.entries()) {
+    let oldIndex = Math.max(0, hunk.deletionStart - 1)
+    let newIndex = Math.max(0, hunk.additionStart - 1)
+
+    for (const content of hunk.hunkContent) {
+      if (content.type === "context") {
+        for (let offset = 0; offset < content.lines; offset++) {
+          const label = `${fileDisplayName(file)} hunk ${hunkIndex + 1} context line ${offset + 1}`
+          const oldMismatch = validatePatchLine(
+            oldLines[oldIndex + offset],
+            file.deletionLines[content.deletionLineIndex + offset],
+            `${label} old side`
+          )
+          if (oldMismatch) return oldMismatch
+          const newMismatch = validatePatchLine(
+            newLines[newIndex + offset],
+            file.additionLines[content.additionLineIndex + offset],
+            `${label} new side`
+          )
+          if (newMismatch) return newMismatch
+        }
+        oldIndex += content.lines
+        newIndex += content.lines
+        continue
+      }
+
+      for (let offset = 0; offset < content.deletions; offset++) {
+        const mismatch = validatePatchLine(
+          oldLines[oldIndex + offset],
+          file.deletionLines[content.deletionLineIndex + offset],
+          `${fileDisplayName(file)} hunk ${hunkIndex + 1} deleted line ${offset + 1}`
+        )
+        if (mismatch) return mismatch
+      }
+      for (let offset = 0; offset < content.additions; offset++) {
+        const mismatch = validatePatchLine(
+          newLines[newIndex + offset],
+          file.additionLines[content.additionLineIndex + offset],
+          `${fileDisplayName(file)} hunk ${hunkIndex + 1} added line ${offset + 1}`
+        )
+        if (mismatch) return mismatch
+      }
+      oldIndex += content.deletions
+      newIndex += content.additions
+    }
+  }
+
+  return undefined
+}
+
+function unavailableSnapshot(file: FileDiffMetadata, reason: string): FileContentSnapshot {
+  return {
+    file: fileDisplayName(file),
+    prevFile: file.prevName,
+    oldAvailable: false,
+    newAvailable: false,
+    unavailableReason: reason,
+  }
+}
+
+function buildContentSnapshots(
+  cwd: string,
+  id: string,
+  opts: NewReviewSession
+): FileContentSnapshot[] {
+  const files = parsePatchFiles(opts.patch, id, false).flatMap((patch) => patch.files)
+  return files.map((file, index) => {
+    const oldResult = contentForFileSide(cwd, opts, file, "old")
+    const newResult = contentForFileSide(cwd, opts, file, "new")
+    if (!oldResult.ok || !newResult.ok) {
+      return unavailableSnapshot(
+        file,
+        [oldResult.ok ? undefined : oldResult.reason, newResult.ok ? undefined : newResult.reason]
+          .filter(Boolean)
+          .join("; ") || "full context unavailable"
+      )
+    }
+
+    const mismatch = validateSnapshotAgainstPatch(file, oldResult.content, newResult.content)
+    if (mismatch) return unavailableSnapshot(file, mismatch)
+
+    return {
+      file: fileDisplayName(file),
+      prevFile: file.prevName,
+      oldContentPath: writeContentSnapshot(cwd, id, index, "old", oldResult.content),
+      newContentPath: writeContentSnapshot(cwd, id, index, "new", newResult.content),
+      oldAvailable: true,
+      newAvailable: true,
+    }
+  })
 }
 
 function worktreePatch(cwd: string): string {
@@ -647,6 +901,7 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
   const id = `${Date.now()}-${randomUUID().slice(0, 8)}`
   const patchPath = patchPathFor(ctx.cwd, id)
   writeFileSync(patchPath, opts.patch, "utf8")
+  const contentSnapshots = buildContentSnapshots(ctx.cwd, id, opts)
 
   const session: ReviewSession =
     opts.mode === "commit"
@@ -657,6 +912,7 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
           commit: opts.commit,
           patchPath,
           command: opts.command,
+          contentSnapshots,
         }
       : opts.mode === "base"
         ? {
@@ -666,8 +922,16 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
             base: opts.base,
             patchPath,
             command: opts.command,
+            contentSnapshots,
           }
-        : { id, title: opts.title, mode: "worktree", patchPath, command: opts.command }
+        : {
+            id,
+            title: opts.title,
+            mode: "worktree",
+            patchPath,
+            command: opts.command,
+            contentSnapshots,
+          }
 
   sessions.set(id, session)
   atomicWriteJson(sessionPathFor(ctx.cwd, id), session)
@@ -731,6 +995,35 @@ function rangeListText(ranges: Array<[number, number]>): string {
     .join(", ")
 }
 
+function snapshotForFile(
+  session: ReviewSession,
+  fileName: string
+): FileContentSnapshot | undefined {
+  return (session.contentSnapshots ?? []).find(
+    (item) => item.file === fileName || item.prevFile === fileName
+  )
+}
+
+function snapshotLineCount(
+  snapshot: FileContentSnapshot | undefined,
+  side: AnnotationSide
+): number | undefined {
+  const path = side === "additions" ? snapshot?.newContentPath : snapshot?.oldContentPath
+  if (!path) return undefined
+  return lineArrayFromContent(readFileSync(path, "utf8")).length
+}
+
+function snapshotContainsRange(
+  session: ReviewSession,
+  fileName: string,
+  side: AnnotationSide,
+  start: number,
+  end: number
+): boolean {
+  const lineCount = snapshotLineCount(snapshotForFile(session, fileName), side)
+  return lineCount !== undefined && start >= 1 && end <= lineCount
+}
+
 function validateReviewAnchor(
   session: ReviewSession,
   input: Pick<ReviewCommentInput, "anchorKind" | "file" | "side" | "line" | "start" | "end">
@@ -758,10 +1051,13 @@ function validateReviewAnchor(
   if (end < start) return { ok: false, reason: "range end must be greater than or equal to start." }
 
   const ranges = changedLineRanges(file, input.side)
-  if (!rangeContains(ranges, start, end)) {
+  if (
+    !rangeContains(ranges, start, end) &&
+    !snapshotContainsRange(session, fileName, input.side, start, end)
+  ) {
     return {
       ok: false,
-      reason: `${fileName} ${input.side} ${start === end ? start : `${start}-${end}`} is not a changed line range in this diff. Valid changed ranges: ${rangeListText(ranges)}. Use a file/global anchor for contextual findings that are not tied to changed lines.`,
+      reason: `${fileName} ${input.side} ${start === end ? start : `${start}-${end}`} is neither a changed line range nor available validated context in this diff. Valid changed ranges: ${rangeListText(ranges)}. Use a file/global anchor for contextual findings that are not tied to specific available lines.`,
     }
   }
 
@@ -814,7 +1110,7 @@ function reviewPrompt(session: ReviewSession): string {
     "Use diff_review_comment for each useful finding and diff_review_done when finished, even if there are no findings.",
     "Anchor comments to line/range/file only when the finding is directly tied to the diff.",
     "Use a global anchor for findings caused by the diff but not located on a changed line.",
-    "For line/range anchors, use line numbers from the additions or deletions side of the patch.",
+    "For line/range anchors, use line numbers from the additions or deletions side. Changed lines are preferred; validated expanded context lines are also accepted when directly relevant.",
     "Keep comments actionable, non-duplicative, and honest about uncertainty.",
   ].join("\n")
 }
@@ -1233,6 +1529,63 @@ function sendFile(res: ServerResponse, path: string, contentType: string): void 
   res.end(readFileSync(path))
 }
 
+function publicContentSnapshots(session: ReviewSession): FileContentSnapshot[] {
+  return (session.contentSnapshots ?? []).map(
+    ({ file, prevFile, oldAvailable, newAvailable, unavailableReason }) => ({
+      file,
+      prevFile,
+      oldAvailable,
+      newAvailable,
+      unavailableReason,
+    })
+  )
+}
+
+type PublicReviewSession = {
+  id: string
+  title: string
+  mode: ReviewSession["mode"]
+  commit?: string
+  base?: string
+  contentSnapshots: FileContentSnapshot[]
+}
+
+function publicReviewSession(session: ReviewSession): PublicReviewSession {
+  const base = {
+    id: session.id,
+    title: session.title,
+    mode: session.mode,
+    contentSnapshots: publicContentSnapshots(session),
+  }
+  if (session.mode === "commit") return { ...base, commit: session.commit }
+  if (session.mode === "base") return { ...base, base: session.base }
+  return base
+}
+
+function fileContentResponse(
+  session: ReviewSession,
+  requestedFile: string
+): FileContentResponse | undefined {
+  const snapshot = (session.contentSnapshots ?? []).find(
+    (item) => item.file === requestedFile || item.prevFile === requestedFile
+  )
+  if (!snapshot) return undefined
+  return {
+    file: snapshot.file,
+    oldAvailable: snapshot.oldAvailable,
+    newAvailable: snapshot.newAvailable,
+    oldContent:
+      snapshot.oldAvailable && snapshot.oldContentPath
+        ? readFileSync(snapshot.oldContentPath, "utf8")
+        : undefined,
+    newContent:
+      snapshot.newAvailable && snapshot.newContentPath
+        ? readFileSync(snapshot.newContentPath, "utf8")
+        : undefined,
+    unavailableReason: snapshot.unavailableReason,
+  }
+}
+
 // Server lifecycle
 
 function startServer(pi: ExtensionAPI): Promise<number> {
@@ -1247,7 +1600,20 @@ function startServer(pi: ExtensionAPI): Promise<number> {
         const id = url.searchParams.get("id") ?? ""
         const session = sessions.get(id)
         if (!session) return sendJson(res, { error: "Unknown review" }, 404)
-        return sendJson(res, { ...session, patch: readFileSync(session.patchPath, "utf8") })
+        return sendJson(res, {
+          ...publicReviewSession(session),
+          patch: readFileSync(session.patchPath, "utf8"),
+        })
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/file-content") {
+        const id = url.searchParams.get("id") ?? ""
+        const file = url.searchParams.get("file") ?? ""
+        const session = sessions.get(id)
+        if (!session) return sendJson(res, { error: "Unknown review" }, 404)
+        const content = fileContentResponse(session, file)
+        if (!content) return sendJson(res, { error: "Unknown file" }, 404)
+        return sendJson(res, content)
       }
 
       if (req.method === "POST" && url.pathname === "/api/feedback") {

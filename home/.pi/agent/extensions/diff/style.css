@@ -395,7 +395,13 @@ body.is-right-collapsed #sidebar-right .anno-badge {
 .diff-mount {
   background: var(--pre-bg);
 }
-
+.context-notice {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+  font-size: 12px;
+}
 #sb-right-inner {
   padding: 14px;
 }

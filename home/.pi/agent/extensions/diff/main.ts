@@ -31,6 +31,7 @@ const DIFF_UNSAFE_CSS = `
 [data-column-number] { color: #737373; background: #0c0c0c; }
 [data-line] { border-bottom: 1px solid rgba(255,255,255,0.025); }
 [data-error-wrapper] { background: #111111; color: #F6FFF5; }
+[data-expand-all-button] { display: none !important; }
 `
 
 const MAX_TREE_DEPTH = 6
@@ -38,6 +39,7 @@ const DEFAULT_DIFF_SIDE: DiffSide = "additions"
 const LEFT_COLLAPSED_CLASS = "is-left-collapsed"
 const RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
 const AI_POLL_MS = 7000
+const HUNK_CONTEXT_LINE_COUNT = 10
 
 // Types
 
@@ -45,11 +47,29 @@ type DiffSide = AnnotationSide
 type DiffStyle = "split" | "unified"
 type SelectionAction = "comment" | "ask"
 
+type FileContentSnapshot = {
+  file: string
+  prevFile?: string
+  oldAvailable: boolean
+  newAvailable: boolean
+  unavailableReason?: string
+}
+
+type FullFileContent = {
+  file: string
+  oldAvailable: boolean
+  newAvailable: boolean
+  oldContent?: string
+  newContent?: string
+  unavailableReason?: string
+}
+
 type WorktreeDiffSession = {
   id: string
   title: string
   mode: "worktree"
   patch: string
+  contentSnapshots: FileContentSnapshot[]
 }
 
 type CommitDiffSession = {
@@ -58,6 +78,7 @@ type CommitDiffSession = {
   mode: "commit"
   commit: string
   patch: string
+  contentSnapshots: FileContentSnapshot[]
 }
 
 type BaseDiffSession = {
@@ -66,6 +87,7 @@ type BaseDiffSession = {
   mode: "base"
   base: string
   patch: string
+  contentSnapshots: FileContentSnapshot[]
 }
 
 type DiffSession = WorktreeDiffSession | CommitDiffSession | BaseDiffSession
@@ -151,6 +173,7 @@ type AppState = {
   aiReview: AiReviewState
   currentSelection: Selection | null
   instances: Array<FileDiff<LineAnnotationMetadata>>
+  fileContents: Map<string, FullFileContent>
   globalComment: string
   draftComment: string
   draftQuestion: string
@@ -243,6 +266,23 @@ function stringEnum<T extends readonly string[]>(
   return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options })
 }
 
+const fileContentSnapshotSchema = Type.Object({
+  file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  prevFile: Type.Optional(Type.String()),
+  oldAvailable: Type.Boolean(),
+  newAvailable: Type.Boolean(),
+  unavailableReason: Type.Optional(Type.String()),
+})
+
+const fullFileContentSchema = Type.Object({
+  file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
+  oldAvailable: Type.Boolean(),
+  newAvailable: Type.Boolean(),
+  oldContent: Type.Optional(Type.String()),
+  newContent: Type.Optional(Type.String()),
+  unavailableReason: Type.Optional(Type.String()),
+})
+
 const diffSessionSchema = Type.Object({
   id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
   title: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
@@ -250,9 +290,11 @@ const diffSessionSchema = Type.Object({
   patch: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
   commit: Type.Optional(Type.String()),
   base: Type.Optional(Type.String()),
+  contentSnapshots: Type.Optional(Type.Array(fileContentSnapshotSchema)),
 })
 
 type DiffSessionInput = Static<typeof diffSessionSchema>
+type FullFileContentInput = Static<typeof fullFileContentSchema>
 
 const askResponseSchema = Type.Object({
   ok: Type.Boolean(),
@@ -360,6 +402,7 @@ type AiSummaryStateInput = Static<typeof aiSummaryStateSchema>
 const errorResponseSchema = Type.Object({ error: Type.Optional(Type.String()) })
 
 const diffSessionValidator = Compile(diffSessionSchema)
+const fullFileContentValidator = Compile(fullFileContentSchema)
 const askResponseValidator = Compile(askResponseSchema)
 const aiReviewStateValidator = Compile(aiReviewStateSchema)
 const aiSummaryStateValidator = Compile(aiSummaryStateSchema)
@@ -402,6 +445,7 @@ const state: AppState = {
   aiReview: emptyAiReviewState(),
   currentSelection: null,
   instances: [],
+  fileContents: new Map(),
   globalComment: "",
   draftComment: "",
   draftQuestion: "",
@@ -496,8 +540,15 @@ function parseDiffSession(value: unknown): DiffSession {
 }
 
 function normalizeDiffSession(value: DiffSessionInput): DiffSession {
+  const contentSnapshots = value.contentSnapshots ?? []
   if (value.mode === "worktree")
-    return { id: value.id, title: value.title, mode: "worktree", patch: value.patch }
+    return {
+      id: value.id,
+      title: value.title,
+      mode: "worktree",
+      patch: value.patch,
+      contentSnapshots,
+    }
   if (value.mode === "commit") {
     if (!value.commit) throw new Error("Review response: commit is required for commit mode")
     return {
@@ -506,10 +557,38 @@ function normalizeDiffSession(value: DiffSessionInput): DiffSession {
       mode: "commit",
       commit: value.commit,
       patch: value.patch,
+      contentSnapshots,
     }
   }
   if (!value.base) throw new Error("Review response: base is required for base mode")
-  return { id: value.id, title: value.title, mode: "base", base: value.base, patch: value.patch }
+  return {
+    id: value.id,
+    title: value.title,
+    mode: "base",
+    base: value.base,
+    patch: value.patch,
+    contentSnapshots,
+  }
+}
+
+function parseFullFileContent(value: unknown): FullFileContent {
+  if (!fullFileContentValidator.Check(value)) {
+    throw new Error(
+      validationMessage("File content response", fullFileContentValidator.Errors(value))
+    )
+  }
+  return normalizeFullFileContent(value)
+}
+
+function normalizeFullFileContent(value: FullFileContentInput): FullFileContent {
+  return {
+    file: value.file,
+    oldAvailable: value.oldAvailable,
+    newAvailable: value.newAvailable,
+    oldContent: value.oldContent,
+    newContent: value.newContent,
+    unavailableReason: value.unavailableReason || undefined,
+  }
 }
 
 function parseAskResponse(value: unknown): AskResponse {
@@ -647,6 +726,94 @@ function fileIcon(file: FileDiffMetadata): FileIcon {
 function parseFilesFromPatch(session: DiffSession): FileDiffMetadata[] {
   const patches: ParsedPatch[] = parsePatchFiles(session.patch, session.id, false)
   return patches.flatMap((patch) => patch.files)
+}
+
+function lineArrayFromContent(content: string): string[] {
+  const lines: string[] = []
+  let start = 0
+  for (let index = 0; index < content.length; index++) {
+    if (content[index] !== "\n") continue
+    lines.push(content.slice(start, index + 1))
+    start = index + 1
+  }
+  if (start < content.length) lines.push(content.slice(start))
+  return lines
+}
+
+function fullContentForFile(file: FileDiffMetadata): FullFileContent | undefined {
+  return state.fileContents.get(fileName(file)) ?? state.fileContents.get(file.prevName ?? "")
+}
+
+function fileWithFullContext(file: FileDiffMetadata): FileDiffMetadata {
+  const content = fullContentForFile(file)
+  if (
+    !content ||
+    !content.oldAvailable ||
+    !content.newAvailable ||
+    content.oldContent === undefined ||
+    content.newContent === undefined
+  ) {
+    return file
+  }
+
+  const hunks = file.hunks.map((hunk) => {
+    let additionLineIndex = Math.max(0, hunk.additionStart - 1)
+    let deletionLineIndex = Math.max(0, hunk.deletionStart - 1)
+    return {
+      ...hunk,
+      additionLineIndex,
+      deletionLineIndex,
+      hunkContent: hunk.hunkContent.map((item) => {
+        if (item.type === "context") {
+          const next = { ...item, additionLineIndex, deletionLineIndex }
+          additionLineIndex += item.lines
+          deletionLineIndex += item.lines
+          return next
+        }
+        const next = { ...item, additionLineIndex, deletionLineIndex }
+        additionLineIndex += item.additions
+        deletionLineIndex += item.deletions
+        return next
+      }),
+    }
+  })
+
+  return {
+    ...file,
+    hunks,
+    isPartial: false,
+    deletionLines: lineArrayFromContent(content.oldContent),
+    additionLines: lineArrayFromContent(content.newContent),
+    cacheKey: `${file.cacheKey ?? fileName(file)}:full:${content.oldContent.length}:${content.newContent.length}`,
+  }
+}
+
+function fileContentNoticeHtml(file: FileDiffMetadata): string {
+  const content = fullContentForFile(file)
+  if (!content || (content.oldAvailable && content.newAvailable)) return ""
+  const reason = content.unavailableReason || "full file content unavailable"
+  return `<div class="context-notice">Patch-only view: ${escapeHtml(reason)}</div>`
+}
+
+async function loadFullFileContents(): Promise<void> {
+  state.fileContents.clear()
+  const currentReview = review()
+  await Promise.all(
+    currentReview.contentSnapshots.map(async (snapshot) => {
+      if (!snapshot.oldAvailable || !snapshot.newAvailable) return
+      try {
+        const content = parseFullFileContent(
+          await requestJson(
+            `/api/file-content?id=${encodeURIComponent(currentReview.id)}&file=${encodeURIComponent(snapshot.file)}`
+          )
+        )
+        state.fileContents.set(content.file, content)
+        if (snapshot.prevFile) state.fileContents.set(snapshot.prevFile, content)
+      } catch {
+        // Keep patch-only rendering for files whose validated full text cannot be loaded.
+      }
+    })
+  )
 }
 
 // Selection helpers
@@ -850,6 +1017,7 @@ function makeOptions(file: FileDiffMetadata): FileDiffOptions<LineAnnotationMeta
     diffStyle: state.diffStyle,
     diffIndicators: "bars",
     hunkSeparators: "line-info-basic",
+    expansionLineCount: HUNK_CONTEXT_LINE_COUNT,
     overflow: "wrap",
     enableLineSelection: true,
     enableGutterUtility: true,
@@ -969,29 +1137,30 @@ function renderDiffs(): void {
   root.innerHTML = '<section id="summaryTop"></section>'
   renderSummaryTop()
   state.files.forEach((file, index) => {
+    const renderedFile = fileWithFullContext(file)
     const outer = document.createElement("div")
     outer.className = "file-wrap"
     outer.id = `file-${index}`
-    outer.innerHTML = `<div class="file-top"><strong>${escapeHtml(fileName(file))}</strong><div class="file-top-actions"><button data-comment>Comment file</button><button data-ask>Ask about file</button></div></div>${fileSummaryHtml(file)}<div class="diff-mount"></div>`
+    outer.innerHTML = `<div class="file-top"><strong>${escapeHtml(fileName(file))}</strong><div class="file-top-actions"><button data-comment>Comment file</button><button data-ask>Ask about file</button></div></div>${fileSummaryHtml(file)}${fileContentNoticeHtml(file)}<div class="diff-mount"></div>`
     root.appendChild(outer)
 
     qs<HTMLButtonElement>("[data-comment]", outer).addEventListener("click", () =>
-      setFileSelection(file, "comment")
+      setFileSelection(renderedFile, "comment")
     )
     qs<HTMLButtonElement>("[data-ask]", outer).addEventListener("click", () =>
-      setFileSelection(file, "ask")
+      setFileSelection(renderedFile, "ask")
     )
 
     const mount = qs<HTMLElement>(".diff-mount", outer)
     mount.style.setProperty("--diffs-bg", "#0f0f0f")
     mount.style.setProperty("--diffs-fg", "#F6FFF5")
 
-    const instance = new FileDiff<LineAnnotationMetadata>(makeOptions(file))
+    const instance = new FileDiff<LineAnnotationMetadata>(makeOptions(renderedFile))
     state.instances.push(instance)
     instance.render({
-      fileDiff: file,
+      fileDiff: renderedFile,
       containerWrapper: mount,
-      lineAnnotations: lineAnnotationsFor(file),
+      lineAnnotations: lineAnnotationsFor(renderedFile),
     })
   })
 }
@@ -1427,6 +1596,7 @@ async function boot(): Promise<void> {
     await requestJson(`/api/review?id=${encodeURIComponent(reviewId)}`)
   )
   state.files = parseFilesFromPatch(state.review)
+  await loadFullFileContents()
   renderShell()
   renderDiffs()
   renderAnnotations()
