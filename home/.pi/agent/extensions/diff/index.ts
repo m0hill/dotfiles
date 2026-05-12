@@ -143,6 +143,7 @@ type ReviewSessionBase = {
   title: string
   patchPath: string
   command: string
+  files: FileDiffMetadata[]
   contentSnapshots: FileContentSnapshot[]
 }
 
@@ -480,7 +481,10 @@ function readJsonFile<T>(path: string, fallback: T): T {
 
 function readSessionFromDisk(cwd: string, id: string): ReviewSession | undefined {
   const session = readJsonFile<ReviewSession | null>(sessionPathFor(cwd, id), null)
-  return session ?? undefined
+  if (!session) return undefined
+  const storedFiles = (session as { files?: FileDiffMetadata[] }).files
+  if (Array.isArray(storedFiles)) return session
+  return { ...session, files: filesForSession(session) } as ReviewSession
 }
 
 function readSummaryState(cwd: string, id: string): SummaryState {
@@ -765,9 +769,9 @@ function unavailableSnapshot(file: FileDiffMetadata, reason: string): FileConten
 function buildContentSnapshots(
   cwd: string,
   id: string,
-  opts: NewReviewSession
+  opts: NewReviewSession,
+  files: FileDiffMetadata[]
 ): FileContentSnapshot[] {
-  const files = parsePatchFiles(opts.patch, id, false).flatMap((patch) => patch.files)
   return files.map((file, index) => {
     const oldResult = contentForFileSide(cwd, opts, file, "old")
     const newResult = contentForFileSide(cwd, opts, file, "new")
@@ -901,7 +905,8 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
   const id = `${Date.now()}-${randomUUID().slice(0, 8)}`
   const patchPath = patchPathFor(ctx.cwd, id)
   writeFileSync(patchPath, opts.patch, "utf8")
-  const contentSnapshots = buildContentSnapshots(ctx.cwd, id, opts)
+  const files = parsePatchFiles(opts.patch, id, false).flatMap((patch) => patch.files)
+  const contentSnapshots = buildContentSnapshots(ctx.cwd, id, opts, files)
 
   const session: ReviewSession =
     opts.mode === "commit"
@@ -912,6 +917,7 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
           commit: opts.commit,
           patchPath,
           command: opts.command,
+          files,
           contentSnapshots,
         }
       : opts.mode === "base"
@@ -922,6 +928,7 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
             base: opts.base,
             patchPath,
             command: opts.command,
+            files,
             contentSnapshots,
           }
         : {
@@ -930,6 +937,7 @@ function writeSession(ctx: ExtensionCommandContext, opts: NewReviewSession): Rev
             mode: "worktree",
             patchPath,
             command: opts.command,
+            files,
             contentSnapshots,
           }
 
@@ -951,11 +959,16 @@ function fileDisplayName(file: FileDiffMetadata): string {
   return file.name || file.prevName || "file"
 }
 
-function findDiffFile(session: ReviewSession, name: string): FileDiffMetadata | undefined {
-  const files = parsePatchFiles(readFileSync(session.patchPath, "utf8"), session.id, false).flatMap(
+function filesForSession(session: ReviewSession): FileDiffMetadata[] {
+  const storedFiles = (session as { files?: FileDiffMetadata[] }).files
+  if (Array.isArray(storedFiles)) return storedFiles
+  return parsePatchFiles(readFileSync(session.patchPath, "utf8"), session.id, false).flatMap(
     (patch) => patch.files
   )
-  return files.find((file) => file.name === name || file.prevName === name)
+}
+
+function findDiffFile(session: ReviewSession, name: string): FileDiffMetadata | undefined {
+  return filesForSession(session).find((file) => file.name === name || file.prevName === name)
 }
 
 function changedLineRanges(file: FileDiffMetadata, side: AnnotationSide): Array<[number, number]> {
@@ -1547,6 +1560,7 @@ type PublicReviewSession = {
   mode: ReviewSession["mode"]
   commit?: string
   base?: string
+  files: FileDiffMetadata[]
   contentSnapshots: FileContentSnapshot[]
 }
 
@@ -1555,6 +1569,7 @@ function publicReviewSession(session: ReviewSession): PublicReviewSession {
     id: session.id,
     title: session.title,
     mode: session.mode,
+    files: session.files,
     contentSnapshots: publicContentSnapshots(session),
   }
   if (session.mode === "commit") return { ...base, commit: session.commit }

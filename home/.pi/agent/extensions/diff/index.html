@@ -4,11 +4,65 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Diff Review</title>
+    <style>
+      #app {
+        background: #0a0a0a;
+        color: #f6fff5;
+      }
+      #topbar,
+      #shell {
+        display: flex;
+      }
+    </style>
     <link rel="stylesheet" href="/dist/main.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <header id="topbar">
+        <div id="topbar-title">
+          <span class="prompt">›</span>
+          <div>
+            <h1 id="title">DIFF</h1>
+            <div id="subtitle">Opening review…</div>
+          </div>
+        </div>
+        <div id="topbar-stats"><span>loading</span></div>
+      </header>
+      <div id="shell">
+        <aside class="sidebar" id="sidebar-left">
+          <div class="sb-head"><span class="sb-label">Files</span></div>
+          <div class="sb-scroll">
+            <nav id="files"><div class="no-anno">loading files…</div></nav>
+          </div>
+        </aside>
+        <div id="diff-wrap">
+          <div id="diff-bar">
+            <span class="doc-bar-label">Diff</span
+            ><span class="hint">loading review metadata…</span>
+          </div>
+          <section id="diffs">
+            <div class="loading">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <span>preparing diff…</span>
+            </div>
+          </section>
+        </div>
+        <aside class="sidebar" id="sidebar-right">
+          <div class="sb-head"><span class="sb-label">Diff</span></div>
+          <div id="sb-right-inner">
+            <div class="rsec">
+              <div class="rsec-head">
+                <span class="rsec-label">AI Review</span><span class="ai-status">idle</span>
+              </div>
+              <div class="rsec-body"><div class="no-anno">waiting for review…</div></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script type="module" src="/dist/main.js"></script>
   </body>
 </html>

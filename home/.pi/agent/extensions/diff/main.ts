@@ -40,6 +40,7 @@ const LEFT_COLLAPSED_CLASS = "is-left-collapsed"
 const RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
 const AI_POLL_MS = 7000
 const HUNK_CONTEXT_LINE_COUNT = 10
+const INITIAL_FILE_RENDER_LIMIT = 25
 
 // Types
 
@@ -69,6 +70,7 @@ type WorktreeDiffSession = {
   title: string
   mode: "worktree"
   patch: string
+  files?: FileDiffMetadata[]
   contentSnapshots: FileContentSnapshot[]
 }
 
@@ -78,6 +80,7 @@ type CommitDiffSession = {
   mode: "commit"
   commit: string
   patch: string
+  files?: FileDiffMetadata[]
   contentSnapshots: FileContentSnapshot[]
 }
 
@@ -87,6 +90,7 @@ type BaseDiffSession = {
   mode: "base"
   base: string
   patch: string
+  files?: FileDiffMetadata[]
   contentSnapshots: FileContentSnapshot[]
 }
 
@@ -173,6 +177,7 @@ type AppState = {
   aiReview: AiReviewState
   currentSelection: Selection | null
   instances: Array<FileDiff<LineAnnotationMetadata>>
+  renderedFileLimit: number | null
   fileContents: Map<string, FullFileContent>
   globalComment: string
   draftComment: string
@@ -290,6 +295,7 @@ const diffSessionSchema = Type.Object({
   patch: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
   commit: Type.Optional(Type.String()),
   base: Type.Optional(Type.String()),
+  files: Type.Optional(Type.Array(Type.Any())),
   contentSnapshots: Type.Optional(Type.Array(fileContentSnapshotSchema)),
 })
 
@@ -445,6 +451,7 @@ const state: AppState = {
   aiReview: emptyAiReviewState(),
   currentSelection: null,
   instances: [],
+  renderedFileLimit: INITIAL_FILE_RENDER_LIMIT,
   fileContents: new Map(),
   globalComment: "",
   draftComment: "",
@@ -541,12 +548,14 @@ function parseDiffSession(value: unknown): DiffSession {
 
 function normalizeDiffSession(value: DiffSessionInput): DiffSession {
   const contentSnapshots = value.contentSnapshots ?? []
+  const files = value.files as FileDiffMetadata[] | undefined
   if (value.mode === "worktree")
     return {
       id: value.id,
       title: value.title,
       mode: "worktree",
       patch: value.patch,
+      files,
       contentSnapshots,
     }
   if (value.mode === "commit") {
@@ -557,6 +566,7 @@ function normalizeDiffSession(value: DiffSessionInput): DiffSession {
       mode: "commit",
       commit: value.commit,
       patch: value.patch,
+      files,
       contentSnapshots,
     }
   }
@@ -567,6 +577,7 @@ function normalizeDiffSession(value: DiffSessionInput): DiffSession {
     mode: "base",
     base: value.base,
     patch: value.patch,
+    files,
     contentSnapshots,
   }
 }
@@ -726,6 +737,10 @@ function fileIcon(file: FileDiffMetadata): FileIcon {
 function parseFilesFromPatch(session: DiffSession): FileDiffMetadata[] {
   const patches: ParsedPatch[] = parsePatchFiles(session.patch, session.id, false)
   return patches.flatMap((patch) => patch.files)
+}
+
+function filesForSession(session: DiffSession): FileDiffMetadata[] {
+  return session.files ?? parseFilesFromPatch(session)
 }
 
 function lineArrayFromContent(content: string): string[] {
@@ -1136,7 +1151,7 @@ function renderDiffs(): void {
   const root = qs<HTMLElement>("#diffs")
   root.innerHTML = '<section id="summaryTop"></section>'
   renderSummaryTop()
-  state.files.forEach((file, index) => {
+  state.files.slice(0, state.renderedFileLimit ?? state.files.length).forEach((file, index) => {
     const renderedFile = fileWithFullContext(file)
     const outer = document.createElement("div")
     outer.className = "file-wrap"
@@ -1565,6 +1580,21 @@ function rerenderDiffsPreservingScroll(): void {
   if (diffRoot && scrollTop !== undefined) diffRoot.scrollTop = scrollTop
 }
 
+function renderRemainingFilesSoon(): void {
+  if (state.renderedFileLimit === null || state.files.length <= state.renderedFileLimit) return
+  window.setTimeout(() => {
+    state.renderedFileLimit = null
+    rerenderDiffsPreservingScroll()
+  }, 0)
+}
+
+function renderDiffsSoon(): void {
+  window.setTimeout(() => {
+    renderDiffs()
+    renderRemainingFilesSoon()
+  }, 0)
+}
+
 async function refreshAi(): Promise<void> {
   try {
     const beforeReview = aiReviewSignature(state.aiReview)
@@ -1589,17 +1619,35 @@ async function refreshAi(): Promise<void> {
 
 // Boot
 
+function renderOpeningShell(): void {
+  app.innerHTML = `
+    <header id="topbar">
+      <div id="topbar-title"><span class="prompt">›</span><div><h1 id="title">DIFF</h1><div id="subtitle">Opening review…</div></div></div>
+      <div id="topbar-stats"><span>loading</span></div>
+    </header>
+    <div id="shell">
+      <aside class="sidebar" id="sidebar-left"><div class="sb-head"><span class="sb-label">Files</span></div><div class="sb-scroll"><nav id="files"><div class="no-anno">loading files…</div></nav></div></aside>
+      <div id="diff-wrap"><div id="diff-bar"><span class="doc-bar-label">Diff</span><span class="hint">loading review metadata…</span></div><section id="diffs"><div class="loading"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>preparing diff…</span></div></section></div>
+      <aside class="sidebar" id="sidebar-right"><div class="sb-head"><span class="sb-label">Diff</span></div><div id="sb-right-inner"><div class="rsec"><div class="rsec-head"><span class="rsec-label">AI Review</span><span class="ai-status">idle</span></div><div class="rsec-body"><div class="no-anno">waiting for review…</div></div></div></div></aside>
+    </div>`
+}
+
+async function hydrateFullFileContents(): Promise<void> {
+  await loadFullFileContents()
+  rerenderDiffsPreservingScroll()
+}
+
 async function boot(): Promise<void> {
-  app.innerHTML =
-    '<div class="loading"><div class="dot"></div><div class="dot"></div><div class="dot"></div><span>loading diff…</span></div>'
+  if (!app.children.length) renderOpeningShell()
   state.review = parseDiffSession(
     await requestJson(`/api/review?id=${encodeURIComponent(reviewId)}`)
   )
-  state.files = parseFilesFromPatch(state.review)
-  await loadFullFileContents()
+  state.files = filesForSession(state.review)
+  state.renderedFileLimit = INITIAL_FILE_RENDER_LIMIT
   renderShell()
-  renderDiffs()
   renderAnnotations()
+  renderDiffsSoon()
+  void hydrateFullFileContents()
   await refreshAi()
 }
 
