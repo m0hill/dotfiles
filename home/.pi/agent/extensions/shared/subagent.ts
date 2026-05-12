@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core"
+import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import {
   createAgentSession,
   createBashToolDefinition,
@@ -10,7 +10,7 @@ import {
   type ExtensionContext,
   type ResourceLoader,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
 
 // Constants
 
@@ -50,7 +50,7 @@ const READ_ONLY_GIT_SUBCOMMANDS = new Set([
 
 // Types
 
-type AgentSessionOptions = Parameters<typeof createAgentSession>[0]
+type AgentSessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>
 type ThinkingLevel = NonNullable<AgentSessionOptions["thinkingLevel"]>
 
 type RunStatus = "running" | "completed" | "error" | "cancelled"

@@ -3,7 +3,7 @@ import type {
   ExtensionContext,
   SessionEntry,
   SessionMessageEntry,
-} from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
 import { runTrackedAgent } from "../shared/subagent"
 
 // Constants

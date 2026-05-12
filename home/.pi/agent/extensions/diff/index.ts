@@ -10,7 +10,7 @@ import {
 } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { join } from "node:path"
-import { type ExtensionAPI, type ExtensionCommandContext } from "@mariozechner/pi-coding-agent"
+import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
 import { Type, type Static, type TUnsafe } from "typebox"
 import { Compile } from "typebox/compile"
 import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pierre/diffs"
@@ -550,7 +550,7 @@ function branchOptions(ctx: ExtensionCommandContext): string[] {
     "master",
     ...(branch ? [`origin/${branch}`, branch] : []),
     upstream,
-  ].filter((branch): branch is string => Boolean(branch) && branches.has(branch))
+  ].filter((branch): branch is string => typeof branch === "string" && branches.has(branch))
 
   const dedupedPriority = [...new Set(priority)]
   const rest = [...branches].filter(

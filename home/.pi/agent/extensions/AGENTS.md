@@ -6,11 +6,11 @@ Guidelines for AI assistants working on Pi extensions in this directory.
 
 Before changing an extension, read the relevant Pi documentation from the installed package:
 
-- Main docs: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@mariozechner/pi-coding-agent/README.md`
-- Extension docs: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`
-- TUI docs, if using custom UI/components: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/tui.md`
-- Session docs, if reading/writing session state: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@mariozechner/pi-coding-agent/docs/session.md`
-- Examples: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@mariozechner/pi-coding-agent/examples/extensions/`
+- Main docs: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/README.md`
+- Extension docs: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`
+- TUI docs, if using custom UI/components: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/tui.md`
+- Session docs, if reading/writing session state: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/session.md`
+- Examples: `/Users/mohil/.local/share/mise/installs/node/24.12.0/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/`
 
 Follow cross-references in the docs before implementing unfamiliar APIs.
 
@@ -67,8 +67,8 @@ export default function myExtension(pi: ExtensionAPI): void {
 
 ## Type guidelines
 
-- Import Pi types from `@mariozechner/pi-coding-agent` when available.
-- Import AI message/content/model types from `@mariozechner/pi-ai` when needed.
+- Import Pi types from `@earendil-works/pi-coding-agent` when available.
+- Import AI message/content/model types from `@earendil-works/pi-ai` when needed.
 - Do not recreate Pi/session/message types manually.
 - Avoid `as` unless it is a deliberate boundary, such as a branded type after validation.
 - Avoid non-null assertions (`!`) by using local variables and guards.
@@ -82,8 +82,8 @@ import type {
   ExtensionCommandContext,
   SessionEntry,
   SessionMessageEntry,
-} from "@mariozechner/pi-coding-agent"
-import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai"
+} from "@earendil-works/pi-coding-agent"
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai"
 ```
 
 ## Runtime/input boundaries

@@ -2,9 +2,9 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   OAuthCredential,
-} from "@mariozechner/pi-coding-agent"
-import type { Api, Model } from "@mariozechner/pi-ai"
-import { matchesKey, Text } from "@mariozechner/pi-tui"
+} from "@earendil-works/pi-coding-agent"
+import type { Api, Model } from "@earendil-works/pi-ai"
+import { matchesKey, Text } from "@earendil-works/pi-tui"
 
 // Constants
 

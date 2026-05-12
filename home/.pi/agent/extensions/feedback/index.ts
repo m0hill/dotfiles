@@ -8,8 +8,8 @@ import type {
   ExtensionCommandContext,
   SessionEntry,
   SessionMessageEntry,
-} from "@mariozechner/pi-coding-agent"
-import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai"
+} from "@earendil-works/pi-coding-agent"
+import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai"
 
 // Types
 

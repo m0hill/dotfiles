@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, realpathSync } from "node:fs"
+import { existsSync, mkdirSync, realpathSync, type Dirent } from "node:fs"
 import { readdir, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path"
@@ -9,8 +9,8 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-} from "@mariozechner/pi-coding-agent"
-import { createBashTool } from "@mariozechner/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent"
+import { createBashTool } from "@earendil-works/pi-coding-agent"
 
 const SCOPE_STATE_TYPE = "scope-state"
 const CUSTOM_PATH_CHOICE = "Custom path…"
@@ -337,7 +337,7 @@ async function collectPickerDirs(cwd: string): Promise<string[]> {
   async function walk(dir: string, depth: number): Promise<void> {
     if (depth >= MAX_PICKER_DEPTH || results.length >= MAX_PICKER_DIRS) return
 
-    let entries: Awaited<ReturnType<typeof readdir>>
+    let entries: Dirent[]
     try {
       entries = await readdir(dir, { withFileTypes: true })
     } catch {
@@ -428,7 +428,7 @@ async function activateScope(
   persistState(pi)
   updateStatus(ctx)
   if (state.status === "active") {
-    ctx.ui.notify(`/scope active: ${summarizeRoot(ctx, state.rootReal)}`, "success")
+    ctx.ui.notify(`/scope active: ${summarizeRoot(ctx, state.rootReal)}`, "info")
   }
 }
 

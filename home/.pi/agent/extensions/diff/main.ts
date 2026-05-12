@@ -1310,7 +1310,8 @@ function jumpToAnnotation(annotation: Annotation | undefined): void {
 function jumpToAiComment(id: string): void {
   const comment = state.aiReview.comments.find((item) => item.id === id)
   if (!comment || comment.anchor.kind === "global") return
-  const index = state.files.findIndex((file) => fileName(file) === comment.anchor.file)
+  const anchor = comment.anchor
+  const index = state.files.findIndex((file) => fileName(file) === anchor.file)
   if (index < 0) return
   document.querySelector(`#file-${index}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
 }

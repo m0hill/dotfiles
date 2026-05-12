@@ -1,12 +1,12 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core"
+import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import {
   getMarkdownTheme,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent"
-import { Markdown } from "@mariozechner/pi-tui"
+} from "@earendil-works/pi-coding-agent"
+import { Markdown } from "@earendil-works/pi-tui"
 import { Type, type Static, type TUnsafe } from "typebox"
 import { readOnlyBashBlockReason, runTrackedAgent } from "../shared/subagent"
 
@@ -565,7 +565,7 @@ async function runEvaluation(
 function notify(
   ctx: ExtensionCommandContext | ExtensionContext,
   message: string,
-  level: "info" | "warning" | "error" | "success"
+  level: "info" | "warning" | "error"
 ): void {
   if (ctx.hasUI) ctx.ui.notify(message, level)
   else if (level === "error") console.error(message)

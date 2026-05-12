@@ -11,8 +11,9 @@ import { createServer as createHttpsServer } from "node:https"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
-import type { AgentMessage } from "@mariozechner/pi-agent-core"
-import type { ExtensionAPI, SessionEntry } from "@mariozechner/pi-coding-agent"
+import type { AgentMessage } from "@earendil-works/pi-agent-core"
+import type { TextContent } from "@earendil-works/pi-ai"
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 import { Decode } from "typebox/value"
 
@@ -167,10 +168,17 @@ function parseSendPayload(body: string): SendPayload {
   return { message: payload.message.trim() }
 }
 
-function textFromContent(content: AgentMessage["content"]): string {
+type ChatContent = Extract<AgentMessage, { role: "user" | "assistant" }>["content"]
+type ChatContentBlock = Exclude<ChatContent, string>[number]
+
+function isTextContent(block: ChatContentBlock): block is TextContent {
+  return block.type === "text"
+}
+
+function textFromContent(content: ChatContent): string {
   if (typeof content === "string") return content
   return content
-    .filter((block) => block.type === "text")
+    .filter(isTextContent)
     .map((block) => block.text)
     .join("\n")
 }
@@ -408,20 +416,18 @@ export default function phone(pi: ExtensionAPI): void {
   })
 
   pi.on("tool_execution_start", (event) => {
-    feedItems = [
-      ...feedItems,
-      {
-        id: event.toolCallId,
-        role: "tool",
-        status: "running",
-        text: toolText("running", event.toolName, event.args),
-      },
-    ].slice(-160)
+    const item: FeedItem = {
+      id: event.toolCallId,
+      role: "tool",
+      status: "running",
+      text: toolText("running", event.toolName, event.args),
+    }
+    feedItems = [...feedItems, item].slice(-160)
     broadcast("snapshot", snapshot())
   })
 
   pi.on("tool_execution_end", (event) => {
-    const status = event.isError ? "error" : "success"
+    const status: ToolActivityStatus = event.isError ? "error" : "success"
     const icon = status === "success" ? "✓" : "✗"
     feedItems = feedItems.map((item) =>
       item.id === event.toolCallId && item.role === "tool"
