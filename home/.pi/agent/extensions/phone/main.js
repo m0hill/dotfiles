@@ -9,6 +9,10 @@ const micButton = document.querySelector("#mic")
 const refreshButton = document.querySelector("#refresh")
 const jumpLatestButton = document.querySelector("#jump-latest")
 let eventSource
+let reconnectTimer
+let reconnectAttempt = 0
+let lastEventAt = 0
+let watchdogTimer
 let highlighterPromise
 let currentMessages = []
 let pendingMessages = []
@@ -31,6 +35,44 @@ function api(path) {
 
 function setStatus(text) {
   statusEl.textContent = text
+}
+
+function noteEvent() {
+  lastEventAt = Date.now()
+}
+
+function reconnectDelay() {
+  return Math.min(30_000, 750 * 2 ** Math.min(reconnectAttempt, 6))
+}
+
+function scheduleReconnect(reason = "Reconnecting…") {
+  setStatus(reason)
+  if (reconnectTimer) return
+  const delay = reconnectDelay()
+  reconnectAttempt += 1
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined
+    connectEvents()
+  }, delay)
+}
+
+function reconnectNow(reason = "Reconnecting…") {
+  if (!token) return
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = undefined
+  reconnectAttempt = 0
+  setStatus(reason)
+  connectEvents()
+  refresh().catch((error) => setStatus(error.message))
+}
+
+function startWatchdog() {
+  if (watchdogTimer) clearInterval(watchdogTimer)
+  watchdogTimer = setInterval(() => {
+    if (document.hidden) return
+    if (!lastEventAt) return
+    if (Date.now() - lastEventAt > 45_000) reconnectNow("Connection stale; reconnecting…")
+  }, 10_000)
 }
 
 function updateComposerHeight() {
@@ -219,15 +261,26 @@ async function refresh() {
 
 function connectEvents() {
   if (eventSource) eventSource.close()
+  noteEvent()
   eventSource = new EventSource(api("/events"))
-  eventSource.addEventListener("open", () => setStatus("Connected"))
-  eventSource.addEventListener("error", () => setStatus("Disconnected or token expired"))
+  eventSource.addEventListener("open", () => {
+    noteEvent()
+    reconnectAttempt = 0
+    setStatus("Connected")
+  })
+  eventSource.addEventListener("error", () => {
+    eventSource?.close()
+    eventSource = undefined
+    scheduleReconnect("Disconnected; reconnecting…")
+  })
   eventSource.addEventListener("snapshot", (event) => {
+    noteEvent()
     const data = JSON.parse(event.data)
     renderMessages(data.messages || [])
     setStatus(data.idle ? "Idle" : "Working…")
   })
   eventSource.addEventListener("status", (event) => {
+    noteEvent()
     const data = JSON.parse(event.data)
     setStatus(data.idle ? "Idle" : "Working…")
   })
@@ -465,11 +518,18 @@ window.addEventListener("scroll", () => {
 new ResizeObserver(updateComposerHeight).observe(form)
 window.visualViewport?.addEventListener("resize", updateComposerHeight)
 window.addEventListener("resize", updateComposerHeight)
+window.addEventListener("online", () => reconnectNow("Back online; reconnecting…"))
+window.addEventListener("focus", () => reconnectNow("Reconnecting…"))
+window.addEventListener("pageshow", () => reconnectNow("Reconnecting…"))
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) reconnectNow("Reconnecting…")
+})
 autosizePrompt()
 updateComposerHeight()
 
 if (!token) setStatus("Missing token. Run /phone again.")
 else {
   connectEvents()
+  startWatchdog()
   refresh().catch((error) => setStatus(error.message))
 }

@@ -51,6 +51,7 @@ type FeedItem = {
 type Client = {
   id: string
   res: ServerResponse
+  heartbeat: NodeJS.Timeout
 }
 
 type PhoneServer = ReturnType<typeof createHttpServer> | ReturnType<typeof createHttpsServer>
@@ -87,11 +88,11 @@ function refreshToken(running: ServerState): void {
 }
 
 function isAuthorized(url: URL): boolean {
-  return (
-    state !== null &&
-    url.searchParams.get("token") === state.token &&
-    Date.now() < state.tokenExpiresAt
-  )
+  if (state === null) return false
+  if (url.searchParams.get("token") !== state.token) return false
+  if (Date.now() >= state.tokenExpiresAt) return false
+  state.tokenExpiresAt = Date.now() + TOKEN_TTL_MS
+  return true
 }
 
 function staticFile(pathname: string): { path: string; contentType: string } | null {
@@ -115,6 +116,10 @@ function sendJson(res: ServerResponse, value: unknown, status = 200): void {
 function sendEvent(client: Client, event: string, data: unknown): void {
   client.res.write(`event: ${event}\n`)
   client.res.write(`data: ${JSON.stringify(data)}\n\n`)
+}
+
+function sendHeartbeat(client: Client): void {
+  client.res.write(`: heartbeat ${Date.now()}\n\n`)
 }
 
 function broadcast(event: string, data: unknown): void {
@@ -307,10 +312,18 @@ function createPhoneServer(pi: ExtensionAPI): PhoneServer {
             "cache-control": "no-cache, no-transform",
             connection: "keep-alive",
           })
-          const client = { id, res }
+          const client = {
+            id,
+            res,
+            heartbeat: setInterval(() => sendHeartbeat(client), 15_000),
+          }
           state?.clients.set(id, client)
           sendEvent(client, "snapshot", snapshot())
-          req.on("close", () => state?.clients.delete(id))
+          sendHeartbeat(client)
+          req.on("close", () => {
+            clearInterval(client.heartbeat)
+            state?.clients.delete(id)
+          })
           return
         }
 
@@ -386,7 +399,10 @@ function stopServer(): Promise<void> {
   startPromise = null
   return new Promise((resolve) => {
     if (!current) return resolve()
-    for (const client of current.clients.values()) client.res.end()
+    for (const client of current.clients.values()) {
+      clearInterval(client.heartbeat)
+      client.res.end()
+    }
     current.server.close(() => resolve())
   })
 }
