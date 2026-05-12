@@ -6,8 +6,7 @@
     "build": "esbuild main.ts --bundle --format=esm --target=es2022 --minify --outfile=dist/main.js"
   },
   "dependencies": {
-    "@pierre/diffs": "latest",
-    "typebox": "^1.1.34"
+    "@pierre/diffs": "^1.1.21"
   },
   "devDependencies": {
     "esbuild": "latest",
