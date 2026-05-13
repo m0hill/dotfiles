@@ -60,6 +60,7 @@ Write `groups.json`:
 ```
 
 Key rules:
+
 - **`last_commit` must be a full hash.** Expand from jsonl short hashes with `git rev-parse`.
 - **No two groups may share a file.** The script validates this and fails if violated.
 
@@ -77,6 +78,7 @@ On verification failure: exits non-zero but leaves branches intact for inspectio
 ## Step 3 — Report
 
 After the script finishes, report to the user:
+
 - Branches created and what each contains
 - Overall metric improvement (baseline → best)
 - Show the cleanup commands from the script's summary output

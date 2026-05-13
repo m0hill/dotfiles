@@ -29,25 +29,32 @@ This is the heart of the session. A fresh agent with no context should be able t
 # Autoresearch: <goal>
 
 ## Objective
+
 <Specific description of what we're optimizing and the workload.>
 
 ## Metrics
+
 - **Primary**: <name> (<unit>, lower/higher is better) — the optimization target
 - **Secondary**: <name>, <name>, ... — independent tradeoff monitors
 
 ## How to Run
+
 `./autoresearch.sh` — outputs `METRIC name=number` lines.
 
 ## Files in Scope
+
 <Every file the agent may modify, with a brief note on what it does.>
 
 ## Off Limits
+
 <What must NOT be touched.>
 
 ## Constraints
+
 <Hard rules: tests must pass, no new deps, etc.>
 
 ## What's Been Tried
+
 <Update this section as experiments accumulate. Note key wins, dead ends,
 and architectural insights so the agent doesn't repeat failed approaches.>
 ```
@@ -100,6 +107,7 @@ JSON config file that lives in the pi session's working directory (`ctx.cwd`). S
 Bash script (`set -euo pipefail`) for backpressure/correctness checks: tests, types, lint, etc. **Only create this file when the user's constraints require correctness validation** (e.g., "tests must pass", "types must check").
 
 When this file exists:
+
 - Runs automatically after every **passing** benchmark in `run_experiment`.
 - If checks fail, `run_experiment` reports it clearly — log as `checks_failed`.
 - Its execution time does **NOT** affect the primary metric.
