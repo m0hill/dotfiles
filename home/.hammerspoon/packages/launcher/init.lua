@@ -18,6 +18,7 @@ return function(manager)
 		MAX_CLIP_RESULTS = 12,
 		MAX_CLIPBOARD_ITEMS = 80,
 		MAX_CLIPBOARD_CHARS = 8000,
+		MAX_APP_USAGE_ITEMS = 200,
 		MAX_DISPLAY_CHARS = 90,
 		FILE_SEARCH_MIN_CHARS = 2,
 		FILE_SEARCH_DEBOUNCE = 0.12,
@@ -83,6 +84,7 @@ return function(manager)
 	local bound_hotkeys = {}
 	local pasteboard_watcher = nil
 	local app_cache = {}
+	local app_usage = {}
 	local clipboard_history = {}
 	local file_results = {}
 	local previous_app = nil
@@ -680,6 +682,53 @@ return function(manager)
 		return true
 	end
 
+	local function normalizeAppUsage(value)
+		local normalized = {}
+		if type(value) ~= "table" then
+			return normalized
+		end
+		for path, stat in pairs(value) do
+			if type(path) == "string" and type(stat) == "table" then
+				local count = tonumber(stat.count) or 0
+				if count > 0 then
+					normalized[path] = {
+						count = count,
+						lastUsed = tonumber(stat.lastUsed) or 0,
+						name = type(stat.name) == "string" and stat.name or nil,
+					}
+				end
+			end
+		end
+		return normalized
+	end
+
+	local function appUsageFor(app, usage)
+		return (usage or app_usage)[app and app.path or ""]
+	end
+
+	local function compareAppsByUsage(a, b, usage)
+		local usageA = appUsageFor(a, usage)
+		local usageB = appUsageFor(b, usage)
+		local countA = usageA and usageA.count or 0
+		local countB = usageB and usageB.count or 0
+		if countA ~= countB then
+			return countA > countB
+		end
+		local lastA = usageA and usageA.lastUsed or 0
+		local lastB = usageB and usageB.lastUsed or 0
+		if lastA ~= lastB then
+			return lastA > lastB
+		end
+		return normalize(a and a.name or "") < normalize(b and b.name or "")
+	end
+
+	local function sortAppsByUsage(apps, usage)
+		table.sort(apps, function(a, b)
+			return compareAppsByUsage(a, b, usage)
+		end)
+		return apps
+	end
+
 	local function loadSettings()
 		settings = {
 			maxAppResults = manager.getSetting(PACKAGE_ID, "maxAppResults", CONFIG.MAX_APP_RESULTS),
@@ -703,6 +752,7 @@ return function(manager)
 				CONFIG.IGNORED_CLIPBOARD_BUNDLE_IDS
 			),
 		}
+		app_usage = normalizeAppUsage(manager.getSetting(PACKAGE_ID, "appUsage", {}))
 		fd_executable = nil
 		fd_missing_notified = false
 	end
@@ -823,10 +873,60 @@ return function(manager)
 		for _, dir in ipairs(CONFIG.APP_DIRS) do
 			scanAppsInDir(expandHome(dir), 0, results, seen)
 		end
-		table.sort(results, function(a, b)
-			return a.name:lower() < b.name:lower()
-		end)
+		sortAppsByUsage(results)
 		app_cache = results
+	end
+
+	local function pruneAppUsage()
+		local entries = {}
+		for path, stat in pairs(app_usage) do
+			entries[#entries + 1] = {
+				path = path,
+				count = tonumber(stat.count) or 0,
+				lastUsed = tonumber(stat.lastUsed) or 0,
+			}
+		end
+		if #entries <= CONFIG.MAX_APP_USAGE_ITEMS then
+			return
+		end
+		table.sort(entries, function(a, b)
+			if a.count ~= b.count then
+				return a.count > b.count
+			end
+			return a.lastUsed > b.lastUsed
+		end)
+		for i = CONFIG.MAX_APP_USAGE_ITEMS + 1, #entries do
+			app_usage[entries[i].path] = nil
+		end
+	end
+
+	local function persistAppUsage()
+		pruneAppUsage()
+		if manager.setSetting then
+			manager.setSetting(PACKAGE_ID, "appUsage", app_usage)
+		end
+	end
+
+	local function recordAppUsage(app)
+		if not app or not app.path or app.path == "" then
+			return
+		end
+		local stat = app_usage[app.path]
+		if not stat then
+			stat = { count = 0, lastUsed = 0, name = app.name }
+			app_usage[app.path] = stat
+		end
+		stat.count = (tonumber(stat.count) or 0) + 1
+		stat.lastUsed = os.time()
+		stat.name = app.name
+		sortAppsByUsage(app_cache)
+		persistAppUsage()
+	end
+
+	local function resetAppUsage()
+		app_usage = {}
+		sortAppsByUsage(app_cache)
+		persistAppUsage()
 	end
 
 	local function asList(value, defaultValue)
@@ -1111,6 +1211,7 @@ return function(manager)
 		end
 		local payload = choice.payload or {}
 		if choice.kind == "app" then
+			recordAppUsage(payload)
 			openPath(payload.path)
 		elseif choice.kind == "file" then
 			openPath(payload.path)
@@ -1237,6 +1338,13 @@ return function(manager)
 				end,
 			},
 			{
+				title = "Reset App Usage",
+				fn = function()
+					resetAppUsage()
+					manager.notify("Launcher", "App usage ranking reset")
+				end,
+			},
+			{
 				title = "Clear Clipboard History (" .. tostring(#clipboard_history) .. ")",
 				fn = function()
 					clipboard_history = {}
@@ -1254,6 +1362,7 @@ return function(manager)
 		parseFileSearchOutput = parseFileSearchOutput,
 		scoreText = scoreText,
 		shortenPath = shortenPath,
+		sortAppsByUsage = sortAppsByUsage,
 		singleLine = singleLine,
 		truncate = truncate,
 	}

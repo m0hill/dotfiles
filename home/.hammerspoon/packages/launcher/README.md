@@ -23,5 +23,6 @@ Clipboard history is stored locally in `packages/launcher/clipboard.json`, which
 - File results use cached file-type icons by extension, with path-based icons as a fallback for folders or extensionless files.
 - Clipboard results use a path icon for copied file paths, a web location icon for URLs, and a text document icon for normal text.
 - App search includes aliases for common system app renames, so `settings`, `prefs`, or `preferences` prefer System Settings over matching files/folders.
+- The empty launcher ranks apps by persisted launch usage instead of alphabetical order; use **Reset App Usage** from the menu to clear it.
 - Clipboard capture ignores common password-manager bundle IDs by default.
 - No terminal, fzf, libghostty, cloud sync, extensions, or AI features are involved.
