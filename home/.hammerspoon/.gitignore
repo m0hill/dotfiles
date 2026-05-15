@@ -3,3 +3,6 @@ opensrc/
 
 # JSON files (settings/secrets)
 *.json
+
+# Built native helpers
+packages/launcher/bin/
