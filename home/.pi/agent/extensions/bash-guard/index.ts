@@ -12,6 +12,7 @@ const YES = "Yes"
 const NO = "No"
 const EXPLAIN = "Explain"
 const EXPLAIN_TIMEOUT_MS = 20_000
+const PHONE_MODE_EVENT = "phone:mode"
 
 const EXPLAIN_SYSTEM_PROMPT = [
   "You explain why a proposed bash command is needed before a user approves it.",
@@ -37,6 +38,19 @@ type SensitiveMatch = {
   id: string
   reason: string
 }
+
+type PhoneApprovalAnswer = "yes" | "no"
+
+type PendingPhoneApproval = {
+  command: string
+  matches: SensitiveMatch[]
+}
+
+// State
+
+let phoneModeActive = false
+let pendingPhoneApproval: PendingPhoneApproval | null = null
+let approvedPhoneCommand: string | null = null
 
 // Sensitive command rules
 
@@ -116,6 +130,38 @@ function redactCommand(command: string): string {
     .replace(/\b(token|password|secret)=([^\s]+)/gi, "$1=<redacted>")
 }
 
+function phoneModeEventActive(value: unknown): boolean | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const active = Object.getOwnPropertyDescriptor(value, "active")?.value
+  return typeof active === "boolean" ? active : undefined
+}
+
+function approvalAnswer(text: string): PhoneApprovalAnswer | undefined {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/g, "")
+
+  if (
+    /^(y|yes|yeah|yep|ok|okay|approve|approved|run it|go ahead|do it|proceed|sure)(\s|$)/.test(
+      normalized
+    )
+  ) {
+    return "yes"
+  }
+
+  if (/^(n|no|nope|deny|denied|block|stop|cancel|don't|dont|do not)(\s|$)/.test(normalized)) {
+    return "no"
+  }
+
+  return undefined
+}
+
+function resetPhoneApprovals(): void {
+  pendingPhoneApproval = null
+  approvedPhoneCommand = null
+}
+
 // Session/message helpers
 
 function recentContext(ctx: ExtensionContext): string {
@@ -147,6 +193,20 @@ function getSensitiveMatches(command: string): SensitiveMatch[] {
 function buildApprovalPrompt(command: string, matches: SensitiveMatch[]): string {
   const reasons = matches.map((match) => `- ${match.reason}`).join("\n")
   return ["Sensitive bash command detected", "", command, "", "Why flagged:", reasons].join("\n")
+}
+
+function buildPhoneApprovalBlockReason(command: string, matches: SensitiveMatch[]): string {
+  const reasons = matches.map((match) => `- ${match.reason}`).join("\n")
+  return [
+    "Phone mode is active. This sensitive bash command needs user approval before it can run.",
+    "Ask the user in a normal assistant message whether to run this command. If the user says yes, retry the exact same command. If the user says no, do not run it.",
+    "",
+    "Command:",
+    command,
+    "",
+    "Why flagged:",
+    reasons,
+  ].join("\n")
 }
 
 function buildExplanationPrompt(
@@ -213,12 +273,43 @@ async function explainCommand(
 // Extension entrypoint
 
 export default function bashGuardExtension(pi: ExtensionAPI): void {
+  pi.events.on(PHONE_MODE_EVENT, (value) => {
+    const active = phoneModeEventActive(value)
+    if (active === undefined) return
+
+    phoneModeActive = active
+    if (!active) resetPhoneApprovals()
+  })
+
+  pi.on("input", (event) => {
+    if (!phoneModeActive || !pendingPhoneApproval) return
+
+    const answer = approvalAnswer(event.text)
+    if (answer === "yes") {
+      approvedPhoneCommand = pendingPhoneApproval.command
+      pendingPhoneApproval = null
+      return
+    }
+
+    if (answer === "no") resetPhoneApprovals()
+  })
+
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "bash") return
 
     const command = typeof event.input.command === "string" ? event.input.command : ""
     const matches = getSensitiveMatches(command)
     if (matches.length === 0) return
+
+    if (phoneModeActive) {
+      if (approvedPhoneCommand === command) {
+        resetPhoneApprovals()
+        return
+      }
+
+      pendingPhoneApproval = { command, matches }
+      return { block: true, reason: buildPhoneApprovalBlockReason(command, matches) }
+    }
 
     const choice = await ctx.ui.select(buildApprovalPrompt(command, matches), [YES, NO, EXPLAIN])
 

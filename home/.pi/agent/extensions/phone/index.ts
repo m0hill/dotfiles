@@ -31,6 +31,7 @@ const STT_HELPER = `${process.env.HOME ?? ""}/Library/Application Support/Hammer
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
 const HELPER_MARKER = "__STT_JSON_B64__"
 const ASK_USER_TOOL_NAME = "ask_user"
+const PHONE_MODE_EVENT = "phone:mode"
 
 const sendPayloadSchema = Type.Object({
   message: Type.String({ pattern: "\\S" }),
@@ -471,6 +472,7 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async () => {
     latestCtx = null
     await stopServer()
+    pi.events.emit(PHONE_MODE_EVENT, { active: false })
   })
 
   pi.registerCommand("phone-start", {
@@ -479,6 +481,7 @@ export default function phone(pi: ExtensionAPI): void {
       latestCtx = ctx
       try {
         const running = await startServer(pi)
+        pi.events.emit(PHONE_MODE_EVENT, { active: true })
         refreshToken(running)
         const url = tailscaleUrl(running.port, running.token)
         const qr = await qrText(url)
@@ -503,6 +506,7 @@ export default function phone(pi: ExtensionAPI): void {
     description: "Stop the phone handoff server",
     handler: async (_args, ctx) => {
       await stopServer()
+      pi.events.emit(PHONE_MODE_EVENT, { active: false })
       ctx.ui.notify("Phone handoff server stopped", "info")
     },
   })
