@@ -29,6 +29,18 @@ return function(config)
 			secrets = {},
 		},
 		{
+			id = "launcher",
+			name = "Launcher",
+			description = "Minimal app/file/clipboard command palette.",
+			defaultEnabled = false,
+			entryPath = PACKAGES_DIR .. "/launcher/init.lua",
+			hotkeys = {
+				{ action = "open", description = "Open Launcher", default = "Cmd+Space" },
+				{ action = "clipboard", description = "Open Clipboard History", default = "Cmd+Shift+V" },
+			},
+			secrets = {},
+		},
+		{
 			id = "gemini",
 			name = "Gemini OCR",
 			description = "Capture a region and extract text with Gemini.",
@@ -38,7 +50,11 @@ return function(config)
 				{ action = "capture", description = "Start Capture", default = "Cmd+Shift+S" },
 			},
 			secrets = {
-				{ key = "GEMINI_API_KEY", label = "Gemini API Key", hint = "Get from https://aistudio.google.com/app/apikey" },
+				{
+					key = "GEMINI_API_KEY",
+					label = "Gemini API Key",
+					hint = "Get from https://aistudio.google.com/app/apikey",
+				},
 			},
 		},
 		{
