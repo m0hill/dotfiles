@@ -30,6 +30,7 @@ const FFMPEG = "/opt/homebrew/bin/ffmpeg"
 const STT_HELPER = `${process.env.HOME ?? ""}/Library/Application Support/Hammerspoon/STT/bin/stt-helper`
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
 const HELPER_MARKER = "__STT_JSON_B64__"
+const ASK_USER_TOOL_NAME = "ask_user"
 
 const sendPayloadSchema = Type.Object({
   message: Type.String({ pattern: "\\S" }),
@@ -226,6 +227,10 @@ function toolText(status: ToolActivityStatus, toolName: string, args: unknown): 
 
 function isFeedItem(item: FeedItem | null): item is FeedItem {
   return item !== null
+}
+
+function isPhoneModeActive(): boolean {
+  return state !== null
 }
 
 function snapshot(): {
@@ -451,6 +456,16 @@ export default function phone(pi: ExtensionAPI): void {
         : item
     )
     broadcast("snapshot", snapshot())
+  })
+
+  pi.on("tool_call", (event) => {
+    if (!isPhoneModeActive() || event.toolName !== ASK_USER_TOOL_NAME) return undefined
+
+    return {
+      block: true,
+      reason:
+        "Phone mode is active. Do not use ask_user. Ask all clarification questions in a normal assistant message in one batch, then wait for the user's normal reply.",
+    }
   })
 
   pi.on("session_shutdown", async () => {
