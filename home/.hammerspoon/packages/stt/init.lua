@@ -387,10 +387,10 @@ return function(manager)
 			return nil, result.error
 		end
 
-local task = hs.task.new(path, function(exitCode, stdout, stderr)
-		local result = parseHelperResult(exitCode, stdout, stderr)
-		onComplete(exitCode, result, stdout, stderr)
-	end, args)
+		local task = hs.task.new(path, function(exitCode, stdout, stderr)
+			local result = parseHelperResult(exitCode, stdout, stderr)
+			onComplete(exitCode, result, stdout, stderr)
+		end, args)
 
 		if not task then
 			helperState.checked = true
@@ -655,50 +655,63 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 
 		local rawFlagMasks = hs.eventtap.event.rawFlagMasks or {}
 		local rightAltMask = rawFlagMasks.deviceRightAlternate or 0
-		local altMask = rawFlagMasks.alternate or 0
-		local ignoreMask = (rawFlagMasks.nonCoalesced or 0) | 0x20000000
-		local allowedMask = rightAltMask | altMask
+		local allowedFlagMasks = {
+			[rawFlagMasks.alternate or 0] = true,
+			[rightAltMask] = true,
+			[rawFlagMasks.nonCoalesced or 0] = true,
+			[0x20000000] = true,
+		}
 
 		local function cancelRightOptionOnlyTrigger()
 			right_option_cancelled = true
 			cancelPendingRightOptionStart()
 		end
 
-		right_option_tap = hs.eventtap.new({ hs.eventtap.event.types.flagsChanged, hs.eventtap.event.types.keyDown, hs.eventtap.event.types.keyUp }, function(event)
-			local eventType = event:getType()
-			local flags = event:rawFlags() & (~ignoreMask)
-			local hasOtherModifiers = (flags & (~allowedMask)) ~= 0
-			local isDown = (flags & rightAltMask) ~= 0
+		right_option_tap = hs.eventtap.new(
+			{ hs.eventtap.event.types.flagsChanged, hs.eventtap.event.types.keyDown, hs.eventtap.event.types.keyUp },
+			function(event)
+				local eventType = event:getType()
+				local rawFlags = event:rawFlags()
+				local isDown = rightAltMask ~= 0 and math.floor(rawFlags / rightAltMask) % 2 >= 1
+				local hasOtherModifiers = false
 
-			if eventType == hs.eventtap.event.types.keyDown or eventType == hs.eventtap.event.types.keyUp then
-				if right_option_down then
+				for _, mask in pairs(rawFlagMasks) do
+					if not allowedFlagMasks[mask] and mask ~= 0 and math.floor(rawFlags / mask) % 2 >= 1 then
+						hasOtherModifiers = true
+						break
+					end
+				end
+
+				if eventType == hs.eventtap.event.types.keyDown or eventType == hs.eventtap.event.types.keyUp then
+					if right_option_down then
+						cancelRightOptionOnlyTrigger()
+					end
+					return false
+				end
+
+				if right_option_down and hasOtherModifiers then
 					cancelRightOptionOnlyTrigger()
 				end
-				return false
-			end
 
-			if right_option_down and hasOtherModifiers then
-				cancelRightOptionOnlyTrigger()
-			end
-
-			if isDown == right_option_down then
-				return false
-			end
-
-			right_option_down = isDown
-			if isDown then
-				right_option_cancelled = hasOtherModifiers
-			else
-				if not right_option_cancelled then
-					toggleRecording()
-				else
-					cancelPendingRightOptionStart()
+				if isDown == right_option_down then
+					return false
 				end
-				right_option_cancelled = false
-			end
 
-			return false
-		end)
+				right_option_down = isDown
+				if isDown then
+					right_option_cancelled = hasOtherModifiers
+				else
+					if not right_option_cancelled then
+						toggleRecording()
+					else
+						cancelPendingRightOptionStart()
+					end
+					right_option_cancelled = false
+				end
+
+				return false
+			end
+		)
 
 		right_option_tap:start()
 	end
@@ -826,7 +839,11 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 	function P.getMenuItems()
 		local helperLine = helperExists() and "Helper: installed" or "Helper: missing"
 		local statusLine = helperState.message
-		if settings.triggerMode == TRIGGER_MODE_RIGHT_OPTION and hs.eventtap.isSecureInputEnabled() and not is_recording then
+		if
+			settings.triggerMode == TRIGGER_MODE_RIGHT_OPTION
+			and hs.eventtap.isSecureInputEnabled()
+			and not is_recording
+		then
 			statusLine = "Secure Input blocks Right Option"
 		end
 
@@ -842,7 +859,8 @@ local task = hs.task.new(path, function(exitCode, stdout, stderr)
 				disabled = true,
 			},
 			{
-				title = is_downloading and (helperState.modelAvailable and "Deleting Model..." or "Downloading Model...")
+				title = is_downloading
+						and (helperState.modelAvailable and "Deleting Model..." or "Downloading Model...")
 					or (helperState.modelAvailable and "Delete Model" or "Download Model"),
 				disabled = is_downloading or not helperExists(),
 				fn = helperState.modelAvailable and deleteModel or startDownload,
