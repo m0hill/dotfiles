@@ -627,7 +627,7 @@ return function(manager)
 		local choices = {}
 
 		pushRanked(choices, q, apps, opts.maxAppResults or CONFIG.MAX_APP_RESULTS, "app", 1, function(app, score)
-			local choice = makeChoice("app", app.name, "App • " .. shortenPath(app.path or ""), app, score, 1)
+			local choice = makeChoice("app", app.name, "Application", app, score, 1)
 			if opts.includeImages ~= false then
 				choice.image = getAppIcon(app)
 			end
@@ -646,7 +646,7 @@ return function(manager)
 				3,
 				function(file, score)
 					local name = file.name or basename(file.path)
-					local choice = makeChoice("file", name, "File • " .. shortenPath(file.path or ""), file, score, 3)
+					local choice = makeChoice("file", name, "File", file, score, 3)
 					if opts.includeImages ~= false then
 						choice.image = getFileIcon(file)
 					end
@@ -1360,14 +1360,18 @@ return function(manager)
 		ui_mode = mode or "all"
 
 		ui_search = ui.textField.new({
-			search = true,
 			placeholder = ui_mode == "clipboard" and "Search clipboard history" or "Search apps, files, and clipboard",
 			fontSize = 17,
-			height = 32,
+			height = 30,
+			grow = true,
+			bordered = false,
+			bezeled = false,
+			drawsBackground = false,
+			focusRing = false,
 		})
 
 		ui_list = ui.list.new({
-			rowHeight = 56,
+			rowHeight = 50,
 			allowsEmptySelection = false,
 			grow = true,
 		})
@@ -1400,13 +1404,13 @@ return function(manager)
 
 		local stack = ui.stack.new({
 			orientation = "vertical",
-			spacing = 12,
-			padding = { top = 22, left = 22, bottom = 18, right = 22 },
+			spacing = 8,
+			padding = { top = 16, left = 14, bottom = 12, right = 14 },
 			views = { ui_search, ui_list },
 		})
 
 		ui_panel = ui.panel.new({
-			frame = { x = 0, y = 0, w = 760, h = 620 },
+			frame = { x = 0, y = 0, w = 680, h = 500 },
 			style = "borderless",
 			level = "floating",
 			material = "hud",
@@ -1423,7 +1427,7 @@ return function(manager)
 		ui_panel:setContent(stack)
 		ui_visible = true
 		refreshUiRows("")
-		ui_panel:centerNearMouse()
+		ui_panel:centerOnScreen()
 		ui_panel:show()
 		ui_search:focus()
 		return true
