@@ -20,8 +20,6 @@ return function(manager)
 		MAX_CLIPBOARD_CHARS = 8000,
 		MAX_APP_USAGE_ITEMS = 200,
 		MAX_DISPLAY_CHARS = 90,
-		USE_NATIVE_UI = true,
-		NATIVE_BUILD_ON_DEMAND = true,
 		FILE_SEARCH_MIN_CHARS = 2,
 		FILE_SEARCH_DEBOUNCE = 0.12,
 		FILE_SEARCH_TIMEOUT = 2.0,
@@ -57,8 +55,6 @@ return function(manager)
 			"target",
 			".next",
 		},
-		CHOOSER_ROWS = 12,
-		CHOOSER_WIDTH = 45,
 		PERSIST_CLIPBOARD = true,
 		APP_SCAN_MAX_DEPTH = 3,
 		APP_DIRS = {
@@ -82,14 +78,16 @@ return function(manager)
 		},
 	}
 
-	local chooser = nil
-	local native_server = nil
-	local native_port = nil
-	local native_token = nil
-	local native_session = nil
-	local native_task = nil
-	local native_build_task = nil
-	local native_build_callback = nil
+	local ui = nil
+	local ui_available = nil
+	local ui_missing_notified = false
+	local ui_panel = nil
+	local ui_search = nil
+	local ui_list = nil
+	local ui_choice_map = {}
+	local ui_mode = "all"
+	local ui_query = ""
+	local ui_visible = false
 	local bound_hotkeys = {}
 	local pasteboard_watcher = nil
 	local app_cache = {}
@@ -102,15 +100,12 @@ return function(manager)
 	local file_search_token = 0
 	local fd_executable = nil
 	local fd_missing_notified = false
-	local chooser_mode = "all"
 	local settings = {}
 	local file_type_icon_cache = {}
 	local string_byte = string.byte
 	local string_find = string.find
 	local string_sub = string.sub
 	local handleChoice = nil
-	local showChooser = nil
-
 
 	local function trim(value)
 		return tostring(value or ""):match("^%s*(.-)%s*$")
@@ -758,8 +753,6 @@ return function(manager)
 			maxClipboardItems = manager.getSetting(PACKAGE_ID, "maxClipboardItems", CONFIG.MAX_CLIPBOARD_ITEMS),
 			maxClipboardChars = manager.getSetting(PACKAGE_ID, "maxClipboardChars", CONFIG.MAX_CLIPBOARD_CHARS),
 			maxDisplayChars = manager.getSetting(PACKAGE_ID, "maxDisplayChars", CONFIG.MAX_DISPLAY_CHARS),
-			useNativeUI = manager.getSetting(PACKAGE_ID, "useNativeUI", CONFIG.USE_NATIVE_UI),
-			nativeBuildOnDemand = manager.getSetting(PACKAGE_ID, "nativeBuildOnDemand", CONFIG.NATIVE_BUILD_ON_DEMAND),
 			fileSearchMinChars = manager.getSetting(PACKAGE_ID, "fileSearchMinChars", CONFIG.FILE_SEARCH_MIN_CHARS),
 			fileSearchDebounce = manager.getSetting(PACKAGE_ID, "fileSearchDebounce", CONFIG.FILE_SEARCH_DEBOUNCE),
 			fileSearchTimeout = manager.getSetting(PACKAGE_ID, "fileSearchTimeout", CONFIG.FILE_SEARCH_TIMEOUT),
@@ -1135,91 +1128,67 @@ return function(manager)
 		}
 	end
 
-	local function isFileSearchRunning()
-		if file_search_timer then
-			return true
-		end
-		if file_search_task then
-			local ok, running = pcall(function()
-				return file_search_task:isRunning()
-			end)
-			return ok and running == true
-		end
-		return false
-	end
-
-	local function nativeIconInfo(choice)
+	local function uiIconInfo(choice)
 		local payload = choice.payload or {}
-		if choice.kind == "app" then
-			return "app", payload.path
-		elseif choice.kind == "file" then
-			return "file", payload.path
+		if choice.kind == "app" or choice.kind == "file" then
+			return payload.path, nil
 		elseif choice.kind == "clip" then
 			local text = trim(payload.text or "")
 			if text ~= "" and text:find("\n", 1, true) == nil then
 				local expanded = expandHome(text)
 				if hs.fs and hs.fs.attributes(expanded) then
-					return "path", expanded
+					return expanded, nil
 				end
 			end
 			if text:match("^%a[%w+.-]*://") then
-				return "url", nil
+				return nil, "link"
 			end
-			return "text", nil
+			return nil, "doc.on.clipboard"
 		end
-		return choice.kind or "text", nil
+		return nil, "magnifyingglass"
 	end
 
-	local function refreshNativeChoices(query)
-		if not native_session or not native_session.active then
-			return nil
+	local function refreshUiRows(query)
+		if not ui_list then
+			return
 		end
 
-		local mode = native_session.mode or chooser_mode or "all"
-		query = query or native_session.query or ""
-		native_session.query = query
-		native_session.version = (native_session.version or 0) + 1
-		native_session.choiceMap = {}
+		ui_query = query or ui_query or ""
+		local choices = choicesWithEmptyState(computeChoices(ui_query, ui_mode, false), ui_mode)
+		local rows = {}
+		ui_choice_map = {}
 
-		local choices = choicesWithEmptyState(computeChoices(query, mode, false), mode)
-		local serialized = {}
 		for index, choice in ipairs(choices) do
-			local id = string.format("%d:%d", native_session.version, index)
-			local iconHint, iconPath = nativeIconInfo(choice)
-			native_session.choiceMap[id] = choice
-			serialized[index] = {
+			local id = tostring(index)
+			local iconPath, systemImage = uiIconInfo(choice)
+			ui_choice_map[id] = choice
+			rows[index] = {
 				id = id,
-				kind = choice.kind or "",
 				title = tostring(choice.text or ""),
 				subtitle = tostring(choice.subText or ""),
 				path = iconPath,
-				iconHint = iconHint,
+				iconForFile = iconPath ~= nil,
+				systemImage = systemImage,
 				disabled = choice.disabled == true,
 			}
 		end
 
-		native_session.choices = serialized
-		native_session.searching = mode == "all" and isFileSearchRunning() or false
-		return native_session
+		ui_list:rows(rows)
+		for index, row in ipairs(rows) do
+			if not row.disabled then
+				ui_list:selectedRow(index)
+				break
+			end
+		end
 	end
 
 	local function refreshChoices(query)
 		if query == nil then
-			if chooser then
-				query = chooser:query() or ""
-			elseif native_session then
-				query = native_session.query or ""
-			else
-				query = ""
-			end
+			query = ui_query or ""
 		end
 
-		if chooser then
-			chooser:choices(choicesWithEmptyState(computeChoices(query, chooser_mode, true), chooser_mode))
-		end
-
-		if native_session and native_session.active and native_session.query == query then
-			refreshNativeChoices(query)
+		if ui_visible then
+			refreshUiRows(query)
 		end
 	end
 
@@ -1329,396 +1298,143 @@ return function(manager)
 		end
 	end
 
-	local function makeNativeId()
-		if hs.host and type(hs.host.uuid) == "function" then
-			local ok, uuid = pcall(hs.host.uuid)
-			if ok and uuid and uuid ~= "" then
-				return uuid
-			end
-		end
-		return string.format("%d-%06d-%06d", os.time(), math.random(0, 999999), math.random(0, 999999))
-	end
-
-	local function nativeDir()
-		return (hs and hs.configdir or ".") .. "/packages/launcher"
-	end
-
-	local function nativeSourcePath()
-		return nativeDir() .. "/NativeLauncher.swift"
-	end
-
-	local function nativeBinDir()
-		return nativeDir() .. "/bin"
-	end
-
-	local function nativeBinaryPath()
-		return nativeBinDir() .. "/native-launcher"
-	end
-
-	local function shellQuote(value)
-		return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'"
-	end
-
-	local function nativeJsonResponse(data, status)
-		local ok, encoded = pcall(hs.json.encode, data or {})
-		if not ok or not encoded then
-			encoded = '{"ok":false,"error":"json encode failed"}'
-			status = 500
-		end
-		return encoded, status or 200, {
-			["Content-Type"] = "application/json; charset=utf-8",
-			["Cache-Control"] = "no-store",
-		}
-	end
-
-	local function nativeHeader(headers, name)
-		local target = normalize(name)
-		for key, value in pairs(headers or {}) do
-			if normalize(key) == target then
-				return tostring(value or "")
-			end
-		end
-		return nil
-	end
-
-	local function nativeDecodeBody(body)
-		if not body or body == "" then
-			return {}
-		end
-		local ok, decoded = pcall(hs.json.decode, body)
-		if ok and type(decoded) == "table" then
-			return decoded
-		end
-		return nil
-	end
-
-	local function nativeSessionResponse(seq)
-		if not native_session or not native_session.active then
-			return {
-				ok = false,
-				error = "no active launcher session",
-				seq = seq,
-			}
-		end
-		native_session.searching = native_session.mode == "all" and isFileSearchRunning() or false
-		return {
-			ok = true,
-			session = native_session.id,
-			mode = native_session.mode,
-			query = native_session.query or "",
-			version = native_session.version or 0,
-			seq = seq,
-			searching = native_session.searching == true,
-			choices = native_session.choices or {},
-		}
-	end
-
-	local function finishNativeSession()
-		stopFileSearch()
-		native_session = nil
-	end
-
-	local function routeNativeRequest(method, path, headers, body)
-		if path == "/health" then
-			return nativeJsonResponse({ ok = true })
+	local function ensureUi()
+		if ui_available ~= nil then
+			return ui_available
 		end
 
-		if nativeHeader(headers, "Authorization") ~= "Bearer " .. tostring(native_token or "") then
-			return nativeJsonResponse({ ok = false, error = "unauthorized" }, 401)
-		end
-
-		if method ~= "POST" then
-			return nativeJsonResponse({ ok = false, error = "method not allowed" }, 405)
-		end
-
-		local data = nativeDecodeBody(body)
-		if not data then
-			return nativeJsonResponse({ ok = false, error = "invalid json" }, 400)
-		end
-
-		local seq = tonumber(data.seq) or 0
-		if not native_session or not native_session.active or data.session ~= native_session.id then
-			return nativeJsonResponse({ ok = false, error = "session not found", seq = seq }, 404)
-		end
-
-		if path == "/query" then
-			local mode = data.mode == "clipboard" and "clipboard" or "all"
-			local query = tostring(data.query or "")
-			native_session.mode = mode
-			native_session.query = query
-			chooser_mode = mode
-			if mode == "all" then
-				searchFiles(query)
-			else
-				file_results = {}
-				stopFileSearch()
-			end
-			refreshNativeChoices(query)
-			return nativeJsonResponse(nativeSessionResponse(seq))
-		elseif path == "/poll" then
-			return nativeJsonResponse(nativeSessionResponse(seq))
-		elseif path == "/select" then
-			local choice = native_session.choiceMap and native_session.choiceMap[tostring(data.id or "")]
-			if not choice or choice.disabled then
-				return nativeJsonResponse({ ok = false, error = "choice not found", seq = seq }, 404)
-			end
-			local selected = choice
-			finishNativeSession()
-			handleChoice(selected)
-			return nativeJsonResponse({ ok = true, seq = seq })
-		elseif path == "/cancel" then
-			finishNativeSession()
-			return nativeJsonResponse({ ok = true, seq = seq })
-		end
-
-		return nativeJsonResponse({ ok = false, error = "not found", seq = seq }, 404)
-	end
-
-	local function handleNativeRequest(method, path, headers, body)
-		local ok, responseBody, status, responseHeaders = pcall(routeNativeRequest, method, path, headers, body)
-		if not ok then
-			return nativeJsonResponse({ ok = false, error = tostring(responseBody) }, 500)
-		end
-		return responseBody, status, responseHeaders
-	end
-
-	local function ensureNativeServer()
-		if native_server then
+		local ok, result = pcall(require, "hs.ui")
+		if ok and type(result) == "table" then
+			ui = result
+			ui_available = true
 			return true
 		end
-		if not (hs and hs.httpserver) then
-			manager.notify("Launcher", "hs.httpserver is unavailable; using hs.chooser")
-			return false
+
+		ui_available = false
+		if not ui_missing_notified then
+			ui_missing_notified = true
+			manager.notify("Launcher", "hs.ui is unavailable in this Hammerspoon build")
 		end
-
-		native_token = native_token or makeNativeId()
-		local ok, serverOrError = pcall(function()
-			local server = hs.httpserver.new(false, false)
-			server:setInterface("localhost")
-			server:maxBodySize(65536)
-			server:setCallback(handleNativeRequest)
-			server:start()
-			return server
-		end)
-
-		if not ok or not serverOrError then
-			manager.notify("Launcher", "Failed to start native backend")
-			return false
-		end
-
-		native_server = serverOrError
-		native_port = native_server:getPort()
-		return native_port ~= nil
+		return false
 	end
 
-	local function nativeBinaryReady()
-		if not (hs and hs.fs and hs.fs.attributes) then
-			return false, "hs.fs unavailable"
-		end
-		local source = nativeSourcePath()
-		local binary = nativeBinaryPath()
-		if not hs.fs.attributes(source, "mode") then
-			return false, "NativeLauncher.swift missing"
-		end
-		if hs.fs.attributes(binary, "mode") ~= "file" then
-			return false, "native launcher binary missing"
-		end
-		local sourceModified = hs.fs.attributes(source, "modification") or 0
-		local binaryModified = hs.fs.attributes(binary, "modification") or 0
-		if sourceModified > binaryModified then
-			return false, "native launcher binary stale"
-		end
-		return true
-	end
-
-	local function ensureNativeBinary(callback)
-		local ready = nativeBinaryReady()
-		if ready then
-			return true
-		end
-		if settings.nativeBuildOnDemand == false then
-			manager.notify("Launcher", "Native launcher binary missing; using hs.chooser")
-			return false
-		end
-		if native_build_task then
-			native_build_callback = callback
-			return nil
-		end
-
-		local source = nativeSourcePath()
-		local binary = nativeBinaryPath()
-		os.execute("/bin/mkdir -p " .. shellQuote(nativeBinDir()))
-		manager.notify("Launcher", "Building native launcher…")
-		native_build_callback = callback
-		native_build_task = hs.task.new("/usr/bin/xcrun", function(exitCode, stdOut, stdErr)
-			native_build_task = nil
-			local done = native_build_callback
-			native_build_callback = nil
-			if exitCode == 0 then
-				if done then
-					done(true)
-				end
-			else
-				local message = singleLine(stdErr or stdOut or "swiftc failed")
-				manager.notify("Launcher", "Native build failed: " .. truncate(message, 120))
-				if done then
-					done(false)
-				end
-			end
-		end, { "swiftc", "-O", "-framework", "AppKit", "-o", binary, source })
-
-		if not native_build_task then
-			manager.notify("Launcher", "Failed to start swiftc; using hs.chooser")
-			native_build_callback = nil
-			return false
-		end
-		if not native_build_task:start() then
-			native_build_task = nil
-			native_build_callback = nil
-			manager.notify("Launcher", "Failed to start swiftc; using hs.chooser")
-			return false
-		end
-		return nil
-	end
-
-	local function beginNativeSession(mode)
-		native_session = {
-			id = makeNativeId(),
-			mode = mode or "all",
-			query = "",
-			version = 0,
-			choices = {},
-			choiceMap = {},
-			active = true,
-		}
-		chooser_mode = native_session.mode
-		refreshNativeChoices("")
-		return native_session
-	end
-
-	local function launchNativeProcess(mode)
-		if native_task then
-			local ok, running = pcall(function()
-				return native_task:isRunning()
+	local function hideUiLauncher()
+		ui_visible = false
+		if ui_panel then
+			pcall(function()
+				ui_panel:hide()
 			end)
-			if ok and running then
-				native_task:terminate()
-			end
-			native_task = nil
+		end
+	end
+
+	local function deleteUiLauncher()
+		ui_visible = false
+		if ui_panel then
+			pcall(function()
+				ui_panel:delete()
+			end)
+		end
+		ui_panel = nil
+		ui_search = nil
+		ui_list = nil
+		ui_choice_map = {}
+		ui_query = ""
+	end
+
+	local function showUiLauncher(mode)
+		if not ensureUi() then
+			return false
 		end
 
-		local session = beginNativeSession(mode)
-		local binary = nativeBinaryPath()
-		local task
-		task = hs.task.new(binary, function()
-			if native_task == task then
-				native_task = nil
-				if native_session then
-					finishNativeSession()
-				end
-			end
-		end, {
-			"--port",
-			tostring(native_port),
-			"--token",
-			native_token,
-			"--session",
-			session.id,
-			"--mode",
-			session.mode,
+		previous_app = hs.application.frontmostApplication()
+		ui_mode = mode or "all"
+		ui_query = ""
+		file_results = {}
+		if ui_mode == "all" and #app_cache == 0 then
+			refreshApps()
+		elseif ui_mode == "clipboard" then
+			stopFileSearch()
+		end
+
+		deleteUiLauncher()
+		ui_mode = mode or "all"
+
+		ui_search = ui.textField.new({
+			search = true,
+			placeholder = ui_mode == "clipboard" and "Search clipboard history" or "Search apps, files, and clipboard",
+			fontSize = 17,
+			height = 32,
 		})
 
-		if not task then
-			finishNativeSession()
-			manager.notify("Launcher", "Failed to launch native UI; using hs.chooser")
-			return false
-		end
-		native_task = task
-		if not task:start() then
-			native_task = nil
-			finishNativeSession()
-			manager.notify("Launcher", "Failed to launch native UI; using hs.chooser")
-			return false
-		end
-		return true
-	end
+		ui_list = ui.list.new({
+			rowHeight = 56,
+			allowsEmptySelection = false,
+			grow = true,
+		})
 
-	local function showNativeLauncher(mode)
-		previous_app = hs.application.frontmostApplication()
-		mode = mode or "all"
-		file_results = {}
-		if mode == "all" and #app_cache == 0 then
-			refreshApps()
-		elseif mode == "clipboard" then
-			stopFileSearch()
-		end
-
-		if not ensureNativeServer() then
-			return false
-		end
-
-		local function afterBuild(ok)
-			if ok and launchNativeProcess(mode) then
-				return
-			end
-			showChooser(mode)
-		end
-
-		local binaryStatus = ensureNativeBinary(afterBuild)
-		if binaryStatus == true then
-			return launchNativeProcess(mode)
-		elseif binaryStatus == false then
-			return false
-		end
-		return true
-	end
-
-	local function ensureChooser()
-		if chooser then
-			return
-		end
-		chooser = hs.chooser.new(handleChoice)
-		chooser:searchSubText(true)
-		chooser:rows(CONFIG.CHOOSER_ROWS)
-		chooser:width(CONFIG.CHOOSER_WIDTH)
-		chooser:queryChangedCallback(function(query)
-			refreshChoices(query)
-			if chooser_mode == "all" then
-				searchFiles(query)
+		ui_search:on("change", function(query)
+			ui_query = query or ""
+			refreshUiRows(ui_query)
+			if ui_mode == "all" then
+				searchFiles(ui_query)
 			end
 		end)
-	end
 
-	showChooser = function(mode)
-		previous_app = hs.application.frontmostApplication()
-		chooser_mode = mode or "all"
-		file_results = {}
-		if chooser_mode == "all" and #app_cache == 0 then
-			refreshApps()
-		elseif chooser_mode == "clipboard" then
-			stopFileSearch()
-		end
-		ensureChooser()
-		chooser:placeholderText(
-			chooser_mode == "clipboard" and "Search clipboard history" or "Search apps, files, and clipboard"
-		)
-		chooser:query(nil)
-		refreshChoices("")
-		chooser:show()
+		ui_search:on("submit", function()
+			return false
+		end)
+
+		ui_search:on("escape", function()
+			hideUiLauncher()
+			return true
+		end)
+
+		ui_list:on("confirm", function(row)
+			local choice = row and ui_choice_map[tostring(row.id or "")]
+			if not choice or choice.disabled then
+				return
+			end
+			hideUiLauncher()
+			handleChoice(choice)
+		end)
+
+		local stack = ui.stack.new({
+			orientation = "vertical",
+			spacing = 12,
+			padding = { top = 22, left = 22, bottom = 18, right = 22 },
+			views = { ui_search, ui_list },
+		})
+
+		ui_panel = ui.panel.new({
+			frame = { x = 0, y = 0, w = 760, h = 620 },
+			style = "borderless",
+			level = "floating",
+			material = "hud",
+			cornerRadius = 18,
+			shadow = true,
+			closeOnBlur = true,
+			escapeCloses = true,
+		})
+
+		ui_panel:on("blur", function()
+			ui_visible = false
+		end)
+
+		ui_panel:setContent(stack)
+		ui_visible = true
+		refreshUiRows("")
+		ui_panel:centerNearMouse()
+		ui_panel:show()
+		ui_search:focus()
+		return true
 	end
 
 	local function showLauncher()
-		if settings.useNativeUI and showNativeLauncher("all") then
-			return
-		end
-		showChooser("all")
+		showUiLauncher("all")
 	end
 
 	local function showClipboardHistory()
-		if settings.useNativeUI and showNativeLauncher("clipboard") then
-			return
-		end
-		showChooser("clipboard")
+		showUiLauncher("clipboard")
 	end
 
 	function P.getHotkeySpec()
@@ -1752,45 +1468,15 @@ return function(manager)
 				return
 			end
 			addClipboardText(value, nil)
-			if chooser and chooser:isVisible() then
-				refreshChoices(chooser:query() or "")
-			elseif native_session and native_session.active then
-				refreshChoices(native_session.query or "")
+			if ui_visible then
+				refreshChoices(ui_query or "")
 			end
 		end)
 	end
 
 	function P.stop()
 		stopFileSearch()
-		if native_task then
-			local ok, running = pcall(function()
-				return native_task:isRunning()
-			end)
-			if ok and running then
-				native_task:terminate()
-			end
-			native_task = nil
-		end
-		if native_build_task then
-			local ok, running = pcall(function()
-				return native_build_task:isRunning()
-			end)
-			if ok and running then
-				native_build_task:terminate()
-			end
-			native_build_task = nil
-			native_build_callback = nil
-		end
-		if native_server then
-			native_server:stop()
-			native_server = nil
-			native_port = nil
-		end
-		native_session = nil
-		if chooser then
-			chooser:hide()
-			chooser = nil
-		end
+		deleteUiLauncher()
 		for _, hotkey in pairs(bound_hotkeys or {}) do
 			if hotkey and hotkey.delete then
 				hotkey:delete()
@@ -1804,8 +1490,7 @@ return function(manager)
 	end
 
 	function P.getStatus()
-		local ui = settings.useNativeUI and "native" or "chooser"
-		return string.format("%d apps, %d clips, %s", #app_cache, #clipboard_history, ui)
+		return string.format("%d apps, %d clips, hs.ui", #app_cache, #clipboard_history)
 	end
 
 	function P.getMenuItems()
@@ -1817,14 +1502,6 @@ return function(manager)
 			{
 				title = "Open Clipboard History",
 				fn = showClipboardHistory,
-			},
-			{
-				title = (settings.useNativeUI and "✓ " or "") .. "Use Native UI",
-				fn = function()
-					settings.useNativeUI = not settings.useNativeUI
-					manager.setSetting(PACKAGE_ID, "useNativeUI", settings.useNativeUI)
-					manager.notify("Launcher", settings.useNativeUI and "Native UI enabled" or "Using hs.chooser")
-				end,
 			},
 			{
 				title = "Refresh App Index",

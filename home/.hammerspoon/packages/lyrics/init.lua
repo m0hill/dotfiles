@@ -59,7 +59,12 @@ return function(manager)
 
 	local function applyTextSizes(canvas)
 		local sizes = getTextSizes()
-		if text_size_state and text_size_state.info == sizes.info and text_size_state.current == sizes.current and text_size_state.next == sizes.next then
+		if
+			text_size_state
+			and text_size_state.info == sizes.info
+			and text_size_state.current == sizes.current
+			and text_size_state.next == sizes.next
+		then
 			return
 		end
 
@@ -431,7 +436,13 @@ end if
 
 		local statusLabel = state.playerState or ""
 		if state.duration and state.position then
-			trackLabel = string.format("%s | %s %s / %s", trackLabel, statusLabel, formatTime(state.position), formatTime(state.duration))
+			trackLabel = string.format(
+				"%s | %s %s / %s",
+				trackLabel,
+				statusLabel,
+				formatTime(state.position),
+				formatTime(state.duration)
+			)
 		elseif statusLabel ~= "" then
 			trackLabel = string.format("%s | %s", trackLabel, statusLabel)
 		end

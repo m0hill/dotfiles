@@ -2,7 +2,7 @@
 
 Minimal Hammerspoon command palette for the small Raycast subset I actually use:
 
-- native AppKit launcher UI by default, with `hs.chooser` fallback
+- native AppKit launcher UI through `hs.ui`
 - app launching with app icons
 - `fd`-backed file search with file-type icons
 - clipboard history with content-aware icons
@@ -16,7 +16,7 @@ Default hotkeys:
 
 Both can be changed from the Launcher hotkey menu.
 
-The native UI is a single Swift/AppKit file at `NativeLauncher.swift`. Hammerspoon builds it on demand into `packages/launcher/bin/native-launcher` and talks to it over an authenticated localhost HTTP server. Disable **Use Native UI** from the Launcher menu to fall back to `hs.chooser`.
+The launcher uses the custom `hs.ui` AppKit module inside Hammerspoon.
 
 Clipboard history is stored locally in `packages/launcher/clipboard.json`, which is ignored by git via the repository `*.json` rule.
 
@@ -28,4 +28,4 @@ Clipboard history is stored locally in `packages/launcher/clipboard.json`, which
 - App search includes aliases for common system app renames, so `settings`, `prefs`, or `preferences` prefer System Settings over matching files/folders.
 - The empty launcher ranks apps by persisted launch usage instead of alphabetical order; use **Reset App Usage** from the menu to clear it.
 - Clipboard capture ignores common password-manager bundle IDs by default.
-- No terminal, fzf, libghostty, cloud sync, extensions, or AI features are involved.
+

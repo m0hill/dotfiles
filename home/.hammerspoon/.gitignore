@@ -4,5 +4,5 @@ opensrc/
 # JSON files (settings/secrets)
 *.json
 
-# Built native helpers
-packages/launcher/bin/
+# LLVM profiling output from local debug Hammerspoon builds
+default.profraw
