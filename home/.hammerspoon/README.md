@@ -2,10 +2,11 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and four local modules:
+There is one local menubar controller and local modules for launcher, tiling, speech, OCR, and overlays:
 
+- `packages/launcher/`
+- `packages/tiler/`
 - `packages/stt/`
-- `packages/whisper/`
 - `packages/gemini/`
 - `packages/lyrics/`
 
@@ -16,15 +17,18 @@ No Spoon. No registry. No package versions.
 ```text
 ~/.hammerspoon/
 ├── init.lua
-	├── packages/
-	│   ├── manager/
-	│   │   └── init.lua
-	│   ├── stt/
-	│   │   ├── init.lua
-	│   │   └── stt.json
-	│   ├── whisper/
-	│   │   ├── init.lua
-│   │   └── whisper.json
+├── packages/
+│   ├── manager/
+│   │   └── init.lua
+│   ├── launcher/
+│   │   ├── init.lua
+│   │   └── launcher.json
+│   ├── tiler/
+│   │   ├── init.lua
+│   │   └── tiler.json
+│   ├── stt/
+│   │   ├── init.lua
+│   │   └── stt.json
 │   ├── gemini/
 │   │   ├── init.lua
 │   │   └── gemini.json
@@ -51,11 +55,18 @@ The controller menu always shows all local modules.
 
 ## Modules
 
-### Whisper
+### Tiler
 
-- hold `Option+/` to record
-- release to transcribe and paste
-- requires `sox` and `GROQ_API_KEY`
+- `Ctrl+Option+Left/Right` snap the focused window to left/right half on the current screen
+- `Ctrl+Option+Up` moves from the MacBook display to the external monitor, choosing an empty left/right half or maximizing if none is free
+- `Ctrl+Option+Down` moves from the external monitor to the MacBook display and maximizes
+- `Ctrl+Option+Return` maximizes with the configured gap
+- default gap is `4px`
+
+### Launcher
+
+- `Cmd+Space` opens the app/file/clipboard command palette
+- `Cmd+Shift+V` opens clipboard history
 
 ### STT
 
@@ -86,7 +97,6 @@ The controller menu always shows all local modules.
 
 ## Troubleshooting
 
-- Whisper needs `sox`: run `brew install sox`
 - STT needs the helper installed once: see `packages/stt/README.md`
 - Gemini needs Screen Recording permission for Hammerspoon
 - If a module fails, check the Hammerspoon console and toggle the module off/on

@@ -7,19 +7,6 @@ return function(config)
 
 	local MODULES = {
 		{
-			id = "whisper",
-			name = "Whisper",
-			description = "Hold hotkey to record and transcribe with Groq Whisper.",
-			defaultEnabled = false,
-			entryPath = PACKAGES_DIR .. "/whisper/init.lua",
-			hotkeys = {
-				{ action = "record", description = "Hold to Record", default = "Option+/" },
-			},
-			secrets = {
-				{ key = "GROQ_API_KEY", label = "Groq API Key", hint = "Get from https://console.groq.com/keys" },
-			},
-		},
-		{
 			id = "stt",
 			name = "STT",
 			description = "Hold a trigger to record and transcribe locally with Parakeet.",
@@ -37,6 +24,22 @@ return function(config)
 			hotkeys = {
 				{ action = "open", description = "Open Launcher", default = "Cmd+Space" },
 				{ action = "clipboard", description = "Open Clipboard History", default = "Cmd+Shift+V" },
+			},
+			secrets = {},
+		},
+		{
+			id = "tiler",
+			name = "Tiler",
+			description = "Focused-window snapping and screen moves for macOS.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/tiler/init.lua",
+			minimalMenu = true,
+			hotkeys = {
+				{ action = "left", description = "Snap Left Half", default = "Ctrl+Option+left" },
+				{ action = "right", description = "Snap Right Half", default = "Ctrl+Option+right" },
+				{ action = "up", description = "Move to External Monitor", default = "Ctrl+Option+up" },
+				{ action = "down", description = "Move to MacBook Display", default = "Ctrl+Option+down" },
+				{ action = "maximize", description = "Maximize", default = "Ctrl+Option+return" },
 			},
 			secrets = {},
 		},
@@ -647,6 +650,10 @@ return function(config)
 				disabled = true,
 			},
 		}
+
+		if def.minimalMenu then
+			return { submenu[1] }
+		end
 
 		if def.hotkeys and #def.hotkeys > 0 then
 			table.insert(submenu, { title = "-" })
