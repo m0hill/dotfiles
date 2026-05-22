@@ -1,4 +1,5 @@
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+[ -f "$HOME/.deno/env" ] && . "$HOME/.deno/env"
 
 [ -f "$HOME/.vite-plus/env" ] && . "$HOME/.vite-plus/env"
 
