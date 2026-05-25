@@ -240,6 +240,46 @@ return function(manager)
 		return target and framesClose(roundFrame(win:frame()), target, SNAP_TOLERANCE) or false
 	end
 
+	local function toggleNativeFullScreen(win)
+		if type(win.toggleFullScreen) ~= "function" then
+			notify("Focused window cannot enter native full screen")
+			return false
+		end
+
+		local ok, err = pcall(function()
+			win:toggleFullScreen()
+		end)
+		if not ok then
+			notifyError("Could not toggle native full screen: " .. tostring(err))
+			return false
+		end
+		return true
+	end
+
+	local function maximizeOrNativeFullScreen()
+		local focused = hs.window.focusedWindow()
+		if focused and callWindowBool(focused, "isFullScreen", false) then
+			if toggleNativeFullScreen(focused) then
+				hs.timer.doAfter(0.8, function()
+					snap("maximize")
+				end)
+			end
+			return
+		end
+
+		local win = focusedWindow()
+		if not win then
+			return
+		end
+
+		if isSnapped(win, win:screen(), "maximize") then
+			toggleNativeFullScreen(win)
+			return
+		end
+
+		snap("maximize")
+	end
+
 	local function screenId(screen)
 		if not screen or type(screen.id) ~= "function" then
 			return nil
@@ -469,10 +509,8 @@ return function(manager)
 				description = "Move to MacBook Display",
 			},
 			maximize = {
-				fn = function()
-					snap("maximize")
-				end,
-				description = "Maximize",
+				fn = maximizeOrNativeFullScreen,
+				description = "Maximize or Native Full Screen",
 			},
 		}
 	end
