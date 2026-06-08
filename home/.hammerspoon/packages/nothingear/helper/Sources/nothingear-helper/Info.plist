@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>works.earendil.hammerspoon.nothingear-helper</string>
+	<key>CFBundleName</key>
+	<string>nothingear-helper</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Control paired Nothing Ear earbuds from the Hammerspoon menu.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Control paired Nothing Ear earbuds from the Hammerspoon menu.</string>
+</dict>
+</plist>

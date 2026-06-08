@@ -4,5 +4,8 @@ opensrc/
 # JSON files (settings/secrets)
 *.json
 
+# SwiftPM helper build artifacts
+packages/*/helper/.build/
+
 # LLVM profiling output from local debug Hammerspoon builds
 default.profraw

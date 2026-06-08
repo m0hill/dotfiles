@@ -69,6 +69,24 @@ return function(config)
 			hotkeys = {},
 			secrets = {},
 		},
+		{
+			id = "spotifyvolume",
+			name = "Spotify Volume",
+			description = "Use F7/F9 media keys for Spotify volume down/up.",
+			defaultEnabled = false,
+			entryPath = PACKAGES_DIR .. "/spotifyvolume/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
+			id = "nothingear",
+			name = "Nothing Ear",
+			description = "Control Nothing Ear ANC, EQ, bass, and battery over BLE.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/nothingear/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
 	}
 
 	local MODULES_BY_ID = {}
