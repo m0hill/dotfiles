@@ -2,13 +2,14 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, tiling, speech, OCR, and overlays:
+There is one local menubar controller and local modules for launcher, tiling, speech, OCR, overlays, and Spotify controls:
 
 - `packages/launcher/`
 - `packages/tiler/`
 - `packages/stt/`
 - `packages/gemini/`
 - `packages/lyrics/`
+- `packages/spotifyvolume/`
 
 No Spoon. No registry. No package versions.
 
@@ -32,9 +33,13 @@ No Spoon. No registry. No package versions.
 │   ├── gemini/
 │   │   ├── init.lua
 │   │   └── gemini.json
-│   └── lyrics/
+│   ├── lyrics/
+│   │   ├── init.lua
+│   │   └── lyrics.json
+│   └── spotifyvolume/
 │       ├── init.lua
-│       └── lyrics.json
+│       ├── spotifyvolume.json
+│       └── README.md
 └── README.md
 ```
 
@@ -88,6 +93,13 @@ The controller menu always shows all local modules.
 
 - floating synced Spotify lyrics overlay
 - remembers position, visibility, and scale
+
+### Spotify Volume
+
+- uses F7 / Previous for Spotify volume down and F9 / Next for volume up
+- leaves the real Mac volume up/down/mute keys alone
+- each press changes Spotify's `sound volume` by `5%`
+- requires Hammerspoon Accessibility permission and Spotify Automation permission
 
 ## Notes
 
