@@ -438,6 +438,13 @@ body.is-right-collapsed #sidebar-right #sb-right-inner {
   text-transform: uppercase;
 }
 
+#doc-bar-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 #source {
   font-size: 13px;
   color: var(--fg-muted);
@@ -446,6 +453,15 @@ body.is-right-collapsed #sidebar-right #sb-right-inner {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
+}
+
+.doc-copy-btn {
+  color: var(--fg-muted);
+}
+
+.doc-copy-btn:hover,
+.doc-copy-btn.copied {
+  color: var(--fg-secondary);
 }
 
 #doc {

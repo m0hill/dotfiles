@@ -11,8 +11,10 @@ const selPreview = document.getElementById("selPreview"),
   commentInput = document.getElementById("commentInput")
 const annotationsEl = document.getElementById("annotations"),
   countEl = document.getElementById("count"),
-  copySelectionBtn = document.getElementById("copySelectionBtn")
+  copySelectionBtn = document.getElementById("copySelectionBtn"),
+  copyMarkdownBtn = document.getElementById("copyMarkdownBtn")
 let annotations = [],
+  currentMarkdown = "",
   selectedQuote = "",
   selectedRange = null,
   annotationHighlight = null,
@@ -245,6 +247,13 @@ copySelectionBtn.onclick = async () => {
   setTimeout(() => copySelectionBtn.classList.remove("copied"), 900)
 }
 
+copyMarkdownBtn.onclick = async () => {
+  if (!currentMarkdown) return
+  await navigator.clipboard.writeText(currentMarkdown)
+  copyMarkdownBtn.classList.add("copied")
+  setTimeout(() => copyMarkdownBtn.classList.remove("copied"), 900)
+}
+
 document.getElementById("cancelAdd").onclick = hidePopover
 document.getElementById("addBtn").onclick = () => {
   const c = commentInput.value.trim()
@@ -292,7 +301,8 @@ document.getElementById("closeBtn").onclick = async () => {
     titleEl.textContent = data.title || "ANNOTATOR_TERMINAL"
     sourceEl.textContent =
       data.sourcePath || (data.kind === "last" ? "last assistant response" : "")
-    docEl.innerHTML = renderMd(data.markdown || "")
+    currentMarkdown = data.markdown || ""
+    docEl.innerHTML = renderMd(currentMarkdown)
     buildTOC()
     renderAnnotations()
   } catch (e) {

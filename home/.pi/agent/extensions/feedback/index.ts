@@ -359,6 +359,22 @@ async function openSession(
   ctx.ui.notify(`Feedback opened: ${session.title}`, "info")
 }
 
+// Command handlers
+
+async function openLastFeedback(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+  try {
+    const markdown = lastAssistantText(ctx)
+    if (!markdown) {
+      ctx.ui.notify("No assistant text message found.", "warning")
+      return
+    }
+    const session = writeSession(ctx, { title: "last-response", kind: "last", markdown })
+    await openSession(pi, ctx, session)
+  } catch (err) {
+    ctx.ui.notify(`Could not open feedback: ${errorMessage(err)}`, "error")
+  }
+}
+
 // Extension entrypoint
 
 export default function feedback(pi: ExtensionAPI): void {
@@ -366,20 +382,17 @@ export default function feedback(pi: ExtensionAPI): void {
     await stopServer()
   })
 
+  pi.registerShortcut("ctrl+alt+f", {
+    description: "Open the last assistant message in the browser feedback tool",
+    handler: async (ctx) => {
+      await openLastFeedback(pi, ctx)
+    },
+  })
+
   pi.registerCommand("feedback-last", {
     description: "Open the last assistant message in a browser feedback tool",
     handler: async (_args, ctx) => {
-      try {
-        const markdown = lastAssistantText(ctx)
-        if (!markdown) {
-          ctx.ui.notify("No assistant text message found.", "warning")
-          return
-        }
-        const session = writeSession(ctx, { title: "last-response", kind: "last", markdown })
-        await openSession(pi, ctx, session)
-      } catch (err) {
-        ctx.ui.notify(`Could not open feedback: ${errorMessage(err)}`, "error")
-      }
+      await openLastFeedback(pi, ctx)
     },
   })
 

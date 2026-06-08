@@ -33,7 +33,21 @@
       <div id="doc-wrap">
         <div id="doc-bar">
           <span class="doc-bar-label">Document</span>
-          <span id="source"></span>
+          <div id="doc-bar-meta">
+            <span id="source"></span>
+            <button
+              id="copyMarkdownBtn"
+              class="icon-btn doc-copy-btn"
+              type="button"
+              title="Copy markdown"
+              aria-label="Copy markdown"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+                <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         <article id="doc">
           <div class="loading">
