@@ -43,6 +43,9 @@ return function(manager)
 	local status_task = nil
 	local download_task = nil
 	local transcribe_task = nil
+	local escape_cancel_tap = nil
+	local recording_generation = 0
+	local active_recording_generation = nil
 
 	local settings = {
 		enableNotify = manager.getSetting(PACKAGE_ID, "enableNotify", CONFIG.ENABLE_NOTIFY),
@@ -290,7 +293,16 @@ return function(manager)
 		end
 	end
 
+	local function stopEscapeCancelBinding()
+		if escape_cancel_tap then
+			escape_cancel_tap:stop()
+			escape_cancel_tap = nil
+		end
+	end
+
 	local function cleanupRecordingRuntime(keepIndicator)
+		active_recording_generation = nil
+
 		if rec_task and rec_task:isRunning() then
 			rec_task:terminate()
 		end
@@ -300,6 +312,8 @@ return function(manager)
 			stop_timer:stop()
 			stop_timer = nil
 		end
+
+		stopEscapeCancelBinding()
 
 		if not keepIndicator then
 			cleanupIndicators()
@@ -557,6 +571,43 @@ return function(manager)
 		end
 	end
 
+	local function cancelRecording()
+		if not is_recording then
+			return
+		end
+
+		local path = wav_path
+		wav_path = nil
+		cleanupRecordingRuntime(false)
+
+		if path then
+			os.remove(path)
+		end
+
+		notify("STT", "Recording cancelled.")
+		playSound("cancel")
+		manager.refreshMenu()
+	end
+
+	local function startEscapeCancelBinding()
+		if escape_cancel_tap then
+			return
+		end
+
+		local escapeKeyCode = hs.keycodes.map.escape or 53
+		escape_cancel_tap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(event)
+			if is_recording and event:getKeyCode() == escapeKeyCode then
+				cancelRecording()
+				return true
+			end
+			return false
+		end)
+
+		if escape_cancel_tap then
+			escape_cancel_tap:start()
+		end
+	end
+
 	local startRecording
 
 	local function toggleRecording()
@@ -597,9 +648,15 @@ return function(manager)
 		wav_path = tmpWavPath()
 		stop_requested = false
 		is_recording = true
+		recording_generation = recording_generation + 1
+		local recording_token = recording_generation
+		active_recording_generation = recording_token
 
 		-- Record Parakeet-friendly WAV to keep the helper simple and predictable.
 		rec_task = hs.task.new(rec_path, function()
+			if active_recording_generation ~= recording_token then
+				return
+			end
 			stopRecordingAndTranscribe()
 		end, {
 			"-q",
@@ -615,6 +672,7 @@ return function(manager)
 		})
 
 		if not rec_task then
+			active_recording_generation = nil
 			is_recording = false
 			wav_path = nil
 			cleanupIndicators()
@@ -624,6 +682,7 @@ return function(manager)
 		end
 
 		if not rec_task:start() then
+			active_recording_generation = nil
 			is_recording = false
 			wav_path = nil
 			rec_task = nil
@@ -633,6 +692,7 @@ return function(manager)
 			return
 		end
 
+		startEscapeCancelBinding()
 		stop_timer = hs.timer.doAfter(CONFIG.MAX_RECORDING_SECONDS, requestStopRecording)
 		playSound("start")
 		manager.refreshMenu()

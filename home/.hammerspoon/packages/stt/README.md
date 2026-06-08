@@ -1,6 +1,6 @@
 # STT
 
-Press a trigger once to start recording, then press it again to transcribe locally with Parakeet and paste.
+Press a trigger once to start recording, then press it again to transcribe locally with Parakeet and paste. Press `Escape` while recording to cancel without transcribing.
 
 Apple Silicon and macOS 14+ are required.
 
@@ -22,6 +22,7 @@ Apple Silicon and macOS 14+ are required.
 
 - default: tap `Right Option` alone to start, tap again to stop
 - optional: switch to `Combo` in the STT menu and set a normal hotkey
+- cancel: press `Escape` while recording to stop and discard the audio
 
 ## Storage
 
