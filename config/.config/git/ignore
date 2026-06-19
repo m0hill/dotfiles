@@ -1,2 +1,4 @@
 opensrc/
 .pi-cache/
+**/.claude/settings.local.json
+**/.claude/settings.local.json
