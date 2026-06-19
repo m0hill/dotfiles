@@ -1,6 +1,6 @@
 ---
 name: quality-code
-description: Use when writing, reviewing, refactoring, or cleaning up TypeScript/full-stack code. Apply before and during coding to produce professional code: project conventions, parsed domain types, errors as values, impossible states, derived types, deep modules, real-seam tests, observability, and minimal useful abstractions.
+description: Use when writing, reviewing, refactoring, or cleaning up TypeScript/full-stack code. Apply before and during coding to produce professional code:- project conventions, parsed domain types, errors as values, impossible states, derived types, deep modules, real-seam tests, observability, and minimal useful abstractions.
 ---
 
 # Quality TypeScript and full-stack code
