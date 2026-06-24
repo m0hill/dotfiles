@@ -20,7 +20,7 @@ window-theme = dark
 macos-option-as-alt = true
 
 scrollback-limit = 10000000
-copy-on-select = clipboard
+copy-on-select =false
 confirm-close-surface = false
 
 mouse-hide-while-typing = true
