@@ -5,6 +5,8 @@
 
 path=(
   "$HOME/.local/bin"
+  "$HOME/.nub/bin"
+  "/Applications/Racket v9.2/bin"
   "/opt/homebrew/opt/postgresql@15/bin"
   "$HOME/.bun/bin"
   "/Applications/Tailscale.app/Contents/MacOS"
