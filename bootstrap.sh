@@ -36,7 +36,7 @@ fi
 
 # Stow packages (idempotent with --restow)
 echo "Stowing dotfiles..."
-stow -v -t ~ --restow home config
+stow -v -t ~ --restow --ignore='\.DS_Store' home config
 
 echo ""
 echo "✅ Done!"
