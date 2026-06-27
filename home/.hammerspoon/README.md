@@ -2,10 +2,12 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, tiling, speech, OCR, overlays, and Spotify controls:
+There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, speech, OCR, overlays, and Spotify controls:
 
 - `packages/launcher/`
 - `packages/tiler/`
+- `packages/autofocus/`
+- `packages/screenshotcopy/`
 - `packages/stt/`
 - `packages/gemini/`
 - `packages/lyrics/`
@@ -27,6 +29,12 @@ No Spoon. No registry. No package versions.
 │   ├── tiler/
 │   │   ├── init.lua
 │   │   └── tiler.json
+│   ├── autofocus/
+│   │   ├── init.lua
+│   │   └── autofocus.json
+│   ├── screenshotcopy/
+│   │   ├── init.lua
+│   │   └── screenshotcopy.json
 │   ├── stt/
 │   │   ├── init.lua
 │   │   └── stt.json
@@ -72,6 +80,17 @@ The controller menu always shows all local modules.
 
 - `Cmd+Space` opens the app/file/clipboard command palette
 - `Cmd+Shift+V` opens clipboard history
+
+### Autofocus
+
+- focuses on mouse-down so clicks on another monitor are less likely to be wasted only activating the app
+- does not track mouse movement, so it avoids focus-follow-mouse jitter
+
+### Screenshot Copy
+
+- watches the native macOS screenshot folder
+- copies newly saved screenshots from `Cmd+Shift+3`, `Cmd+Shift+4`, and `Cmd+Shift+5` to the clipboard as image data plus a path fallback
+- uses the configured macOS screenshot location, falling back to `~/Desktop`
 
 ### STT
 
