@@ -1,0 +1,24 @@
+{
+  "mcp": {
+    "toolMode": "proxy",
+    "startup": "lazy",
+    "timeout": 60000,
+    "servers": {
+      "paper": {
+        "type": "remote",
+        "url": "http://127.0.0.1:29979/mcp",
+        "oauth": false,
+        "enabled": true
+      },
+      "figma": {
+        "type": "remote",
+        "url": "https://mcp.figma.com/mcp",
+        "oauth": {
+          "clientName": "Claude Code",
+          "scope": "mcp:connect"
+        },
+        "enabled": true
+      }
+    }
+  }
+}

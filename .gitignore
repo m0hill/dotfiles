@@ -23,3 +23,8 @@ home/.pi/agent/auth.json
 home/.pi/agent/settings.json
 home/.pi/agent/sessions/
 home/.pi/agent/bin/
+home/.pi/agent/mcp-auth.json
+home/.pi/agent/mcp-cache.json
+home/.pi/agent/mcp-npx-cache.json
+home/.pi/agent/mcp-onboarding.json
+home/.pi/agent/mcp-oauth/
