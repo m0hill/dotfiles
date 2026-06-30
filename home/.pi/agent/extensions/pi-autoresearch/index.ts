@@ -2,15 +2,14 @@
  * autoresearch — Pi Extension
  *
  * Generic autonomous experiment loop infrastructure.
- * Domain-specific behavior comes from skills (what command to run, what to optimize).
  *
  * Provides:
+ * - `init_experiment` tool — writes the experiment config header
  * - `run_experiment` tool — runs any command, times it, captures output, detects pass/fail
  * - `log_experiment` tool — records results with session-persisted state
  * - Status widget showing experiment count + best metric
  * - Configurable shortcuts to expand/collapse and fullscreen the dashboard
- * - Adds autoresearch guidance to the system prompt and points the agent at autoresearch.md
- * - Injects autoresearch.md into context on every turn via before_agent_start
+ * - Adds setup and loop guidance to the system prompt while autoresearch mode is active
  */
 
 import type {
@@ -30,9 +29,6 @@ import { Text, truncateToWidth, matchesKey, visibleWidth } from "@earendil-works
 import { Type } from "typebox"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { fileURLToPath } from "node:url"
-import { createServer, type Server, type ServerResponse } from "node:http"
-
 import { spawn } from "node:child_process"
 import { createWriteStream } from "node:fs"
 import { randomBytes } from "node:crypto"
@@ -45,12 +41,7 @@ import {
   type HookPayload,
   type SessionSnapshot,
 } from "./hooks.ts"
-import {
-  parseJsonlEntry,
-  isAutoresearchRunEntry,
-  extractAutoresearchSessionName,
-  reconstructJsonlState,
-} from "./jsonl.ts"
+import { parseJsonlEntry, isAutoresearchRunEntry, reconstructJsonlState } from "./jsonl.ts"
 import { autoresearchSummaryPathsFor, buildAutoresearchCompactionSummary } from "./compaction.ts"
 import { resolveAutoresearchShortcuts } from "./shortcuts.ts"
 
@@ -996,6 +987,31 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   const MAX_AUTORESUME_TURNS = 20
   const BENCHMARK_GUARDRAIL =
     "Be careful not to overfit to the benchmarks and do not cheat on the benchmarks."
+  const AUTORESEARCH_WORKFLOW_GUIDANCE = [
+    "## Autoresearch Workflow",
+    "No external skill is required; this extension contains the setup and loop rules.",
+    "",
+    "Fresh setup, when autoresearch.md does not exist:",
+    "1. Infer the goal, benchmark command, primary metric, direction, files in scope, and constraints when obvious. Ask one focused question only if blocked.",
+    "2. Create a branch like `autoresearch/<goal>-<date>` unless the user said not to or the branch is already suitable.",
+    "3. Read the source and benchmark files before editing so the workload is understood.",
+    "4. Write `autoresearch.md` with objective, primary/secondary metrics, how to run, files in scope, off limits, constraints, and what's been tried.",
+    "5. Write `autoresearch.sh` (`set -euo pipefail`) that runs the benchmark and prints `METRIC name=value` lines. For fast/noisy benchmarks, run multiple samples and report the median.",
+    "6. Create `autoresearch.checks.sh` only when correctness/type/lint/test constraints require it. Checks run after passing benchmarks and do not affect the primary metric.",
+    "7. Call `init_experiment`, then run the baseline with `run_experiment`, then immediately record it with `log_experiment`.",
+    "",
+    "Resume setup, when autoresearch.md exists:",
+    "- Read `autoresearch.md` and, if needed, `autoresearch.ideas.md` plus recent `autoresearch.jsonl` entries, then continue the loop without recreating the setup.",
+    "- Optional `autoresearch.config.json` may set `workingDir` and `maxIterations`.",
+    "",
+    "Loop rules:",
+    "- Keep optimizing until interrupted or a configured max iteration limit stops the loop.",
+    "- Primary metric decides: improved => `keep`; worse/equal => `discard`; failed benchmark => `crash`; failed checks => `checks_failed`.",
+    "- Always call `log_experiment` after `run_experiment`, and always include useful `asi`. On discard/crash/checks_failed include `rollback_reason` and `next_action_hint`.",
+    "- Do not commit or revert manually. `log_experiment` commits kept changes and reverts discarded/crashed/check-failed changes while preserving autoresearch files.",
+    "- Add deferred but promising ideas as bullets in `autoresearch.ideas.md`.",
+    "- Update the `What's Been Tried` section in `autoresearch.md` periodically so future resumes do not repeat dead ends.",
+  ].join("\n")
 
   // Outlasts pi's internal retry (setTimeout 0) and compaction-continue
   // (setTimeout 100); see badlogic/pi-mono#2023, #2110.
@@ -1029,6 +1045,12 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
   const hasPendingResume = (runtime: AutoresearchRuntime): boolean =>
     runtime.pendingResumeMessage !== null
+
+  const isAutoresearchStartPrompt = (prompt: string): boolean => {
+    const text = prompt.toLowerCase()
+    if (!text.includes("autoresearch")) return false
+    return /\b(run|start|set\s*up|setup|create|resume)\b/.test(text)
+  }
 
   const pausePendingResume = (runtime: AutoresearchRuntime): void => {
     if (!runtime.pendingResumeTimer) return
@@ -1201,18 +1223,16 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
   const autoresearchHelp = () =>
     [
-      "Usage: /autoresearch [off|clear|export|<text>]",
+      "Usage: /autoresearch [off|clear|<text>]",
       "",
       "<text> enters autoresearch mode and starts or resumes the loop.",
       "off leaves autoresearch mode.",
       "clear deletes autoresearch.jsonl and turns autoresearch mode off.",
-      "export opens a local live dashboard for autoresearch.jsonl in your browser.",
 
       "",
       "Examples:",
       "  /autoresearch optimize unit test runtime, monitor correctness",
       "  /autoresearch model training, run 5 minutes of train.py and note the loss ratio as optimization target",
-      "  /autoresearch export",
     ].join("\n")
 
   // -----------------------------------------------------------------------
@@ -1479,7 +1499,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     clearSessionUi(ctx)
     cancelPendingResume(getRuntime(ctx))
     runtimeStore.clear(getSessionKey(ctx))
-    stopDashboardServer()
   })
 
   pi.on("agent_start", async (_event, ctx) => {
@@ -1522,14 +1541,19 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     ensurePendingResume(ctx, shouldAutoResumeAfterTurn)
   })
 
-  // When in autoresearch mode, add a static note to the system prompt.
-  // Only a short pointer — no file content, fully cache-safe.
+  // When in autoresearch mode, add the setup and loop rules to the system prompt.
   pi.on("before_agent_start", async (event, ctx) => {
     const runtime = getRuntime(ctx)
+    if (!runtime.autoresearchMode && isAutoresearchStartPrompt(event.prompt)) {
+      runtime.autoresearchMode = true
+      runtime.autoResumeTurns = 0
+      updateWidget(ctx)
+    }
     if (!runtime.autoresearchMode) return
 
     const workDir = resolveWorkDir(ctx.cwd)
     const mdPath = autoresearchMdPath(workDir)
+    const hasRules = fs.existsSync(mdPath)
     const ideasPath = autoresearchIdeasPath(workDir)
     const hasIdeas = fs.existsSync(ideasPath)
 
@@ -1540,10 +1564,13 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       "\n\n## Autoresearch Mode (ACTIVE)" +
       "\nYou are in autoresearch mode. Optimize the primary metric through an autonomous experiment loop." +
       "\nUse init_experiment, run_experiment, and log_experiment tools. NEVER STOP until interrupted." +
-      `\nExperiment rules: ${mdPath} — read this file at the start of every session and after compaction.` +
-      "\nWrite promising but deferred optimizations as bullet points to autoresearch.ideas.md — don't let good ideas get lost." +
+      (hasRules
+        ? `\nExperiment rules exist at ${mdPath}. Read them at the start of a live session; after compaction, rely on the compaction summary unless details are missing.`
+        : `\nNo autoresearch.md exists at ${mdPath}; follow the fresh setup workflow below.`) +
       `\n${BENCHMARK_GUARDRAIL}` +
-      "\nIf the user sends a follow-on message while an experiment is running, finish the current run_experiment + log_experiment cycle first, then address their message in the next iteration."
+      "\nIf the user sends a follow-on message while an experiment is running, finish the current run_experiment + log_experiment cycle first, then address their message in the next iteration." +
+      "\n\n" +
+      AUTORESEARCH_WORKFLOW_GUIDANCE
 
     if (hasChecks) {
       extra +=
@@ -1631,7 +1658,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         } else {
           fs.writeFileSync(jsonlPath, config + "\n")
         }
-        broadcastDashboardUpdate(workDir)
       } catch (e) {
         return {
           content: [
@@ -2495,7 +2521,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
       try {
         fs.appendFileSync(autoresearchJsonlPath(workDir), jsonlLine + "\n")
-        broadcastDashboardUpdate(workDir)
       } catch (e) {
         text += `\n⚠️ Failed to write autoresearch.jsonl: ${e instanceof Error ? e.message : String(e)}`
       }
@@ -2814,238 +2839,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   }
 
   // -----------------------------------------------------------------------
-  // Export: local live dashboard
-  // -----------------------------------------------------------------------
-
-  const TITLE_PLACEHOLDER = "__AUTORESEARCH_TITLE__"
-  const LOGO_PLACEHOLDER = "__AUTORESEARCH_LOGO__"
-
-  let cachedPackageRoot: string | null = null
-
-  function packageRoot(): string {
-    if (cachedPackageRoot) return cachedPackageRoot
-    const extensionDir = fs.realpathSync(path.dirname(fileURLToPath(import.meta.url)))
-    cachedPackageRoot = path.resolve(extensionDir, "../..")
-    return cachedPackageRoot
-  }
-
-  function templatePath(): string {
-    return path.join(packageRoot(), "assets/template.html")
-  }
-
-  function readTemplate(): string {
-    return fs.readFileSync(templatePath(), "utf-8")
-  }
-
-  let cachedLogoDataUrl: string | null = null
-
-  function logoDataUrl(): string {
-    if (cachedLogoDataUrl) return cachedLogoDataUrl
-    const logoPath = path.join(packageRoot(), "assets/logo.webp")
-    const bytes = fs.readFileSync(logoPath)
-    cachedLogoDataUrl = `data:image/webp;base64,${bytes.toString("base64")}`
-    return cachedLogoDataUrl
-  }
-
-  function readJsonlContent(workDir: string): string {
-    return fs.readFileSync(autoresearchJsonlPath(workDir), "utf-8").trim()
-  }
-
-  function escapeHtml(text: string): string {
-    return text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;")
-  }
-
-  function injectDataIntoTemplate(template: string, title: string): string {
-    const escapedTitle = escapeHtml(title)
-    return template.replace(TITLE_PLACEHOLDER, () => escapedTitle)
-  }
-
-  let dashboardServer: Server | null = null
-  let dashboardServerPort: number | null = null
-  let dashboardServerWorkDir: string | null = null
-  let dashboardServerHtmlPath: string | null = null
-  const dashboardSseClients = new Set<ServerResponse>()
-
-  function openInBrowser(url: string): void {
-    if (process.platform === "win32") {
-      spawn("cmd", ["/c", "start", "", url], {
-        detached: true,
-        shell: true,
-        stdio: "ignore",
-      }).unref()
-      return
-    }
-
-    const openCmd = process.platform === "darwin" ? "open" : "xdg-open"
-    spawn(openCmd, [url], { detached: true, stdio: "ignore" }).unref()
-  }
-
-  function stopDashboardServer(): void {
-    for (const client of dashboardSseClients) {
-      try {
-        client.end()
-      } catch {
-        /* ignore */
-      }
-    }
-    dashboardSseClients.clear()
-
-    if (dashboardServer) {
-      try {
-        dashboardServer.close()
-      } catch {
-        /* ignore */
-      }
-    }
-
-    dashboardServer = null
-    dashboardServerPort = null
-    dashboardServerWorkDir = null
-    dashboardServerHtmlPath = null
-  }
-
-  function writeDashboardFile(workDir: string): string {
-    const jsonlContent = readJsonlContent(workDir)
-    const sessionName = extractAutoresearchSessionName(jsonlContent)
-    const html = injectDataIntoTemplate(readTemplate(), sessionName).replace(
-      LOGO_PLACEHOLDER,
-      logoDataUrl()
-    )
-    const exportDir = fs.mkdtempSync(path.join(tmpdir(), "pi-autoresearch-dashboard-"))
-    const dest = path.join(exportDir, "index.html")
-    fs.writeFileSync(dest, html)
-    return dest
-  }
-
-  const CONTENT_TYPES: Record<string, string> = {
-    ".html": "text/html; charset=utf-8",
-    ".jsonl": "text/plain; charset=utf-8",
-    ".json": "application/json; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".png": "image/png",
-    ".webp": "image/webp",
-  }
-
-  function fileContentType(filePath: string): string {
-    const ext = path.extname(filePath).toLowerCase()
-    return CONTENT_TYPES[ext] ?? "application/octet-stream"
-  }
-
-  function resolveServedFile(workDir: string, requestPath: string): string | null {
-    if (requestPath === "/") return dashboardServerHtmlPath
-    if (requestPath === "/autoresearch.jsonl") return autoresearchJsonlPath(workDir)
-    return null
-  }
-
-  function registerSseClient(res: ServerResponse): void {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    })
-    res.write("retry: 1000\n\n")
-    dashboardSseClients.add(res)
-    res.on("close", () => dashboardSseClients.delete(res))
-  }
-
-  function broadcastDashboardUpdate(workDir: string): void {
-    if (!dashboardServer || dashboardServerWorkDir !== workDir) return
-    for (const res of dashboardSseClients) {
-      try {
-        res.write("event: jsonl-updated\n")
-        res.write(`data: ${Date.now()}\n\n`)
-      } catch {
-        dashboardSseClients.delete(res)
-      }
-    }
-  }
-
-  function startStaticServer(workDir: string, dashboardHtmlPath: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const resolvedWorkDir = path.resolve(workDir)
-      const resolvedDashboardHtmlPath = path.resolve(dashboardHtmlPath)
-
-      if (dashboardServer && dashboardServerWorkDir === resolvedWorkDir && dashboardServerPort) {
-        dashboardServerHtmlPath = resolvedDashboardHtmlPath
-        resolve(dashboardServerPort)
-        return
-      }
-
-      stopDashboardServer()
-      dashboardServerHtmlPath = resolvedDashboardHtmlPath
-
-      const server = createServer((req, res) => {
-        const url = new URL(req.url ?? "/", "http://127.0.0.1")
-
-        if (url.pathname === "/events") {
-          registerSseClient(res)
-          return
-        }
-
-        const filePath = resolveServedFile(resolvedWorkDir, url.pathname)
-        if (!filePath) {
-          res.writeHead(404)
-          res.end()
-          return
-        }
-
-        fs.readFile(filePath, (err, data) => {
-          if (err) {
-            res.writeHead(404)
-            res.end()
-            return
-          }
-          res.writeHead(200, { "Content-Type": fileContentType(filePath) })
-          res.end(data)
-        })
-      })
-
-      server.listen(0, "127.0.0.1", () => {
-        const address = server.address()
-        if (!address || typeof address === "string") {
-          reject(new Error("Failed to bind dashboard server"))
-          return
-        }
-        dashboardServer = server
-        dashboardServerPort = address.port
-        dashboardServerWorkDir = resolvedWorkDir
-        resolve(address.port)
-      })
-
-      server.on("error", reject)
-    })
-  }
-
-  async function exportDashboard(ctx: ExtensionContext): Promise<void> {
-    const workDir = resolveWorkDir(ctx.cwd)
-    const jsonlPath = autoresearchJsonlPath(workDir)
-
-    if (!fs.existsSync(jsonlPath)) {
-      ctx.ui.notify("No autoresearch.jsonl found \u2014 run some experiments first", "error")
-      return
-    }
-
-    try {
-      const dashboardHtmlPath = writeDashboardFile(workDir)
-      const port = await startStaticServer(workDir, dashboardHtmlPath)
-      const url = `http://127.0.0.1:${port}`
-      openInBrowser(url)
-      ctx.ui.notify(`Dashboard at ${url} (live updates)`, "info")
-    } catch (error) {
-      ctx.ui.notify(
-        `Export failed: ${error instanceof Error ? error.message : String(error)}`,
-        "error"
-      )
-    }
-  }
-
-  // -----------------------------------------------------------------------
   // /autoresearch command — enter autoresearch mode
   // -----------------------------------------------------------------------
 
@@ -3072,18 +2865,12 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         runtime.lastRunDuration = null
         runtime.runningExperiment = null
         cancelPendingResume(runtime)
-        stopDashboardServer()
         clearSessionUi(ctx)
         if (wasRunning) ctx.abort()
         ctx.ui.notify(
           wasRunning ? "Autoresearch mode OFF — aborting current run" : "Autoresearch mode OFF",
           "info"
         )
-        return
-      }
-
-      if (command === "export") {
-        await exportDashboard(ctx)
         return
       }
 
@@ -3097,7 +2884,6 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         runtime.runningExperiment = null
         cancelPendingResume(runtime)
         runtime.state = createExperimentState()
-        stopDashboardServer()
         updateWidget(ctx)
 
         if (fs.existsSync(jsonlPath)) {
