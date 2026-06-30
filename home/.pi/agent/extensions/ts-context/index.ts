@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Node, Project, TypeFormatFlags, ts } from "ts-morph"
-import type { SourceFile, Symbol as MorphSymbol, Type as MorphType } from "ts-morph"
+import type { Identifier, SourceFile, Symbol as MorphSymbol, Type as MorphType } from "ts-morph"
 import { Type, type Static } from "typebox"
 
 // Constants
@@ -313,7 +313,7 @@ function resolveSourceNode(
   return { entry, node }
 }
 
-function identifierAtNode(node: Node): Node {
+function identifierAtNode(node: Node): Identifier {
   if (Node.isIdentifier(node)) return node
   throw new Error(
     `position resolves to ${node.getKindName()} (${JSON.stringify(textPreview(node.getText()))}); point at the exact identifier instead`
@@ -540,9 +540,8 @@ function definitionAt(params: LocParams, ctx: ExtensionContext): TextWithDetails
 
   lines.push("", `definition (${definitions.length}):`)
   for (const definition of definitions.slice(0, DEFAULT_MAX_RESULTS)) {
-    const name = Node.hasName(definition)
-      ? `${definition.getKindName()} ${definition.getName()}`
-      : definition.getKindName()
+    const kindName = definition.getKindName()
+    const name = Node.hasName(definition) ? `${kindName} ${definition.getName()}` : kindName
     lines.push(`  ${name}`)
     lines.push(
       `    at ${formatLocation(ctx.cwd, definition.getSourceFile(), definition.getStart())}`

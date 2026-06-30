@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 
 const messages = [
   // Short
@@ -458,18 +458,18 @@ const messages = [
   "Topping with tests...",
   "Cherry-picking the commits...",
   "Slop forking open source...",
-];
+]
 
 function pickRandom(): string {
-  return messages[Math.floor(Math.random() * messages.length)]!;
+  return messages[Math.floor(Math.random() * messages.length)]!
 }
 
 export default function (pi: ExtensionAPI) {
   pi.on("turn_start", async (_event, ctx) => {
-    ctx.ui.setWorkingMessage(pickRandom());
-  });
+    ctx.ui.setWorkingMessage(pickRandom())
+  })
 
   pi.on("turn_end", async (_event, ctx) => {
-    ctx.ui.setWorkingMessage(); // Reset for next time
-  });
+    ctx.ui.setWorkingMessage() // Reset for next time
+  })
 }

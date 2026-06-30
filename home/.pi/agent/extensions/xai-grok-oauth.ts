@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent"
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 
@@ -40,12 +40,12 @@ type DeviceTokenError = {
   error_description?: string
 }
 
-const models = [
+const models: ProviderModelConfig[] = [
   {
     id: "grok-code-fast-1",
     name: "Grok Code Fast 1",
     reasoning: false,
-    input: ["text", "image"] as const,
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 256_000,
     maxTokens: 16_384,
@@ -54,7 +54,7 @@ const models = [
     id: "grok-4-fast-reasoning",
     name: "Grok 4 Fast Reasoning",
     reasoning: true,
-    input: ["text", "image"] as const,
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 2_000_000,
     maxTokens: 32_768,
@@ -64,7 +64,7 @@ const models = [
     id: "grok-4-fast-non-reasoning",
     name: "Grok 4 Fast Non-Reasoning",
     reasoning: false,
-    input: ["text", "image"] as const,
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 2_000_000,
     maxTokens: 32_768,
@@ -73,7 +73,7 @@ const models = [
     id: "grok-4",
     name: "Grok 4",
     reasoning: true,
-    input: ["text", "image"] as const,
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 256_000,
     maxTokens: 32_768,
@@ -83,7 +83,7 @@ const models = [
     id: "grok-3",
     name: "Grok 3",
     reasoning: false,
-    input: ["text", "image"] as const,
+    input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 131_072,
     maxTokens: 16_384,
@@ -171,7 +171,8 @@ async function requestDeviceCode() {
     headers: authHeaders(),
     body: new URLSearchParams({ client_id: CLIENT_ID, scope: SCOPE }).toString(),
   })
-  if (!response.ok) throw new Error(`xAI device code request failed (${response.status}): ${await response.text()}`)
+  if (!response.ok)
+    throw new Error(`xAI device code request failed (${response.status}): ${await response.text()}`)
   return response.json() as Promise<DeviceCodeResponse>
 }
 
@@ -196,7 +197,9 @@ async function pollDeviceCodeToken(device: DeviceCodeResponse): Promise<TokenRes
       interval += 5_000
       continue
     }
-    throw new Error(`xAI device auth failed: ${error.error_description ?? error.error ?? response.statusText}`)
+    throw new Error(
+      `xAI device auth failed: ${error.error_description ?? error.error ?? response.statusText}`
+    )
   }
   throw new Error("xAI device auth expired")
 }
@@ -207,7 +210,8 @@ async function tokenRequest(params: Record<string, string>) {
     headers: authHeaders(),
     body: new URLSearchParams(params).toString(),
   })
-  if (!response.ok) throw new Error(`xAI token request failed (${response.status}): ${await response.text()}`)
+  if (!response.ok)
+    throw new Error(`xAI token request failed (${response.status}): ${await response.text()}`)
   return response.json() as Promise<TokenResponse>
 }
 
@@ -223,9 +227,16 @@ async function startOAuthServer() {
   return server
 }
 
-function waitForOAuthCallback(server: ReturnType<typeof createServer>, pkce: PkceCodes, state: string) {
+function waitForOAuthCallback(
+  server: ReturnType<typeof createServer>,
+  pkce: PkceCodes,
+  state: string
+) {
   return new Promise<TokenResponse>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Timed out waiting for xAI OAuth callback")), 5 * 60 * 1000)
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for xAI OAuth callback")),
+      5 * 60 * 1000
+    )
     server.on("request", async (req: IncomingMessage, res: ServerResponse) => {
       try {
         applyCors(req, res)
@@ -294,7 +305,11 @@ function randomString(length: number) {
 }
 
 function base64Url(buffer: ArrayBuffer) {
-  return Buffer.from(buffer).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  return Buffer.from(buffer)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "")
 }
 
 function authHeaders() {
@@ -306,7 +321,8 @@ function authHeaders() {
 }
 
 function toCredentials(tokens: TokenResponse, fallbackRefresh?: string): OAuthCredentials {
-  if (!tokens.refresh_token && !fallbackRefresh) throw new Error("xAI did not return a refresh token")
+  if (!tokens.refresh_token && !fallbackRefresh)
+    throw new Error("xAI did not return a refresh token")
   return {
     access: tokens.access_token,
     refresh: tokens.refresh_token ?? fallbackRefresh!,
@@ -330,5 +346,8 @@ function sendHtml(res: ServerResponse, status: number, message: string) {
 }
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!)
+  return value.replace(
+    /[&<>"']/g,
+    (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!
+  )
 }

@@ -20,10 +20,10 @@ Minimal project config:
     "servers": {
       "playwright": {
         "type": "local",
-        "command": ["npx", "-y", "@playwright/mcp"]
-      }
-    }
-  }
+        "command": ["npx", "-y", "@playwright/mcp"],
+      },
+    },
+  },
 }
 ```
 

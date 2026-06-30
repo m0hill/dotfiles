@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { basename, join, resolve } from "node:path"
 import type {
   ExtensionAPI,
-  ExtensionCommandContext,
+  ExtensionContext,
   SessionEntry,
   SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent"
@@ -75,7 +75,7 @@ function stringValue(value: unknown): string {
 
 // Path helpers
 
-function projectDir(ctx: ExtensionCommandContext): string {
+function projectDir(ctx: ExtensionContext): string {
   return join(ctx.cwd, ".pi-cache", "feedback", "sessions")
 }
 
@@ -88,7 +88,7 @@ function safeName(input: string): string {
   )
 }
 
-function resolveUserPath(ctx: ExtensionCommandContext, input: string): string {
+function resolveUserPath(ctx: ExtensionContext, input: string): string {
   const cleaned = input.trim().replace(/^@/, "")
   return resolve(ctx.cwd, cleaned)
 }
@@ -155,7 +155,7 @@ function textFromAssistant(message: AssistantMessage): string {
     .trim()
 }
 
-function lastAssistantText(ctx: ExtensionCommandContext): string | null {
+function lastAssistantText(ctx: ExtensionContext): string | null {
   const branch = ctx.sessionManager.getBranch()
   for (let i = branch.length - 1; i >= 0; i--) {
     const entry = branch[i]
@@ -168,7 +168,7 @@ function lastAssistantText(ctx: ExtensionCommandContext): string | null {
 
 // Session persistence
 
-function writeSession(ctx: ExtensionCommandContext, opts: NewFeedbackSession): FeedbackSession {
+function writeSession(ctx: ExtensionContext, opts: NewFeedbackSession): FeedbackSession {
   const dir = projectDir(ctx)
   mkdirSync(dir, { recursive: true })
   const id = `${Date.now()}-${randomUUID().slice(0, 8)}`
@@ -351,7 +351,7 @@ function openBrowser(url: string): void {
 
 async function openSession(
   pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionContext,
   session: FeedbackSession
 ): Promise<void> {
   const port = await startServer(pi)
@@ -361,7 +361,7 @@ async function openSession(
 
 // Command handlers
 
-async function openLastFeedback(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
+async function openLastFeedback(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   try {
     const markdown = lastAssistantText(ctx)
     if (!markdown) {

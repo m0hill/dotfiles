@@ -9,6 +9,10 @@ import type { AuthClientInfo, AuthTokens, OAuthConfig } from "./types.js"
 import { AuthStore } from "./auth-store.js"
 import { randomHex } from "./random.js"
 
+type OAuthClientInformationWithAuthMethod = OAuthClientInformationMixed & {
+  token_endpoint_auth_method?: string
+}
+
 /** Default local port used by the OAuth browser callback listener. */
 export const OAUTH_CALLBACK_PORT = 19876
 /** Default local path used by the OAuth browser callback listener. */
@@ -69,7 +73,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
       return undefined
     }
 
-    const info: OAuthClientInformationMixed = {
+    const info: OAuthClientInformationWithAuthMethod = {
       client_id: entry.clientInfo.clientId,
     }
     if (entry.clientInfo.clientSecret !== undefined)

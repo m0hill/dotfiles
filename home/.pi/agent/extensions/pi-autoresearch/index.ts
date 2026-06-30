@@ -2246,7 +2246,10 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         }
       }
       const workDir = resolveWorkDir(ctx.cwd)
-      const secondaryMetrics = params.metrics ?? {}
+      const secondaryMetrics: Record<string, number> = {}
+      for (const [name, value] of Object.entries(params.metrics ?? {})) {
+        if (typeof value === "number") secondaryMetrics[name] = value
+      }
 
       // Gate: prevent "keep" when last run's checks failed
       if (params.status === "keep" && runtime.lastRunChecks && !runtime.lastRunChecks.pass) {
