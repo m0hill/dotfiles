@@ -7,6 +7,7 @@ import { hasAutoresearchConfigHeader } from "./jsonl.ts"
 const TIMEOUT_MS = 30_000
 const STDOUT_MAX_BYTES = 8 * 1024
 const TRUNCATION_MARKER = "\n…[truncated: hook stdout exceeded 8KB]"
+const AUTORESEARCH_CACHE_DIR = path.join(".pi-cache", "pi-autoresearch")
 const HOOKS_DIR = "autoresearch.hooks"
 
 const NEWLINE = 0x0a
@@ -68,7 +69,7 @@ export interface HookResult {
 }
 
 export function hookScriptPath(workDir: string, stage: HookStage): string {
-  return path.join(workDir, HOOKS_DIR, `${stage}.sh`)
+  return path.join(workDir, AUTORESEARCH_CACHE_DIR, HOOKS_DIR, `${stage}.sh`)
 }
 
 function isExecutableFile(filePath: string): boolean {

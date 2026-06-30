@@ -17,6 +17,7 @@ import {
 } from "./jsonl.ts"
 
 const RECENT_RUN_LIMIT = 50
+const AUTORESEARCH_CACHE_DIR = path.join(".pi-cache", "pi-autoresearch")
 
 type RunStatus = ReconstructedRun["status"]
 type StatusCounts = Record<RunStatus, number>
@@ -31,9 +32,9 @@ export interface AutoresearchSummaryPaths {
 export function autoresearchSummaryPathsFor(workDir: string): AutoresearchSummaryPaths {
   return {
     workDir,
-    jsonlPath: path.join(workDir, "autoresearch.jsonl"),
-    mdPath: path.join(workDir, "autoresearch.md"),
-    ideasPath: path.join(workDir, "autoresearch.ideas.md"),
+    jsonlPath: path.join(workDir, AUTORESEARCH_CACHE_DIR, "autoresearch.jsonl"),
+    mdPath: path.join(workDir, AUTORESEARCH_CACHE_DIR, "autoresearch.md"),
+    ideasPath: path.join(workDir, AUTORESEARCH_CACHE_DIR, "autoresearch.ideas.md"),
   }
 }
 
@@ -140,13 +141,13 @@ function isBetter(value: number, current: number, direction: "lower" | "higher")
 function rulesSection(mdPath: string): string {
   const content = readTrimmedFile(mdPath)
   if (!content) return ""
-  return `## Experiment Rules (autoresearch.md)\n\n${content}`
+  return `## Experiment Rules (.pi-cache/pi-autoresearch/autoresearch.md)\n\n${content}`
 }
 
 function ideasSection(ideasPath: string): string {
   const content = readTrimmedFile(ideasPath)
   if (!content) return ""
-  return `## Ideas Backlog (autoresearch.ideas.md)\n\n${content}`
+  return `## Ideas Backlog (.pi-cache/pi-autoresearch/autoresearch.ideas.md)\n\n${content}`
 }
 
 function recentRunsSection(state: ReconstructedJsonlState): string {
@@ -162,7 +163,7 @@ function recentRunsSection(state: ReconstructedJsonlState): string {
     "",
     ...lines,
     "",
-    "If you need more details, read additional lines from autoresearch.jsonl.",
+    "If you need more details, read additional lines from .pi-cache/pi-autoresearch/autoresearch.jsonl.",
   ].join("\n")
 }
 

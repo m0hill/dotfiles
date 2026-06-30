@@ -32,7 +32,6 @@ import * as path from "node:path"
 import { spawn } from "node:child_process"
 import { createWriteStream } from "node:fs"
 import { randomBytes } from "node:crypto"
-import { tmpdir } from "node:os"
 
 import {
   runHook,
@@ -161,7 +160,7 @@ const RunParams = Type.Object({
   checks_timeout_seconds: Type.Optional(
     Type.Number({
       description:
-        "Kill autoresearch.checks.sh after this many seconds (default: 300). Only relevant when the checks file exists.",
+        "Kill .pi-cache/pi-autoresearch/autoresearch.checks.sh after this many seconds (default: 300). Only relevant when the checks file exists.",
     })
   ),
 })
@@ -292,13 +291,15 @@ function formatNum(value: number | null, unit: string): string {
   return fmtNum(value, 2) + u
 }
 
-/** Lazy temp file allocator — returns the same path on subsequent calls */
-function createTempFileAllocator(): () => string {
+/** Lazy full-output file allocator — returns the same cache path on subsequent calls */
+function createOutputFileAllocator(workDir: string): () => string {
   let p: string | undefined
   return () => {
     if (!p) {
       const id = randomBytes(8).toString("hex")
-      p = path.join(tmpdir(), `pi-experiment-${id}.log`)
+      const outputDir = autoresearchOutputDir(workDir)
+      fs.mkdirSync(outputDir, { recursive: true })
+      p = path.join(outputDir, `pi-experiment-${id}.log`)
     }
     return p
   }
@@ -327,12 +328,12 @@ function killTree(pid: number): void {
 }
 
 /**
- * Check if a command's primary purpose is running autoresearch.sh.
+ * Check if a command's primary purpose is running the cached autoresearch.sh.
  *
  * Strategy: strip common harmless prefixes (env vars, env/time/nice wrappers)
- * then check that the core command is autoresearch.sh invoked via a known
- * pattern. Rejects chaining tricks like "evil.py; autoresearch.sh" because
- * we require autoresearch.sh to be the *first* real command.
+ * then check that the core command invokes .pi-cache/pi-autoresearch/autoresearch.sh
+ * via a known pattern. Rejects chaining tricks because the cached script must be
+ * the first real command.
  */
 function isAutoresearchShCommand(command: string): boolean {
   let cmd = command.trim()
@@ -348,14 +349,12 @@ function isAutoresearchShCommand(command: string): boolean {
     cmd = cmd.replace(/^(?:env|time|nice|nohup)(?:\s+-\S+(?:\s+\d+)?)*\s+/, "")
   } while (cmd !== prev)
 
-  // Now the core command must be autoresearch.sh via a known invocation:
-  //   autoresearch.sh
-  //   ./autoresearch.sh
-  //   /path/to/autoresearch.sh
-  //   bash [-flags] autoresearch.sh
-  //   bash [-flags] ./autoresearch.sh
-  //   bash [-flags] /path/to/autoresearch.sh
-  return /^(?:(?:bash|sh|source)\s+(?:-\w+\s+)*)?(?:\.\/|\/[\w/.-]*\/)?autoresearch\.sh(?:\s|$)/.test(
+  // Now the core command must be the cached script via a known invocation:
+  //   .pi-cache/pi-autoresearch/autoresearch.sh
+  //   ./.pi-cache/pi-autoresearch/autoresearch.sh
+  //   /path/to/repo/.pi-cache/pi-autoresearch/autoresearch.sh
+  //   bash [-flags] .pi-cache/pi-autoresearch/autoresearch.sh
+  return /^(?:(?:bash|sh|source)\s+(?:-\w+\s+)*)?(?:(?:\.\/)?\.pi-cache\/pi-autoresearch\/autoresearch\.sh|\/[\w/.-]*\/\.pi-cache\/pi-autoresearch\/autoresearch\.sh)(?:\s|$)/.test(
     cmd
   )
 }
@@ -431,7 +430,7 @@ interface AutoresearchConfig {
   workingDir?: string
 }
 
-/** Read autoresearch.config.json from the given directory (always ctx.cwd) */
+/** Read .pi-cache/pi-autoresearch/autoresearch.config.json from the given directory (always ctx.cwd) */
 function readConfig(cwd: string): AutoresearchConfig {
   try {
     const configPath = autoresearchConfigPath(cwd)
@@ -457,7 +456,7 @@ function readConfig(cwd: string): AutoresearchConfig {
   }
 }
 
-/** Read maxExperiments from autoresearch.config.json (if it exists) */
+/** Read maxExperiments from the cached autoresearch.config.json (if it exists) */
 function readMaxExperiments(cwd: string): number | null {
   const config = readConfig(cwd)
   return typeof config.maxIterations === "number" && config.maxIterations > 0
@@ -467,7 +466,7 @@ function readMaxExperiments(cwd: string): number | null {
 
 /**
  * Resolve the effective working directory.
- * Reads workingDir from autoresearch.config.json in ctxCwd.
+ * Reads workingDir from .pi-cache/pi-autoresearch/autoresearch.config.json in ctxCwd.
  * Returns ctxCwd if not set. Supports relative (resolved against ctxCwd) and absolute paths.
  */
 function resolveWorkDir(ctxCwd: string): string {
@@ -488,10 +487,10 @@ function validateWorkDir(ctxCwd: string): string | null {
   try {
     const stat = fs.statSync(workDir)
     if (!stat.isDirectory()) {
-      return `workingDir "${workDir}" (from autoresearch.config.json) is not a directory.`
+      return `workingDir "${workDir}" (from ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.config.json) is not a directory.`
     }
   } catch {
-    return `workingDir "${workDir}" (from autoresearch.config.json) does not exist.`
+    return `workingDir "${workDir}" (from ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.config.json) does not exist.`
   }
   return null
 }
@@ -519,12 +518,36 @@ function findBestMetric(
 // Session file paths (single source of truth for autoresearch.* filenames)
 // -----------------------------------------------------------------------
 
-const autoresearchJsonlPath = (dir: string) => path.join(dir, "autoresearch.jsonl")
-const autoresearchMdPath = (dir: string) => path.join(dir, "autoresearch.md")
-const autoresearchIdeasPath = (dir: string) => path.join(dir, "autoresearch.ideas.md")
-const autoresearchChecksPath = (dir: string) => path.join(dir, "autoresearch.checks.sh")
-const autoresearchScriptPath = (dir: string) => path.join(dir, "autoresearch.sh")
-const autoresearchConfigPath = (dir: string) => path.join(dir, "autoresearch.config.json")
+const AUTORESEARCH_CACHE_DISPLAY = ".pi-cache/pi-autoresearch"
+const AUTORESEARCH_CACHE_DIR = path.join(".pi-cache", "pi-autoresearch")
+const AUTORESEARCH_OUTPUT_DIR = "outputs"
+const AUTORESEARCH_JSONL = "autoresearch.jsonl"
+const AUTORESEARCH_MD = "autoresearch.md"
+const AUTORESEARCH_IDEAS = "autoresearch.ideas.md"
+const AUTORESEARCH_CHECKS = "autoresearch.checks.sh"
+const AUTORESEARCH_SCRIPT = "autoresearch.sh"
+const AUTORESEARCH_CONFIG = "autoresearch.config.json"
+
+const autoresearchCacheDir = (dir: string) => path.join(dir, AUTORESEARCH_CACHE_DIR)
+const autoresearchOutputDir = (dir: string) =>
+  path.join(autoresearchCacheDir(dir), AUTORESEARCH_OUTPUT_DIR)
+const autoresearchPath = (dir: string, fileName: string) =>
+  path.join(autoresearchCacheDir(dir), fileName)
+
+function writableAutoresearchPath(dir: string, fileName: string): string {
+  const filePath = autoresearchPath(dir, fileName)
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  return filePath
+}
+
+const autoresearchJsonlPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_JSONL)
+const autoresearchMdPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_MD)
+const autoresearchIdeasPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_IDEAS)
+const autoresearchChecksPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_CHECKS)
+const autoresearchScriptPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_SCRIPT)
+const autoresearchConfigPath = (dir: string) => autoresearchPath(dir, AUTORESEARCH_CONFIG)
+const writableAutoresearchJsonlPath = (dir: string) =>
+  writableAutoresearchPath(dir, AUTORESEARCH_JSONL)
 
 function findBaselineRunNumber(results: ExperimentResult[], segment: number): number | null {
   const index = results.findIndex((result) => result.segment === segment)
@@ -991,26 +1014,28 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     "## Autoresearch Workflow",
     "No external skill is required; this extension contains the setup and loop rules.",
     "",
-    "Fresh setup, when autoresearch.md does not exist:",
+    `All autoresearch files live under \`${AUTORESEARCH_CACHE_DISPLAY}/\`. Do not create root-level \`autoresearch.*\` files.`,
+    "",
+    `Fresh setup, when \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md\` does not exist:`,
     "1. Infer the goal, benchmark command, primary metric, direction, files in scope, and constraints when obvious. Ask one focused question only if blocked.",
     "2. Create a branch like `autoresearch/<goal>-<date>` unless the user said not to or the branch is already suitable.",
     "3. Read the source and benchmark files before editing so the workload is understood.",
-    "4. Write `autoresearch.md` with objective, primary/secondary metrics, how to run, files in scope, off limits, constraints, and what's been tried.",
-    "5. Write `autoresearch.sh` (`set -euo pipefail`) that runs the benchmark and prints `METRIC name=value` lines. For fast/noisy benchmarks, run multiple samples and report the median.",
-    "6. Create `autoresearch.checks.sh` only when correctness/type/lint/test constraints require it. Checks run after passing benchmarks and do not affect the primary metric.",
+    `4. Write \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md\` with objective, primary/secondary metrics, how to run, files in scope, off limits, constraints, and what's been tried.`,
+    `5. Write \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.sh\` (\`set -euo pipefail\`) that runs the benchmark and prints \`METRIC name=value\` lines. For fast/noisy benchmarks, run multiple samples and report the median.`,
+    `6. Create \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.checks.sh\` only when correctness/type/lint/test constraints require it. Checks run after passing benchmarks and do not affect the primary metric.`,
     "7. Call `init_experiment`, then run the baseline with `run_experiment`, then immediately record it with `log_experiment`.",
     "",
-    "Resume setup, when autoresearch.md exists:",
-    "- Read `autoresearch.md` and, if needed, `autoresearch.ideas.md` plus recent `autoresearch.jsonl` entries, then continue the loop without recreating the setup.",
-    "- Optional `autoresearch.config.json` may set `workingDir` and `maxIterations`.",
+    `Resume setup, when \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md\` exists:`,
+    `- Read \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md\` and, if needed, \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.ideas.md\` plus recent \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl\` entries, then continue the loop without recreating the setup.`,
+    `- Optional \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.config.json\` may set \`workingDir\` and \`maxIterations\`.`,
     "",
     "Loop rules:",
     "- Keep optimizing until interrupted or a configured max iteration limit stops the loop.",
     "- Primary metric decides: improved => `keep`; worse/equal => `discard`; failed benchmark => `crash`; failed checks => `checks_failed`.",
     "- Always call `log_experiment` after `run_experiment`, and always include useful `asi`. On discard/crash/checks_failed include `rollback_reason` and `next_action_hint`.",
-    "- Do not commit or revert manually. `log_experiment` commits kept changes and reverts discarded/crashed/check-failed changes while preserving autoresearch files.",
-    "- Add deferred but promising ideas as bullets in `autoresearch.ideas.md`.",
-    "- Update the `What's Been Tried` section in `autoresearch.md` periodically so future resumes do not repeat dead ends.",
+    `- Do not commit or revert manually. \`log_experiment\` commits kept changes and reverts discarded/crashed/check-failed changes while preserving \`${AUTORESEARCH_CACHE_DISPLAY}/\`.`,
+    `- Add deferred but promising ideas as bullets in \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.ideas.md\`.`,
+    `- Update the \`What's Been Tried\` section in \`${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md\` periodically so future resumes do not repeat dead ends.`,
   ].join("\n")
 
   // Outlasts pi's internal retry (setTimeout 0) and compaction-continue
@@ -1138,7 +1163,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     return [
       "Run the next iteration now.",
       "Pick the most promising hypothesis from the ideas backlog or the latest `next:` hints in recent runs, then call run_experiment + log_experiment.",
-      "Do not re-read autoresearch.md or autoresearch.jsonl — the compaction summary already contains them.",
+      `Do not re-read ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md or ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl — the compaction summary already contains them.`,
       BENCHMARK_GUARDRAIL,
     ].join(" ")
   }
@@ -1227,7 +1252,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       "",
       "<text> enters autoresearch mode and starts or resumes the loop.",
       "off leaves autoresearch mode.",
-      "clear deletes autoresearch.jsonl and turns autoresearch mode off.",
+      `clear deletes ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl and turns autoresearch mode off.`,
 
       "",
       "Examples:",
@@ -1254,7 +1279,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     // Resolve effective working directory (config stays in ctx.cwd, files in workDir)
     const workDir = resolveWorkDir(ctx.cwd)
 
-    // Primary: read from autoresearch.jsonl (alongside autoresearch.md/sh)
+    // Primary: read from the cached autoresearch.jsonl.
     const jsonlPath = autoresearchJsonlPath(workDir)
     let loadedFromJsonl = false
     try {
@@ -1285,7 +1310,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       // Fall through to session history
     }
 
-    // Fallback: reconstruct from session history (backward compat)
+    // Fallback: reconstruct from current session history when no cached jsonl is present.
     if (!loadedFromJsonl) {
       for (const entry of ctx.sessionManager.getBranch()) {
         if (entry.type !== "message") continue
@@ -1566,7 +1591,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       "\nUse init_experiment, run_experiment, and log_experiment tools. NEVER STOP until interrupted." +
       (hasRules
         ? `\nExperiment rules exist at ${mdPath}. Read them at the start of a live session; after compaction, rely on the compaction summary unless details are missing.`
-        : `\nNo autoresearch.md exists at ${mdPath}; follow the fresh setup workflow below.`) +
+        : `\nNo cached autoresearch.md exists at ${mdPath}; follow the fresh setup workflow below.`) +
       `\n${BENCHMARK_GUARDRAIL}` +
       "\nIf the user sends a follow-on message while an experiment is running, finish the current run_experiment + log_experiment cycle first, then address their message in the next iteration." +
       "\n\n" +
@@ -1598,13 +1623,12 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "init_experiment",
     label: "Init Experiment",
-    description:
-      "Initialize the experiment session. Call once before the first run_experiment to set the name, primary metric, unit, and direction. Writes the config header to autoresearch.jsonl.",
+    description: `Initialize the experiment session. Call once before the first run_experiment to set the name, primary metric, unit, and direction. Writes the config header to ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl.`,
     promptSnippet:
       "Initialize experiment session (name, metric, unit, direction). Call once before first run.",
     promptGuidelines: [
       "Call init_experiment exactly once at the start of an autoresearch session, before the first run_experiment.",
-      "If autoresearch.jsonl already exists with a config, do NOT call init_experiment again.",
+      `If ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl already exists with a config, do NOT call init_experiment again.`,
       "If the optimization target changes (different benchmark, metric, or workload), call init_experiment again to insert a new config header and reset the baseline.",
     ],
     parameters: InitParams,
@@ -1645,7 +1669,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       // Write config header to jsonl (append for re-init, create for first)
       const workDir = resolveWorkDir(ctx.cwd)
       try {
-        const jsonlPath = autoresearchJsonlPath(workDir)
+        const jsonlPath = writableAutoresearchJsonlPath(workDir)
         const config = JSON.stringify({
           type: "config",
           name: state.name,
@@ -1663,7 +1687,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
           content: [
             {
               type: "text",
-              text: `⚠️ Failed to write autoresearch.jsonl: ${e instanceof Error ? e.message : String(e)}`,
+              text: `⚠️ Failed to write ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl: ${e instanceof Error ? e.message : String(e)}`,
             },
           ],
           details: {},
@@ -1690,14 +1714,14 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         : ""
       const limitNote =
         state.maxExperiments !== null
-          ? `\nMax iterations: ${state.maxExperiments} (from autoresearch.config.json)`
+          ? `\nMax iterations: ${state.maxExperiments} (from ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.config.json)`
           : ""
       const workDirNote = workDir !== ctx.cwd ? `\nWorking directory: ${workDir}` : ""
       return {
         content: [
           {
             type: "text",
-            text: `✅ Experiment initialized: "${state.name}"${reinitNote}\nMetric: ${state.metricName} (${state.metricUnit || "unitless"}, ${state.bestDirection} is better)${limitNote}${workDirNote}\nConfig written to autoresearch.jsonl. Now run the baseline with run_experiment.`,
+            text: `✅ Experiment initialized: "${state.name}"${reinitNote}\nMetric: ${state.metricName} (${state.metricUnit || "unitless"}, ${state.bestDirection} is better)${limitNote}${workDirNote}\nConfig written to ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl. Now run the baseline with run_experiment.`,
           },
         ],
         details: { state: cloneExperimentState(state) },
@@ -1723,7 +1747,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "run_experiment",
     label: "Run Experiment",
-    description: `Run a shell command as an experiment. Times wall-clock duration, captures output, detects pass/fail via exit code. Output is truncated to last ${EXPERIMENT_MAX_LINES} lines or ${EXPERIMENT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Use for any autoresearch experiment.`,
+    description: `Run a shell command as an experiment. Times wall-clock duration, captures output, detects pass/fail via exit code. Output is truncated to last ${EXPERIMENT_MAX_LINES} lines or ${EXPERIMENT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved under ${AUTORESEARCH_CACHE_DISPLAY}/outputs. Use for any autoresearch experiment.`,
     promptSnippet: "Run a timed experiment command (captures duration, output, exit code)",
     promptGuidelines: [
       "Use run_experiment instead of bash when running experiment commands — it handles timing and output capture automatically.",
@@ -1764,14 +1788,14 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
       const timeout = (params.timeout_seconds ?? 600) * 1000
 
-      // Guard: if autoresearch.sh exists, only allow running it
+      // Guard: if the cached autoresearch.sh exists, only allow running it
       const autoresearchShPath = autoresearchScriptPath(workDir)
       if (fs.existsSync(autoresearchShPath) && !isAutoresearchShCommand(params.command)) {
         return {
           content: [
             {
               type: "text",
-              text: `❌ autoresearch.sh exists — you must run it instead of a custom command.\n\nFound: ${autoresearchShPath}\nYour command: ${params.command}\n\nUse: run_experiment({ command: "bash autoresearch.sh" }) or run_experiment({ command: "./autoresearch.sh" })`,
+              text: `❌ ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.sh exists — you must run it instead of a custom command.\n\nFound: ${autoresearchShPath}\nYour command: ${params.command}\n\nUse: run_experiment({ command: "bash ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.sh" })`,
             },
           ],
           details: {
@@ -1798,7 +1822,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       const t0 = Date.now()
 
       // Spawn the process directly (like the bash tool) for streaming output
-      const getTempFile = createTempFileAllocator()
+      const getOutputFile = createOutputFileAllocator(workDir)
       const {
         exitCode,
         killed: timedOut,
@@ -1866,7 +1890,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
           // Start writing to temp file once we exceed the threshold
           if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
-            tempFilePath = getTempFile()
+            tempFilePath = getOutputFile()
             tempFileStream = createWriteStream(tempFilePath)
             for (const chunk of chunks) {
               tempFileStream.write(chunk)
@@ -2018,7 +2042,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         !fullOutputPath &&
         (actualTotalBytes > EXPERIMENT_MAX_BYTES || totalLines > EXPERIMENT_MAX_LINES)
       ) {
-        fullOutputPath = getTempFile()
+        fullOutputPath = getOutputFile()
         fs.writeFileSync(fullOutputPath, output)
       }
 
@@ -2065,11 +2089,11 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         text += `💥 FAILED (exit code ${exitCode}) in ${durationSeconds.toFixed(1)}s\n`
       } else if (checksTimedOut) {
         text += `✅ Benchmark PASSED in ${durationSeconds.toFixed(1)}s\n`
-        text += `⏰ CHECKS TIMEOUT (autoresearch.checks.sh) after ${checksDuration.toFixed(1)}s\n`
+        text += `⏰ CHECKS TIMEOUT (${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.checks.sh) after ${checksDuration.toFixed(1)}s\n`
         text += `Log this as 'checks_failed' — the benchmark metric is valid but checks timed out.\n`
       } else if (checksPass === false) {
         text += `✅ Benchmark PASSED in ${durationSeconds.toFixed(1)}s\n`
-        text += `💥 CHECKS FAILED (autoresearch.checks.sh) in ${checksDuration.toFixed(1)}s\n`
+        text += `💥 CHECKS FAILED (${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.checks.sh) in ${checksDuration.toFixed(1)}s\n`
         text += `Log this as 'checks_failed' — the benchmark metric is valid but correctness checks did not pass.\n`
       } else {
         text += `✅ PASSED in ${durationSeconds.toFixed(1)}s\n`
@@ -2283,10 +2307,10 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
     promptSnippet: "Log experiment result (commit, metric, status, description)",
     promptGuidelines: [
       "Always call log_experiment after run_experiment to record the result.",
-      "log_experiment automatically runs git add -A && git commit on 'keep', and auto-reverts code changes on 'discard'/'crash'/'checks_failed' (autoresearch files are preserved). Do NOT commit or revert manually.",
+      `log_experiment automatically runs git add -A && git commit on 'keep' while leaving ${AUTORESEARCH_CACHE_DISPLAY}/ unstaged, and auto-reverts code changes on 'discard'/'crash'/'checks_failed' while preserving .pi-cache. Do NOT commit or revert manually.`,
       "Use status 'keep' if the PRIMARY metric improved. 'discard' if worse or unchanged. 'crash' if it failed. Secondary metrics are for monitoring — they almost never affect keep/discard. Only discard a primary improvement if a secondary metric degraded catastrophically, and explain why in the description.",
       "log_experiment reports a confidence score after 3+ runs (best improvement as a multiple of the noise floor). ≥2.0× = likely real, <1.0× = within noise. If confidence is below 1.0×, consider re-running the same experiment to confirm before keeping. The score is advisory — it never auto-discards.",
-      "If you discover complex but promising optimizations you won't pursue immediately, append them as bullet points to autoresearch.ideas.md. Don't let good ideas get lost.",
+      `If you discover complex but promising optimizations you won't pursue immediately, append them as bullets in ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.ideas.md. Don't let good ideas get lost.`,
       'Always include the asi parameter. At minimum: {"hypothesis": "what you tried"}. On discard/crash, also include rollback_reason and next_action_hint. Add any other key/value pairs that capture what you learned — dead ends, surprising findings, error details, bottlenecks. This is the only structured memory that survives reverts.',
     ],
     parameters: LogParams,
@@ -2315,7 +2339,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
           content: [
             {
               type: "text",
-              text: `❌ Cannot keep — autoresearch.checks.sh failed.\n\n${runtime.lastRunChecks.output.slice(-500)}\n\nLog as 'checks_failed' instead. The benchmark metric is valid but correctness checks did not pass.`,
+              text: `❌ Cannot keep — ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.checks.sh failed.\n\n${runtime.lastRunChecks.output.slice(-500)}\n\nLog as 'checks_failed' instead. The benchmark metric is valid but correctness checks did not pass.`,
             },
           ],
           details: {},
@@ -2481,6 +2505,18 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
             throw new Error(`git add failed (exit ${addResult.code}): ${addErr.slice(0, 200)}`)
           }
 
+          const resetCacheResult = await pi.exec(
+            "git",
+            ["reset", "-q", "--", ".pi-cache", ":(glob)**/.pi-cache", ":(glob)**/.pi-cache/**"],
+            execOpts
+          )
+          if (resetCacheResult.code !== 0) {
+            const resetErr = (resetCacheResult.stdout + resetCacheResult.stderr).trim()
+            throw new Error(
+              `git reset .pi-cache failed (exit ${resetCacheResult.code}): ${resetErr.slice(0, 200)}`
+            )
+          }
+
           const diffResult = await pi.exec("git", ["diff", "--cached", "--quiet"], execOpts)
           if (diffResult.code === 0) {
             text += `\n📝 Git: nothing to commit (working tree clean)`
@@ -2520,19 +2556,19 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
       const jsonlLine = JSON.stringify(jsonlEntry)
 
       try {
-        fs.appendFileSync(autoresearchJsonlPath(workDir), jsonlLine + "\n")
+        fs.appendFileSync(writableAutoresearchJsonlPath(workDir), jsonlLine + "\n")
       } catch (e) {
-        text += `\n⚠️ Failed to write autoresearch.jsonl: ${e instanceof Error ? e.message : String(e)}`
+        text += `\n⚠️ Failed to write ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl: ${e instanceof Error ? e.message : String(e)}`
       }
 
       if (params.status !== "keep") {
         try {
           const revertScript = `
-            git checkout -- . ':(exclude,glob)**/autoresearch.*' ':(exclude,glob)**/autoresearch.*/**'
-            git clean -fd -e 'autoresearch.*' -e '**/autoresearch.*/**' 2>/dev/null
+            git checkout -- . ':(exclude).pi-cache/**' ':(exclude,glob)**/.pi-cache/**'
+            git clean -fd -e '.pi-cache/' -e '**/.pi-cache/' 2>/dev/null
           `
           await pi.exec("bash", ["-c", revertScript], { cwd: workDir, timeout: 10000 })
-          text += `\n📝 Git: reverted changes (${params.status}) — autoresearch files preserved`
+          text += `\n📝 Git: reverted changes (${params.status}) — .pi-cache preserved`
         } catch (e) {
           text += `\n⚠️ Git revert failed: ${e instanceof Error ? e.message : String(e)}`
         }
@@ -2889,15 +2925,21 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
         if (fs.existsSync(jsonlPath)) {
           try {
             fs.unlinkSync(jsonlPath)
-            ctx.ui.notify("Deleted autoresearch.jsonl and turned autoresearch mode OFF", "info")
+            ctx.ui.notify(
+              `Deleted ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl and turned autoresearch mode OFF`,
+              "info"
+            )
           } catch (error) {
             ctx.ui.notify(
-              `Failed to delete autoresearch.jsonl: ${error instanceof Error ? error.message : String(error)}`,
+              `Failed to delete ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl: ${error instanceof Error ? error.message : String(error)}`,
               "error"
             )
           }
         } else {
-          ctx.ui.notify("No autoresearch.jsonl found. Autoresearch mode OFF", "info")
+          ctx.ui.notify(
+            `No ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.jsonl found. Autoresearch mode OFF`,
+            "info"
+          )
         }
         return
       }
@@ -2918,8 +2960,8 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
 
       ctx.ui.notify(
         rulesLoaded
-          ? "Autoresearch mode ON — rules loaded from autoresearch.md"
-          : "Autoresearch mode ON — no autoresearch.md found, setting up",
+          ? `Autoresearch mode ON — rules loaded from ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md`
+          : `Autoresearch mode ON — no ${AUTORESEARCH_CACHE_DISPLAY}/autoresearch.md found, setting up`,
         "info"
       )
 
