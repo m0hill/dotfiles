@@ -2,12 +2,14 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, speech, OCR, overlays, and Spotify controls:
+There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, color picking, port monitoring, speech, OCR, overlays, and Spotify controls:
 
 - `packages/launcher/`
 - `packages/tiler/`
 - `packages/autofocus/`
 - `packages/screenshotcopy/`
+- `packages/colorpicker/`
+- `packages/ports/`
 - `packages/stt/`
 - `packages/gemini/`
 - `packages/lyrics/`
@@ -35,6 +37,13 @@ No Spoon. No registry. No package versions.
 │   ├── screenshotcopy/
 │   │   ├── init.lua
 │   │   └── screenshotcopy.json
+│   ├── colorpicker/
+│   │   ├── init.lua
+│   │   └── colorpicker.json
+│   ├── ports/
+│   │   ├── init.lua
+│   │   ├── ports.json
+│   │   └── README.md
 │   ├── stt/
 │   │   ├── init.lua
 │   │   └── stt.json
@@ -91,6 +100,18 @@ The controller menu always shows all local modules.
 - watches the native macOS screenshot folder
 - copies newly saved screenshots from `Cmd+Shift+3`, `Cmd+Shift+4`, and `Cmd+Shift+5` to the clipboard as image data plus a path fallback
 - uses the configured macOS screenshot location, falling back to `~/Desktop`
+
+### Color Picker
+
+- press `Cmd+Option+C`
+- click any pixel on any screen
+- copies the color as a hex code like `#AABBCC`
+
+### Ports
+
+- shows listening localhost TCP ports inside the manager's Ports submenu
+- rows show `:port process pid` with actions to open, copy details, copy the list, or terminate after confirmation
+- refreshes every `5s` using `lsof`
 
 ### STT
 

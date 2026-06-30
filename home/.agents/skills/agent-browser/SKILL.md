@@ -1,6 +1,7 @@
 ---
 name: agent-browser
 description: Use when a task needs real browser automation like opening websites, testing web apps, clicking/filling UI, extracting data from pages, taking screenshots/PDFs, logging in, using authenticated browser state, checking console/errors/network, dogfooding/QA, automating Electron apps via CDP, Slack browser/desktop automation, iOS Safari, or cloud browser providers. Prefer this over ad-hoc curl/scraping when page state, JavaScript, auth, visual evidence, or user-like interaction matters.
+disable-model-invocation: true
 ---
 
 # agent-browser

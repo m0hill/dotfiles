@@ -62,6 +62,26 @@ return function(config)
 			secrets = {},
 		},
 		{
+			id = "colorpicker",
+			name = "Color Picker",
+			description = "Click a pixel and copy its hex color code.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/colorpicker/init.lua",
+			hotkeys = {
+				{ action = "pick", description = "Pick Color", default = "Cmd+Option+C" },
+			},
+			secrets = {},
+		},
+		{
+			id = "ports",
+			name = "Ports",
+			description = "Shows local TCP ports and the process using each one.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/ports/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
 			id = "gemini",
 			name = "Gemini OCR",
 			description = "Capture a region and extract text with Gemini.",
@@ -271,9 +291,9 @@ return function(config)
 	end
 
 	local function refreshMenu()
-		if runtime.menubar then
-			runtime.menubar:setMenu(C.buildMenu())
-		end
+		-- The menubar uses a dynamic setMenu callback installed in C.start().
+		-- Re-setting the menu while it is open closes it, so refresh requests are
+		-- intentionally deferred until the next click.
 	end
 
 	function C.refreshMenu()
@@ -822,6 +842,9 @@ return function(config)
 		runtime.menubar = hs.menubar.new()
 		runtime.menubar:setIcon(hs.image.imageFromName("NSSlideshowTemplate"))
 		runtime.menubar:setTooltip("Automations")
+		runtime.menubar:setMenu(function()
+			return C.buildMenu()
+		end)
 
 		for _, def in ipairs(MODULES) do
 			if getModuleEnabled(def.id) then
@@ -829,7 +852,6 @@ return function(config)
 			end
 		end
 
-		refreshMenu()
 		return C
 	end
 
