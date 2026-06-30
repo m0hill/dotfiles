@@ -262,9 +262,9 @@ function parseMetricLines(output: string): Map<string, number> {
   const regex = new RegExp(`^${METRIC_LINE_PREFIX}\\s+([\\w.µ]+)=(\\S+)\\s*$`, "gm")
   let match
   while ((match = regex.exec(output)) !== null) {
-    const name = match[1]
-    if (DENIED_METRIC_NAMES.has(name)) continue
-    const value = Number(match[2])
+    const [, name, rawValue] = match
+    if (!name || rawValue === undefined || DENIED_METRIC_NAMES.has(name)) continue
+    const value = Number(rawValue)
     if (Number.isFinite(value)) {
       metrics.set(name, value)
     }
@@ -378,7 +378,13 @@ function sortedMedian(values: number[]): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+  if (sorted.length % 2 === 0) {
+    const left = sorted[mid - 1]
+    const right = sorted[mid]
+    return left !== undefined && right !== undefined ? (left + right) / 2 : 0
+  }
+
+  return sorted[mid] ?? 0
 }
 
 /**
@@ -487,7 +493,7 @@ function validateWorkDir(ctxCwd: string): string | null {
 /** Baseline = first experiment in current segment */
 function findBaselineMetric(results: ExperimentResult[], segment: number): number | null {
   const cur = currentResults(results, segment)
-  return cur.length > 0 ? cur[0].metric : null
+  return cur[0]?.metric ?? null
 }
 
 /** Best = optimal metric across kept experiments in current segment (min for lower, max for higher) */
@@ -530,7 +536,7 @@ function findBaselineSecondary(
   knownMetrics?: MetricDef[]
 ): Record<string, number> {
   const cur = currentResults(results, segment)
-  const base: Record<string, number> = cur.length > 0 ? { ...cur[0].metrics } : {}
+  const base: Record<string, number> = cur[0] ? { ...cur[0].metrics } : {}
 
   // Fill in any known metrics missing from baseline with their first occurrence
   if (knownMetrics) {
@@ -704,7 +710,7 @@ function renderDashboardLines(
   let bestRunNum = 0
   for (let i = st.results.length - 1; i >= 0; i--) {
     const r = st.results[i]
-    if (r.segment !== st.currentSegment) continue
+    if (!r || r.segment !== st.currentSegment) continue
     if (r.status === "keep" && r.metric > 0) {
       if (bestPrimary === null || isBetter(r.metric, bestPrimary, st.bestDirection)) {
         bestPrimary = r.metric
@@ -854,7 +860,9 @@ function renderDashboardLines(
 
   for (let si = 0; si < visibleSecMetrics.length; si++) {
     const sm = visibleSecMetrics[si]
-    headerLine += th.fg("muted", sm.name.padEnd(secColWidths[si]))
+    const colW = secColWidths[si]
+    if (!sm || colW === undefined) continue
+    headerLine += th.fg("muted", sm.name.padEnd(colW))
   }
 
   headerLine +=
@@ -891,6 +899,7 @@ function renderDashboardLines(
 
   for (let i = startIdx; i < st.results.length; i++) {
     const r = st.results[i]
+    if (!r) continue
     const isOld = r.segment !== st.currentSegment
     const isBaseline = !isOld && i === baselineIndex
 
@@ -934,6 +943,7 @@ function renderDashboardLines(
     for (let si = 0; si < visibleSecMetrics.length; si++) {
       const sm = visibleSecMetrics[si]
       const colW = secColWidths[si]
+      if (!sm || colW === undefined) continue
       const val = rowMetrics[sm.name]
       if (val !== undefined) {
         const secStr = formatNum(val, sm.unit)
@@ -1127,7 +1137,9 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   const readLastRun = (workDir: string): Record<string, unknown> | null => {
     const lines = readJsonlLines(workDir)
     for (let i = lines.length - 1; i >= 0; i--) {
-      const entry = parseJsonlEntry(lines[i])
+      const line = lines[i]
+      if (line === undefined) continue
+      const entry = parseJsonlEntry(line)
       if (isAutoresearchRunEntry(entry)) return entry
     }
     return null
@@ -1359,7 +1371,7 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
           let bestRunNum = 0
           for (let i = state.results.length - 1; i >= 0; i--) {
             const r = state.results[i]
-            if (r.segment !== state.currentSegment) continue
+            if (!r || r.segment !== state.currentSegment) continue
             if (r.status === "keep" && r.metric > 0) {
               if (bestPrimary === null || isBetter(r.metric, bestPrimary, state.bestDirection)) {
                 bestPrimary = r.metric
@@ -1830,16 +1842,19 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
           // boundary. This avoids splitting multi-byte UTF-8 characters that
           // straddle chunk boundaries (which would produce U+FFFD on decode).
           while (chunksBytes > maxChunksBytes && chunks.length > 1) {
-            const removed = chunks.shift()!
+            const removed = chunks.shift()
+            if (!removed) break
             chunksBytes -= removed.length
           }
           // Trim first surviving chunk to a newline boundary
           if (chunks.length > 0 && chunksBytes > maxChunksBytes) {
             const buf = chunks[0]
-            const nlIdx = buf.indexOf(0x0a) // '\n'
-            if (nlIdx !== -1 && nlIdx < buf.length - 1) {
-              chunks[0] = buf.subarray(nlIdx + 1)
-              chunksBytes -= nlIdx + 1
+            if (buf) {
+              const nlIdx = buf.indexOf(0x0a) // '\n'
+              if (nlIdx !== -1 && nlIdx < buf.length - 1) {
+                chunks[0] = buf.subarray(nlIdx + 1)
+                chunksBytes -= nlIdx + 1
+              }
             }
           }
 

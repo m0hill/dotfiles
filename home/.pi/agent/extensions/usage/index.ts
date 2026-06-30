@@ -379,7 +379,7 @@ async function showUsage(content: string, ctx: ExtensionCommandContext): Promise
   }
 
   await ctx.ui.custom((_tui, theme, _keybindings, done) => {
-    const [title, ...rest] = content.split("\n")
+    const [title = "Codex usage", ...rest] = content.split("\n")
     const body = `${theme.fg("accent", theme.bold(title))}\n${rest.join("\n")}`
     const text = new Text(body, 0, 0)
 

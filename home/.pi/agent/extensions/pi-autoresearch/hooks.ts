@@ -19,8 +19,13 @@ function truncateAtBoundary(buf: Buffer): Buffer {
   const newlineEnd = buf.lastIndexOf(NEWLINE)
   if (newlineEnd >= 0) return buf.subarray(0, newlineEnd + 1)
   let end = buf.length
-  while (end > 0 && (buf[end - 1] & UTF8_CONT_MASK) === UTF8_CONT) end--
-  if (end > 0 && (buf[end - 1] & UTF8_CONT_MASK) === UTF8_LEAD) end--
+  while (end > 0) {
+    const byte = buf[end - 1]
+    if (byte === undefined || (byte & UTF8_CONT_MASK) !== UTF8_CONT) break
+    end--
+  }
+  const byte = buf[end - 1]
+  if (byte !== undefined && (byte & UTF8_CONT_MASK) === UTF8_LEAD) end--
   return buf.subarray(0, end)
 }
 

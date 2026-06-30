@@ -159,7 +159,7 @@ function lastAssistantText(ctx: ExtensionContext): string | null {
   const branch = ctx.sessionManager.getBranch()
   for (let i = branch.length - 1; i >= 0; i--) {
     const entry = branch[i]
-    if (!isAssistantMessageEntry(entry)) continue
+    if (!entry || !isAssistantMessageEntry(entry)) continue
     const text = textFromAssistant(entry.message)
     if (text) return text
   }

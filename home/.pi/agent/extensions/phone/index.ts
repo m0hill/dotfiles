@@ -261,8 +261,9 @@ function parseSttHelperOutput(
   stderr: string
 ): { ok?: boolean; text?: string; error?: string } {
   const match = `${stdout}\n${stderr}`.match(new RegExp(`${HELPER_MARKER}([A-Za-z0-9+/=]+)`))
-  if (!match) throw new Error("Could not parse STT helper output")
-  const decoded = Buffer.from(match[1], "base64").toString("utf8")
+  const encoded = match?.[1]
+  if (!encoded) throw new Error("Could not parse STT helper output")
+  const decoded = Buffer.from(encoded, "base64").toString("utf8")
   return JSON.parse(decoded)
 }
 

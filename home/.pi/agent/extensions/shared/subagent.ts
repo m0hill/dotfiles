@@ -169,7 +169,7 @@ function textFromContent(content: MessageWithContent["content"]): string {
 function latestAssistantText(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
-    if (message.role !== "assistant" || !hasContent(message)) continue
+    if (!message || message.role !== "assistant" || !hasContent(message)) continue
     const text = textFromContent(message.content).trim()
     if (text) return text
   }
