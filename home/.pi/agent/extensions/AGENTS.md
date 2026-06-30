@@ -14,7 +14,9 @@ Before changing an extension, read the relevant Pi documentation from the instal
 
 Follow cross-references in the docs before implementing unfamiliar APIs.
 
-## Use the quality-code skill
+## Use skills from ~/.agents
+
+Pi reads shared skills from `~/.agents/skills`. Do not add or reference a separate `~/.pi/agent/skills` directory.
 
 For TypeScript changes, read and apply:
 
