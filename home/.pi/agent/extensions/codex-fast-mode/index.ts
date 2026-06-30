@@ -1,8 +1,10 @@
-import { streamSimple } from "@earendil-works/pi-ai/api/openai-codex-responses"
+import { openAICodexResponsesApi } from "@earendil-works/pi-ai/compat"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import type { Api, Model } from "@earendil-works/pi-ai"
 
 export const SUPPORTED_MODEL_ID = "gpt-5.5"
+
+const codexResponsesApi = openAICodexResponsesApi()
 
 let enabled = false
 
@@ -39,7 +41,7 @@ export default function codexFastMode(pi: ExtensionAPI) {
         throw new Error(`Expected openai-codex-responses model, got ${model.api}`)
       }
 
-      return streamSimple(model, context, {
+      return codexResponsesApi.streamSimple(model, context, {
         ...options,
         onPayload: async (payload, innerModel) => {
           const upstreamPayload =
