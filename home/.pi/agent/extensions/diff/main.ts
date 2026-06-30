@@ -486,15 +486,17 @@ declare global {
 }
 
 function renderMarkdown(markdown: string): string {
-  if (!window.marked) return `<pre>${escapeHtml(markdown)}</pre>`
+  const safeMarkdown = escapeHtml(markdown)
+  if (!window.marked) return `<pre>${safeMarkdown}</pre>`
   window.marked.setOptions({ gfm: true, breaks: false })
-  return window.marked.parse(String(markdown))
+  return window.marked.parse(safeMarkdown)
 }
 
 function renderInlineMarkdown(markdown: string): string {
-  if (!window.marked) return escapeHtml(markdown)
+  const safeMarkdown = escapeHtml(markdown)
+  if (!window.marked) return safeMarkdown
   window.marked.setOptions({ gfm: true, breaks: false })
-  return window.marked.parseInline(String(markdown))
+  return window.marked.parseInline(safeMarkdown)
 }
 
 function isLineAnnotation(annotation: Annotation): annotation is LineAnnotation {

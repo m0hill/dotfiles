@@ -1,4 +1,9 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  SessionEntry,
+  SessionMessageEntry,
+} from "@earendil-works/pi-coding-agent"
 import { runTrackedAgent } from "../shared/subagent"
 const BTW_MESSAGE_TYPE = "btw-note"
 
@@ -17,6 +22,10 @@ type BtwDetails = {
   answer: string
   paths: string[]
   timestamp: number
+}
+
+function isMessageEntry(entry: SessionEntry): entry is SessionMessageEntry {
+  return entry.type === "message"
 }
 
 function textFromContent(content: unknown): string {
@@ -77,7 +86,9 @@ function extractUniquePaths(ctx: ExtensionCommandContext): string[] {
     collectStrings(entry, hintedStrings)
     for (const value of hintedStrings) addPathCandidate(paths, value)
 
-    const messageText = textFromContent((entry as { content?: unknown }).content)
+    if (!isMessageEntry(entry) || !("content" in entry.message)) continue
+
+    const messageText = textFromContent(entry.message.content)
     for (const match of messageText.matchAll(
       /(?:~|\.{1,2})?\/?[\w@.+-]+(?:\/[\w@.+-]+)+(?:\.[\w.+-]+)?|[\w@.+-]+\.[A-Za-z0-9][\w.+-]*/g
     )) {

@@ -185,13 +185,13 @@ const InitParams = Type.Object({
       'Display name for the primary metric (e.g. "total_µs", "bundle_kb", "val_bpb"). Shown in dashboard headers.',
   }),
   metric_unit: Type.Optional(
-    Type.String({
+    StringEnum(["µs", "ms", "s", "kb", "mb", ""] as const, {
       description:
         'Unit for the primary metric. Use "µs", "ms", "s", "kb", "mb", or "" for unitless. Affects number formatting. Default: ""',
     })
   ),
   direction: Type.Optional(
-    Type.String({
+    StringEnum(["lower", "higher"] as const, {
       description:
         'Whether "lower" or "higher" is better for the primary metric. Default: "lower".',
     })
@@ -445,7 +445,22 @@ function readConfig(cwd: string): AutoresearchConfig {
   try {
     const configPath = autoresearchConfigPath(cwd)
     if (!fs.existsSync(configPath)) return {}
-    return JSON.parse(fs.readFileSync(configPath, "utf-8"))
+
+    const raw: unknown = JSON.parse(fs.readFileSync(configPath, "utf-8"))
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {}
+
+    const maxIterations = Object.getOwnPropertyDescriptor(raw, "maxIterations")?.value
+    const workingDir = Object.getOwnPropertyDescriptor(raw, "workingDir")?.value
+    const config: AutoresearchConfig = {}
+
+    if (typeof maxIterations === "number" && Number.isFinite(maxIterations)) {
+      config.maxIterations = maxIterations
+    }
+    if (typeof workingDir === "string" && workingDir.trim()) {
+      config.workingDir = workingDir
+    }
+
+    return config
   } catch {
     return {}
   }
@@ -721,12 +736,13 @@ function renderDashboardLines(
   }
 
   // Runs summary
+  const confidence = st.confidence
   const confSuffix =
-    st.confidence !== null
+    confidence !== null
       ? (() => {
-          const confStr = st.confidence!.toFixed(1)
+          const confStr = confidence.toFixed(1)
           const confColor: Parameters<typeof th.fg>[0] =
-            st.confidence! >= 2.0 ? "success" : st.confidence! >= 1.0 ? "warning" : "error"
+            confidence >= 2.0 ? "success" : confidence >= 1.0 ? "warning" : "error"
           return `  ${th.fg(confColor, `(conf: ${confStr}×)`)}`
         })()
       : ""
@@ -1063,8 +1079,9 @@ export default function autoresearchExtension(pi: ExtensionAPI) {
   }
 
   const reschedulePendingResume = (ctx: ExtensionContext, runtime: AutoresearchRuntime): void => {
-    if (!hasPendingResume(runtime)) return
-    schedulePendingResume(ctx, runtime, runtime.pendingResumeMessage!)
+    const message = runtime.pendingResumeMessage
+    if (!message) return
+    schedulePendingResume(ctx, runtime, message)
   }
 
   const hasRunExperimentsThisSession = (runtime: AutoresearchRuntime): boolean =>

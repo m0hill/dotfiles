@@ -4,7 +4,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "Preserve",
     "moduleResolution": "Bundler",
-    "allowJs": true,
+    "allowJs": false,
     "moduleDetection": "force",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

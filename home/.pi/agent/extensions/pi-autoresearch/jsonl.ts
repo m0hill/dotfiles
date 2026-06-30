@@ -43,6 +43,7 @@ export interface ReconstructedJsonlState {
 const DEFAULT_METRIC_NAME = "metric"
 const DEFAULT_METRIC_UNIT = ""
 const DEFAULT_DIRECTION = "lower" as const
+const DENIED_METRIC_NAMES = new Set(["__proto__", "constructor", "prototype"])
 
 function isObjectRecord(value: unknown): value is JsonlEntry {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -66,7 +67,8 @@ function metricMapFrom(value: unknown): Record<string, number> {
 
   const metrics: Record<string, number> = {}
   for (const [name, metric] of Object.entries(value)) {
-    if (typeof metric === "number") metrics[name] = metric
+    if (DENIED_METRIC_NAMES.has(name)) continue
+    if (typeof metric === "number" && Number.isFinite(metric)) metrics[name] = metric
   }
   return metrics
 }

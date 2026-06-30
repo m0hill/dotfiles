@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const LEFT_COLLAPSED_CLASS = "is-left-collapsed",
   RIGHT_COLLAPSED_CLASS = "is-right-collapsed"
 
@@ -46,12 +48,16 @@ if (localStorage.getItem("ann-rc") === "1") document.body.classList.add(RIGHT_CO
 updateToggles()
 
 function esc(s) {
-  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c])
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
+  )
 }
 function renderMd(md) {
-  if (!window.marked) return `<pre>${esc(md)}</pre>`
+  const safeMarkdown = esc(md)
+  if (!window.marked) return `<pre>${safeMarkdown}</pre>`
   window.marked.setOptions({ gfm: true, breaks: false })
-  return window.marked.parse(String(md))
+  return window.marked.parse(safeMarkdown)
 }
 function slugify(t, m) {
   const b =

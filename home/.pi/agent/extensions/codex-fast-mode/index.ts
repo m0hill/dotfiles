@@ -47,6 +47,7 @@ export default function codexFastMode(pi: ExtensionAPI) {
               ? ((await options.onPayload(payload, innerModel)) ?? payload)
               : payload
 
+          if (!enabled) return upstreamPayload
           if (!isRecord(upstreamPayload)) return upstreamPayload
           if (innerModel.provider !== "openai-codex" || innerModel.id !== SUPPORTED_MODEL_ID)
             return upstreamPayload
@@ -57,7 +58,7 @@ export default function codexFastMode(pi: ExtensionAPI) {
               ...(isRecord(upstreamPayload.text) ? upstreamPayload.text : {}),
               verbosity: "low",
             },
-            ...(enabled ? { service_tier: "priority" } : {}),
+            service_tier: "priority",
           }
         },
       })

@@ -1,8 +1,9 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  SessionEntry,
-  SessionMessageEntry,
+import {
+  isToolCallEventType,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type SessionEntry,
+  type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent"
 import { runTrackedAgent } from "../shared/subagent"
 
@@ -295,9 +296,9 @@ export default function bashGuardExtension(pi: ExtensionAPI): void {
   })
 
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName !== "bash") return
+    if (!isToolCallEventType("bash", event)) return
 
-    const command = typeof event.input.command === "string" ? event.input.command : ""
+    const command = event.input.command
     const matches = getSensitiveMatches(command)
     if (matches.length === 0) return
 
@@ -311,7 +312,19 @@ export default function bashGuardExtension(pi: ExtensionAPI): void {
       return { block: true, reason: buildPhoneApprovalBlockReason(command, matches) }
     }
 
-    const choice = await ctx.ui.select(buildApprovalPrompt(command, matches), [YES, NO, EXPLAIN])
+    if (!ctx.hasUI) {
+      return {
+        block: true,
+        reason: "Sensitive bash command requires approval, but interactive UI is unavailable.",
+      }
+    }
+
+    const dialogOptions = ctx.signal ? { signal: ctx.signal } : undefined
+    const choice = await ctx.ui.select(
+      buildApprovalPrompt(command, matches),
+      [YES, NO, EXPLAIN],
+      dialogOptions
+    )
 
     if (choice === YES) return
 
@@ -320,7 +333,8 @@ export default function bashGuardExtension(pi: ExtensionAPI): void {
       const explanation = await explainCommand(command, matches, ctx)
       const afterExplanation = await ctx.ui.select(
         ["Explanation", "", explanation, "", "Run this command?", "", command].join("\n"),
-        [YES, NO]
+        [YES, NO],
+        dialogOptions
       )
 
       if (afterExplanation === YES) return

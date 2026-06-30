@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const params = new URLSearchParams(location.search)
 const token = params.get("token") || ""
 const messagesEl = document.querySelector("#messages")

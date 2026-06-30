@@ -11,8 +11,9 @@ import {
 } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { join } from "node:path"
+import { StringEnum } from "@earendil-works/pi-ai"
 import { type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
-import { Type, type Static, type TUnsafe } from "typebox"
+import { Type, type Static } from "typebox"
 import { Compile } from "typebox/compile"
 import { parsePatchFiles, type AnnotationSide, type FileDiffMetadata } from "@pierre/diffs"
 
@@ -211,27 +212,20 @@ type StaticFile = {
   contentType: string
 }
 
-function stringEnum<T extends readonly string[]>(
-  values: T,
-  options?: { description?: string }
-): TUnsafe<T[number]> {
-  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options })
-}
-
 const reviewCommentSchema = Type.Object({
   reviewId: Type.String({
     minLength: 1,
     pattern: ".*\\S.*",
     description: "Diff review id shown in the kickoff prompt.",
   }),
-  anchorKind: stringEnum(ANCHOR_KINDS, {
+  anchorKind: StringEnum(ANCHOR_KINDS, {
     description:
       "Use global when the finding is caused by the diff but not tied to one changed line.",
   }),
   file: Type.Optional(
     Type.String({ description: "Diff file path for file, line, or range anchors." })
   ),
-  side: Type.Optional(stringEnum(REVIEW_SIDES)),
+  side: Type.Optional(StringEnum(REVIEW_SIDES)),
   line: Type.Optional(
     Type.Integer({ minimum: 1, description: "Changed line number for line anchors." })
   ),
@@ -241,8 +235,8 @@ const reviewCommentSchema = Type.Object({
   end: Type.Optional(
     Type.Integer({ minimum: 1, description: "End changed line number for range anchors." })
   ),
-  category: stringEnum(REVIEW_CATEGORIES),
-  severity: stringEnum(REVIEW_SEVERITIES),
+  category: StringEnum(REVIEW_CATEGORIES),
+  severity: StringEnum(REVIEW_SEVERITIES),
   title: Type.String({
     minLength: 1,
     pattern: ".*\\S.*",
@@ -256,7 +250,7 @@ const reviewCommentSchema = Type.Object({
   recommendation: Type.Optional(
     Type.String({ description: "Concrete suggested next step, if any." })
   ),
-  confidence: stringEnum(REVIEW_CONFIDENCE),
+  confidence: StringEnum(REVIEW_CONFIDENCE),
 })
 
 type ReviewCommentInput = Static<typeof reviewCommentSchema>
@@ -297,7 +291,7 @@ type SummaryFileInput = Static<typeof summaryFileSchema>
 const summaryBlockSchema = Type.Object({
   reviewId: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
   file: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
-  side: stringEnum(REVIEW_SIDES),
+  side: StringEnum(REVIEW_SIDES),
   start: Type.Integer({ minimum: 1 }),
   end: Type.Integer({ minimum: 1 }),
   title: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
@@ -316,7 +310,7 @@ type AnchorValidationResult = { ok: true; anchor: ReviewAnchor } | { ok: false; 
 
 const reviewAnnotationSchema = Type.Object({
   file: Type.String({ default: "" }),
-  scope: Type.Optional(stringEnum(["lines", "file"] as const)),
+  scope: Type.Optional(StringEnum(["lines", "file"] as const)),
   side: Type.Optional(Type.String()),
   start: Type.Optional(Type.Number()),
   end: Type.Optional(Type.Number()),
@@ -335,7 +329,7 @@ type FeedbackPayloadInput = Static<typeof feedbackPayloadSchema>
 const askPayloadSchema = Type.Object({
   id: Type.String({ minLength: 1, pattern: ".*\\S.*" }),
   file: Type.String({ default: "" }),
-  scope: Type.Optional(stringEnum(["lines", "file"] as const)),
+  scope: Type.Optional(StringEnum(["lines", "file"] as const)),
   side: Type.Optional(Type.String()),
   start: Type.Optional(Type.Number()),
   end: Type.Optional(Type.Number()),

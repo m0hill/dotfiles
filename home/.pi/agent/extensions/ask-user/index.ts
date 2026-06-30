@@ -1,4 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionUIDialogOptions,
+} from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import { Type, type Static } from "typebox"
 
@@ -39,7 +43,10 @@ const askUserParameters = Type.Object({
     })
   ),
   timeout: Type.Optional(
-    Type.Number({ description: "Optional timeout in milliseconds per question" })
+    Type.Number({
+      minimum: 1,
+      description: "Optional timeout in milliseconds per question",
+    })
   ),
 })
 
@@ -80,17 +87,17 @@ function optionsWithCustomAnswer(options: string[]): string[] {
 }
 
 async function askForAnswer(params: {
-  ctx: Parameters<Parameters<ExtensionAPI["registerTool"]>[0]["execute"]>[4]
+  ctx: ExtensionContext
   prompt: string
   options: string[]
   defaultAnswer?: string
-  timeoutOptions?: { timeout: number }
+  dialogOptions?: ExtensionUIDialogOptions
 }): Promise<string | undefined> {
   if (params.options.length === 0) {
     return params.ctx.ui.input(
       params.prompt,
       params.defaultAnswer ?? "Type your answer...",
-      params.timeoutOptions
+      params.dialogOptions
     )
   }
 
@@ -98,14 +105,14 @@ async function askForAnswer(params: {
   const selected = await params.ctx.ui.select(
     params.prompt,
     selectableOptions,
-    params.timeoutOptions
+    params.dialogOptions
   )
   if (selected !== CUSTOM_ANSWER_OPTION && selected !== `${CUSTOM_ANSWER_OPTION} `) return selected
 
   return params.ctx.ui.input(
     params.prompt,
     params.defaultAnswer ?? "Type custom answer...",
-    params.timeoutOptions
+    params.dialogOptions
   )
 }
 
@@ -204,7 +211,13 @@ export default function askUserExtension(pi: ExtensionAPI): void {
         }
       }
 
-      const timeoutOptions = params.timeout ? { timeout: params.timeout } : undefined
+      const dialogOptions: ExtensionUIDialogOptions | undefined =
+        params.timeout === undefined && !signal
+          ? undefined
+          : {
+              ...(params.timeout === undefined ? {} : { timeout: params.timeout }),
+              ...(signal ? { signal } : {}),
+            }
       const answers: AskUserAnswer[] = []
 
       for (const item of questions) {
@@ -215,7 +228,7 @@ export default function askUserExtension(pi: ExtensionAPI): void {
           prompt,
           options,
           defaultAnswer: item.defaultAnswer,
-          timeoutOptions,
+          dialogOptions,
         })
         const answer = normalizeText(rawAnswer)
         const result = {
