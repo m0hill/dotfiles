@@ -464,6 +464,24 @@ body.is-right-collapsed #sidebar-right #sb-right-inner {
   color: var(--fg-secondary);
 }
 
+.code-copy-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  color: var(--fg-muted);
+  background: var(--pre-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.code-copy-btn:hover,
+.code-copy-btn.copied {
+  color: var(--fg);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
 #doc {
   padding: 48px 56px;
   max-width: 900px;
@@ -593,9 +611,10 @@ body.is-right-collapsed #sidebar-right #sb-right-inner {
 }
 
 #doc pre {
+  position: relative;
   background: var(--pre-bg);
   border: 1px solid var(--border);
-  padding: 20px 24px;
+  padding: 20px 52px 20px 24px;
   overflow: auto;
   margin: 1.2em 0;
   font-family: var(--font-mono);

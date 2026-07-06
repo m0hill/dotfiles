@@ -54,10 +54,9 @@ function esc(s) {
   )
 }
 function renderMd(md) {
-  const safeMarkdown = esc(md)
-  if (!window.marked) return `<pre>${safeMarkdown}</pre>`
+  if (!window.marked) return `<pre>${esc(md)}</pre>`
   window.marked.setOptions({ gfm: true, breaks: false })
-  return window.marked.parse(safeMarkdown)
+  return window.marked.parse(md)
 }
 function slugify(t, m) {
   const b =
@@ -71,6 +70,25 @@ function slugify(t, m) {
   const n = m.get(b) || 0
   m.set(b, n + 1)
   return n ? `${b}-${n}` : b
+}
+
+function addCodeBlockCopyButtons() {
+  docEl.querySelectorAll("pre").forEach((pre) => {
+    if (pre.querySelector(".code-copy-btn")) return
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "icon-btn code-copy-btn"
+    button.title = "Copy code"
+    button.setAttribute("aria-label", "Copy code")
+    button.innerHTML = copyIcon()
+    button.onclick = async () => {
+      const code = pre.querySelector("code")?.textContent ?? pre.textContent ?? ""
+      await navigator.clipboard.writeText(code)
+      button.classList.add("copied")
+      setTimeout(() => button.classList.remove("copied"), 900)
+    }
+    pre.appendChild(button)
+  })
 }
 
 function buildTOC() {
@@ -163,6 +181,22 @@ function setActiveHighlight(range) {
   CSS.highlights.set("annotation-active-highlight", activeAnnotationHighlight)
 }
 
+function clearFeedbackDraft() {
+  annotations = []
+  annotationAnchors = []
+  activeAnnotationIndex = null
+  activeAnnotationHighlight = null
+  document.getElementById("global").value = ""
+  if (CSS.highlights) {
+    CSS.highlights.delete("annotation-highlight")
+    CSS.highlights.delete("annotation-active-highlight")
+  }
+  document.querySelectorAll("mark.annotation-highlight").forEach((mark) => {
+    mark.replaceWith(...mark.childNodes)
+  })
+  renderAnnotations()
+}
+
 function editAnnotation(index) {
   const card = annotationsEl.querySelector(`[data-edit="${index}"]`)?.closest(".annotation-card")
   const wrap = card?.querySelector(".anno-comment-wrap")
@@ -186,6 +220,10 @@ function crossIcon() {
 
 function pencilIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
+}
+
+function copyIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><path d="M5 15V7a2 2 0 0 1 2-2h8"></path></svg>`
 }
 
 function hidePopover() {
@@ -271,24 +309,45 @@ document.getElementById("addBtn").onclick = () => {
   renderAnnotations()
 }
 
-document.getElementById("submitBtn").onclick = async () => {
+async function sendFeedback({ keepOpen }) {
   const g = document.getElementById("global").value.trim()
   if (!annotations.length && !g) {
     alert("Add an annotation or global feedback first.")
     return
   }
+
+  const submitBtn = document.getElementById("submitBtn")
+  const sendMoreBtn = document.getElementById("sendMoreBtn")
+  submitBtn.disabled = true
+  sendMoreBtn.disabled = true
+
   try {
-    await fetch("/api/submit", {
+    const response = await fetch("/api/submit", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id, annotations, globalComment: g }),
     })
+    if (!response.ok) throw new Error("Submission failed")
+    if (keepOpen) {
+      clearFeedbackDraft()
+      sendMoreBtn.textContent = "Sent ✓"
+      setTimeout(() => {
+        sendMoreBtn.textContent = "Send & Clear"
+      }, 1200)
+      return
+    }
     document.body.innerHTML =
       '<div class="full-msg"><h2>Feedback Sent</h2><p>You may close this tab</p></div>'
   } catch {
     alert("Submission failed.")
+  } finally {
+    submitBtn.disabled = false
+    sendMoreBtn.disabled = false
   }
 }
+
+document.getElementById("sendMoreBtn").onclick = () => sendFeedback({ keepOpen: true })
+document.getElementById("submitBtn").onclick = () => sendFeedback({ keepOpen: false })
 
 document.getElementById("closeBtn").onclick = async () => {
   try {
@@ -309,6 +368,7 @@ document.getElementById("closeBtn").onclick = async () => {
       data.sourcePath || (data.kind === "last" ? "last assistant response" : "")
     currentMarkdown = data.markdown || ""
     docEl.innerHTML = renderMd(currentMarkdown)
+    addCodeBlockCopyButtons()
     buildTOC()
     renderAnnotations()
   } catch (e) {
