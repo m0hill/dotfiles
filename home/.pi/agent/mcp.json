@@ -18,6 +18,22 @@
           "scope": "mcp:connect"
         },
         "enabled": true
+      },
+      "notion": {
+        "type": "remote",
+        "url": "https://mcp.notion.com/mcp",
+        "oauth": {
+          "clientName": "Pi MCP"
+        },
+        "enabled": true
+      },
+      "cloudflare-api": {
+        "type": "remote",
+        "url": "https://mcp.cloudflare.com/mcp",
+        "oauth": {
+          "clientName": "Pi MCP"
+        },
+        "enabled": true
       }
     }
   }
