@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Turn settled conversation context into one buildable specification. Do not restart discovery; use `grill-me` or `wayfinder` first when important decisions remain open.
 
-Before publishing, read the [Kaam-dō tracker contract](../kaam-do/TRACKER.md).
+Before publishing, read the [Kaam-dō tracker contract](../kaam-do/TRACKER.md) and load `docs/FEATURE-CONTRACTS.md` from the tracker repository.
 
 ## 1. Gather
 
@@ -16,11 +16,19 @@ Read the current conversation, relevant code, `CONTEXT.md`/`CONTEXT-MAP.md`, app
 
 Complete when every consequential claim in the draft can be traced to conversation, code, domain documentation, or an explicit reference.
 
-## 2. Find the test seam
+## 2. Choose the test seam and contract level
 
-Prefer an existing high-level public seam. Propose a new seam only when the behavior cannot be tested coherently through an existing one. Record what behavior deserves tests and what does not.
+Prefer an existing high-level public seam. Propose a new seam only when behavior cannot be tested coherently through an existing one.
 
-Complete when the specification can name observable test boundaries without prescribing test internals.
+Choose the smallest Feature Contract level that fits:
+
+- **Narrative** — one straightforward implementation; acceptance criteria are sufficient.
+- **Executable scenarios** — behavior must align across implementations, repositories, compatibility versions, or risky edge cases.
+- **Stateful executable** — legal transitions, retries, cancellation, concurrency, or recovery are central.
+
+Do not introduce a machine or shared scenario corpus merely to make the specification look rigorous. For executable levels, name the canonical owner, current or proposed artifact location, consumers, stable scenario IDs, and conformance commands.
+
+Complete when observable test boundaries and the minimum justified contract level are explicit.
 
 ## 3. Draft proportionately
 
@@ -41,6 +49,10 @@ Use this shape:
 
 ## Testing decisions
 
+## Feature Contract
+
+<!-- Omit for Narrative unless owned boundaries need clarification. For executable levels, use the canonical Feature Contract template. -->
+
 ## Out of scope
 
 ## References
@@ -48,11 +60,11 @@ Use this shape:
 
 For ordinary work, use only the detail needed to remove implementation ambiguity. For a large product change, expand user-visible scenarios comprehensively. Do not manufacture a long user-story inventory to make the document look complete. Avoid file paths and code snippets unless a prototype produced a decision-rich state machine, schema, or type shape that prose would make less precise.
 
-Complete when another fresh agent could judge scope and completion without the original conversation. Anything needed only from chat is still missing from the specification.
+Complete when another fresh agent could judge scope and completion without the original conversation. For an executable contract, it must also be able to locate the canonical artifact or its proposed owner, identify required consumers, and run or plan the conformance command. Anything needed only from chat is still missing.
 
 ## 4. Approve
 
-Show the full draft, proposed title, scope, and source repositories. Ask for one approval or revision pass. Do not publish before approval.
+Show the full draft, proposed title, scope, source repositories, Feature Contract level, canonical owner, and any proposed artifact. Ask for one approval or revision pass. Do not publish before approval.
 
 Complete when the user approves the exact artifact.
 

@@ -36,11 +36,13 @@ If the user did not provide a fixed point and no active diff/review context is a
 
 Do enough legwork to understand the relevant call paths, data flow, state transitions, and existing neighbouring patterns. Do not review isolated hunks when the risk depends on how the feature is wired.
 
-### 2. Ask the spec source
+### 2. Identify the spec and Feature Contract
 
-- Aask the user where the spec is. If they say there is no spec, the Spec axis reports `no spec available` and does not invent requirements.
+Ask where the originating spec is when it cannot be found from the review context. If the user says there is no spec, the Spec axis reports `no spec available` and does not invent requirements.
 
-Quote the spec line or section for every Spec finding.
+If the spec contains a Feature Contract, load its exact revision, canonical artifacts, owned interfaces, orchestration, state model, scenario IDs, consumers, delegation surface, and conformance commands. Compare those references with the branch and latest Kaam-dō checkpoint; a stale or missing revision is a review finding when it prevents trustworthy conformance review.
+
+Quote the spec or Feature Contract line/section for every Spec finding.
 
 ### 3. Identify the standards sources
 
@@ -112,6 +114,19 @@ Report:
 - Requirements the spec asked for that are missing or partial.
 - Behaviour in the diff that was not asked for and creates scope creep or risk.
 - Requirements that look implemented but are wrong under the spec.
+
+When a Feature Contract applies, also report:
+
+- owned interfaces changed without approval;
+- orchestration gained hidden edges or moved ownership;
+- state behavior added or removed unapproved states, events, guards, or transitions;
+- scenarios changed, weakened, or bypassed without approval;
+- required consumers do not conform to the same revision;
+- implementation crossed its Delegation surface;
+- required conformance commands are missing or failing;
+- checkpoint, code, and PR evidence reference different contract revisions.
+
+Generated diagrams are evidence only when derived from the canonical artifact. Do not treat an independently maintained diagram as authoritative.
 
 If no spec is available, say so and skip this axis rather than inventing intent.
 

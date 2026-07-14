@@ -18,11 +18,23 @@ A fresh session trusts durable evidence in this order:
 1. Issue body — stable outcome, scope, acceptance criteria, source repository, and constraints.
 2. Parent specification and native relationships — wider intent, hierarchy, and gates.
 3. Resolution/completion comments on closed blockers — decisions and contracts this ticket inherits.
-4. Latest agent checkpoint — execution state and exact next action.
-5. Source repository — branch, commits, diff, tests, and linked PR.
-6. Current conversation — useful only after it agrees with durable state.
+4. Approved Feature Contract and canonical artifact revision, when present.
+5. Latest agent checkpoint — execution state and exact next action.
+6. Source repository — branch, commits, diff, tests, and linked PR.
+7. Current conversation — useful only after it agrees with durable state.
 
 Do not leave a consequential decision only in chat. Update the stable issue contract when scope changes; use comments for execution checkpoints and evidence.
+
+## Feature Contracts
+
+The canonical convention lives in `m0hill/kaam-do/docs/FEATURE-CONTRACTS.md`. Load it when a parent contains `## Feature Contract` or work spans implementations, repositories, compatibility versions, or meaningful state transitions:
+
+```bash
+gh api -H 'Accept: application/vnd.github.raw+json' \
+  repos/m0hill/kaam-do/contents/docs/FEATURE-CONTRACTS.md
+```
+
+Kaam-dō owns approval, artifact links, revisions, and evidence. Source repositories own executable scenarios, interfaces, machines, and conformance commands. Do not copy executable artifacts into issues.
 
 ## Model
 
@@ -82,6 +94,7 @@ A task/specification records:
 ## Source repositories
 ## Decisions
 ## Testing decisions
+## Feature Contract (when applicable)
 ## Out of scope
 ## References
 ```
@@ -95,6 +108,7 @@ A work item records:
 ## Source repository
 ## Context to load
 ## Constraints and decisions
+## Feature Contract (when applicable)
 ## Execution anchors
 ```
 
@@ -128,6 +142,14 @@ Post a checkpoint after meaningful progress and before every session boundary. U
 
 ### Next action
 - One exact command, file investigation, or decision for the next agent.
+
+### Feature Contract
+
+**Revision loaded:** revision | Not applicable
+**Scenarios:** result | Not applicable
+**Conformance:** command — result | Not applicable
+**Structural drift:** none | description
+**Proposed changes:** none | link
 
 ### Risks or blockers
 - None, or explicit owner/event and next-check condition.
@@ -175,10 +197,11 @@ Before starting or resuming a work item:
 1. Read its body, labels, comments, Project fields, parent, children, blocked-by, and blocking relationships.
 2. Read the parent specification and its references.
 3. For each closed blocker, read its completion/resolution comment and linked contract or PR.
-4. Read the latest checkpoint.
-5. Verify the current checkout's `nameWithOwner` equals the ticket's `repo:*` label and Source repository.
-6. Inspect the recorded branch, base commit, commits, working tree, diff, PR, CI, and relevant tests.
-7. Resolve contradictions explicitly in a new checkpoint before implementation continues.
+4. If the parent has a Feature Contract, load its exact revision, owned scenarios/interfaces/transitions, canonical artifacts, and conformance commands.
+5. Read the latest checkpoint.
+6. Verify the current checkout's `nameWithOwner` equals the ticket's `repo:*` label and Source repository.
+7. Inspect the recorded branch, base commit, commits, working tree, diff, PR, CI, and relevant tests.
+8. Resolve contradictions explicitly in a new checkpoint before implementation continues.
 
 The context packet is complete when a fresh agent can explain the outcome, current state, inherited decisions, remaining acceptance criteria, and next action without chat history.
 
@@ -280,4 +303,5 @@ After every mutation batch:
 - verify parent and dependency edges through the API;
 - verify blocked=`Planned`, frontier=`Ready`, active=`In progress`;
 - verify the latest checkpoint matches branch and PR evidence;
+- verify Feature Contract revision and conformance evidence when applicable;
 - report linked titles, not bare issue numbers.
