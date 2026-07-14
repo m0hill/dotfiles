@@ -3,8 +3,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 
 const PROVIDER = "openai-codex";
-const MODEL = "gpt-5.6-terra";
+const MODEL = "gpt-5.6-luna";
 const WIDGET_ID = "technical-communication";
+const MAX_MESSAGE_LENGTH = 500;
 
 const SYSTEM_PROMPT = `Rewrite the user's message as two principal software engineers would naturally communicate it. Optimize for precision and shared understanding, not impressive jargon. Preserve the user's intent and level of certainty. Never invent evidence, causality, requirements, architecture, or guarantees.
 
@@ -43,9 +44,17 @@ export default function technicalCommunicationExtension(pi: ExtensionAPI) {
 		}
 
 		state.controller?.abort();
+		const requestId = ++state.requestId;
+
+		if (event.text.length >= MAX_MESSAGE_LENGTH) {
+			state.controller = undefined;
+			if (ctx.hasUI) ctx.ui.setStatus(WIDGET_ID, undefined);
+			showWidget(ctx);
+			return { action: "continue" };
+		}
+
 		const controller = new AbortController();
 		state.controller = controller;
-		const requestId = ++state.requestId;
 
 		if (ctx.hasUI) ctx.ui.setStatus(WIDGET_ID, "rephrasing…");
 
