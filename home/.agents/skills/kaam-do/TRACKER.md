@@ -45,7 +45,8 @@ Kaam-dō owns approval, artifact links, revisions, and evidence. Source reposito
 | Wayfinding map | `kind:task` plus `wayfinder:map` |
 | Wayfinding decision | Native sub-issue with `kind:work-item` plus one `wayfinder:*` type |
 | Ordering gate | Native issue dependency |
-| Source implementation | Branch and PR in the source repository |
+| Source implementation | Policy-controlled local branch or source PR |
+| Execution policy | `execution:*` label plus issue-body contract |
 | Mutable planning state | Project fields |
 | Cross-session execution state | Append-only checkpoint comments |
 
@@ -68,6 +69,37 @@ gh label create "$repo_label" --repo m0hill/kaam-do --force \
 ```
 
 Use optional `area:<name>` only for a recurring product/domain that may cross repositories. Do not use labels for status, priority, dates, branches, sessions, or blockers.
+
+## Execution policy
+
+Every executable task or work item has exactly one stable execution label:
+
+- `execution:integration-branch` — work lands on a specified local integration branch; source-repository remote writes are forbidden unless the issue explicitly overrides them.
+- `execution:pull-request` — work uses a ticket branch and is delivered through a pushed PR.
+
+Scope provides only a proposed default:
+
+```text
+scope:work     → execution:integration-branch
+scope:personal → execution:pull-request
+```
+
+The approved parent specification is authoritative. Each child inherits the policy for its source repository. Never infer permission for `git push`, `gh pr create`, `gh pr merge`, or another source-remote write from scope alone.
+
+Record details in the issue body:
+
+```markdown
+## Execution policy
+
+- Mode: integration-branch | pull-request
+- Integration branch or PR base: branch-name
+- Remote writes: forbidden | ask | allowed
+- Local side branches: forbidden | allowed | preferred
+- Ticket completion gate: explicit evidence
+- Parent completion gate: explicit evidence
+```
+
+For a multi-repository parent, record one policy block per repository. The execution label is an index; this body section is the full contract. They must agree.
 
 ## Status
 
@@ -92,6 +124,7 @@ A task/specification records:
 ## Problem and context
 ## Completion criteria
 ## Source repositories
+## Execution policy
 ## Decisions
 ## Testing decisions
 ## Feature Contract (when applicable)
@@ -106,13 +139,14 @@ A work item records:
 ## What to deliver
 ## Acceptance criteria
 ## Source repository
+## Execution policy
 ## Context to load
 ## Constraints and decisions
 ## Feature Contract (when applicable)
 ## Execution anchors
 ```
 
-The body is a stable contract, not a session log. Edit it only for an approved scope or contract change. Keep implementation discussion in the source PR.
+The body is a stable contract, not a session log. Edit it only for an approved scope or contract change. Keep implementation detail in the policy-approved source branch, commits, and PR when one exists.
 
 ## Agent checkpoints
 
@@ -124,9 +158,13 @@ Post a checkpoint after meaningful progress and before every session boundary. U
 
 **State:** In progress | In review | Waiting
 **Source repository:** owner/repo
-**Branch:** branch-name
+**Execution mode:** integration-branch | pull-request
+**Integration branch / PR base:** branch-name
+**Working branch:** branch-name
 **Base commit:** full SHA
-**Pull request:** URL or Not opened yet
+**Head commit:** full SHA or Uncommitted
+**Pull request:** URL, Not opened yet, or Not applicable
+**Remote writes:** forbidden | ask | allowed
 
 ### Completed
 - Durable results already achieved.
@@ -188,7 +226,7 @@ Before closing, post:
 - None, or linked separately tracked work.
 ```
 
-Implementation complete is not delivery complete. An unmerged PR belongs in `In review`, not `Done`.
+Completion follows the issue's execution policy. Pull-request work is not delivered until its PR completion gate is met. Integration-branch work may complete without a push when its commits are reachable from the specified local integration branch and its local verification gate passes.
 
 ## Context loading protocol
 
@@ -200,8 +238,9 @@ Before starting or resuming a work item:
 4. If the parent has a Feature Contract, load its exact revision, owned scenarios/interfaces/transitions, canonical artifacts, and conformance commands.
 5. Read the latest checkpoint.
 6. Verify the current checkout's `nameWithOwner` equals the ticket's `repo:*` label and Source repository.
-7. Inspect the recorded branch, base commit, commits, working tree, diff, PR, CI, and relevant tests.
-8. Resolve contradictions explicitly in a new checkpoint before implementation continues.
+7. Read the execution label and body policy before any branch or remote operation.
+8. Inspect the recorded integration/base branch, working branch, commits, working tree, diff, optional PR/CI, and relevant tests.
+9. Resolve contradictions explicitly in a new checkpoint before implementation continues.
 
 The context packet is complete when a fresh agent can explain the outcome, current state, inherited decisions, remaining acceptance criteria, and next action without chat history.
 
@@ -212,7 +251,7 @@ Create an issue with an explicit tracker and Project:
 ```bash
 gh issue create --repo m0hill/kaam-do \
   --title "$title" --body-file "$body_file" \
-  --label "$scope_label,$kind_label,$repo_label" \
+  --label "$scope_label,$kind_label,$repo_label,$execution_label" \
   --project "Kaam-dō"
 ```
 
@@ -281,7 +320,24 @@ git remote get-url origin
 git status --short --branch
 ```
 
-Stop on repository mismatch or unrelated dirty work. Use a ticket branch such as `kaam-123-short-slug`. Record the branch and base SHA in the first checkpoint. Open a draft PR after the first meaningful pushed commit, then include its URL in subsequent checkpoints. Organization PRs do not need to link back to this private tracker.
+Stop on repository mismatch, unrelated dirty work, a missing execution policy, or disagreement between policy label and body.
+
+For `execution:integration-branch`:
+
+1. check out the specified local integration branch and update it only through already-authorized local operations;
+2. work directly there by default, or use an allowed local-only side branch;
+3. never push, create a PR, or mutate the source remote when `Remote writes` is `forbidden`;
+4. before closing a ticket, integrate any side-branch commits locally and verify the completion SHA is reachable from the integration branch;
+5. run required checks on the integration branch and record the local SHA.
+
+For `execution:pull-request`:
+
+1. create a ticket branch such as `kaam-123-short-slug` from the approved base;
+2. record branch and base SHA in the first checkpoint;
+3. push and open a draft PR only when `Remote writes` is `allowed` or the user grants an `ask` operation;
+4. close only when the PR completion gate is met.
+
+Organization PRs do not need to link back to this private tracker.
 
 ## Frontier reconciliation
 
@@ -300,6 +356,8 @@ After every mutation batch:
 - read changed issues back;
 - verify exactly one scope and kind label;
 - verify `repo:*` agrees with Source repository;
+- verify exactly one `execution:*` label agrees with the body policy on executable issues;
+- verify no source-remote write occurred under a forbidden policy;
 - verify parent and dependency edges through the API;
 - verify blocked=`Planned`, frontier=`Ready`, active=`In progress`;
 - verify the latest checkpoint matches branch and PR evidence;

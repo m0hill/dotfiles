@@ -12,7 +12,7 @@ Turn one approved specification into independently grabbable **tracer bullets**.
 
 Require a Kaam-dō parent issue URL or an unambiguous issue in the conversation. Read its body, comments, labels, existing children, dependencies, source repositories, domain glossary, and relevant ADRs. If it contains a Feature Contract, load the canonical convention, exact artifact revision or proposed owner, scenario corpus, consumers, and conformance commands.
 
-Complete when the parent outcome, scope, source repositories, and existing work are accounted for without duplication.
+Complete when the parent outcome, scope, source repositories, per-repository execution policies, and existing work are accounted for without duplication.
 
 ## 2. Draft the graph
 
@@ -20,7 +20,8 @@ Each ticket must:
 
 - deliver a narrow but complete, demonstrable path through the necessary layers;
 - fit in one fresh agent context;
-- target exactly one source repository and normally one reviewable PR;
+- target exactly one source repository and inherit its execution mode, integration/base branch, remote-write permission, and completion gate;
+- use one reviewable PR only under `execution:pull-request`; never invent a PR boundary for `execution:integration-branch`;
 - state the context, constraints, and inherited decisions a fresh agent must load;
 - when a Feature Contract applies, name its revision, owned scenario IDs/interfaces/transitions, contract-change permission, and conformance command;
 - have observable acceptance criteria with enough evidence requirements to decide completion;
@@ -37,6 +38,7 @@ Present the result as an ordered graph:
 ```text
 Title
 Source repository
+Execution policy
 What it delivers
 Context to load
 Feature Contract ownership
@@ -48,13 +50,13 @@ Complete when every parent completion criterion is covered by at least one ticke
 
 ## 3. Approve
 
-Ask whether granularity and blocking edges are correct and whether anything should be merged or split. Iterate without publishing.
+Ask whether granularity, blocking edges, and each ticket's execution policy are correct and whether anything should be merged or split. Iterate without publishing.
 
 Complete when the user approves the exact ticket graph.
 
 ## 4. Publish
 
-Create all issues first in dependency order, inheriting the parent's `scope:*` label and applying `kind:work-item` plus exactly one `repo:<owner>/<repository>` label. Create missing repository labels lazily. Use this body:
+Create all issues first in dependency order, inheriting the parent's `scope:*` label and applying `kind:work-item`, exactly one `repo:<owner>/<repository>` label, and exactly one matching `execution:*` label. Create missing repository labels lazily. Use this body:
 
 ```markdown
 ## Parent
@@ -64,6 +66,14 @@ Create all issues first in dependency order, inheriting the parent's `scope:*` l
 ## Acceptance criteria
 
 ## Source repository
+
+## Execution policy
+
+- Mode:
+- Integration branch or PR base:
+- Remote writes:
+- Local side branches:
+- Ticket completion gate:
 
 ## Context to load
 
@@ -100,6 +110,8 @@ Read back every issue and relationship through GitHub. Finish only when:
 - every ticket is a native child of the parent;
 - every approved blocking edge exists and no extra edge exists;
 - every source repository is explicit and agrees with exactly one `repo:*` label;
+- every ticket has exactly one `execution:*` label agreeing with its inherited body policy;
+- integration-branch tickets contain no invented push, PR, or merge requirement;
 - a fresh agent can load all required context without the originating conversation;
 - Feature Contract ownership, revision, and conformance are explicit where applicable;
 - no horizontal ticket creates an exhaustive speculative contract without delivering behavior;

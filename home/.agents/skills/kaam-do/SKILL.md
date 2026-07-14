@@ -23,9 +23,9 @@ Identify scope, kind, source repositories, outcome, and acceptance criteria. Cre
 
 ### Start
 
-Load the full context packet. Refuse to start unless the ticket is open, `Ready`, unblocked, and the current checkout matches its single `repo:*` label and **Source repository**. If a Feature Contract applies, state the revision, owned scenarios/interfaces/transitions, conformance command, and delegation boundary. Refuse to switch branches over unrelated dirty work.
+Load the full context packet. Refuse to start unless the ticket is open, `Ready`, unblocked, and the current checkout matches its single `repo:*` label and **Source repository**. Require exactly one `execution:*` label that agrees with the body policy. If a Feature Contract applies, state the revision, owned scenarios/interfaces/transitions, conformance command, and delegation boundary. Refuse to switch branches over unrelated dirty work.
 
-Assign `@me`, move the ticket and parent to `In progress`, create or reuse a ticket branch, and post an initial checkpoint containing the base commit and exact next action. Do not implement work merely because lifecycle setup is complete.
+Assign `@me`, move the ticket and parent to `In progress`, then prepare the policy-approved workspace: use the specified local integration branch (or an allowed local-only side branch), or create/reuse a PR ticket branch. Post an initial checkpoint containing policy, branch, base commit, and exact next action. Do not implement work merely because lifecycle setup is complete, and never perform a source-remote write when policy forbids it.
 
 ### Resume
 
@@ -37,7 +37,7 @@ Post the checkpoint template from the tracker contract after a meaningful milest
 
 ### Finish
 
-If implementation is complete but not delivered, record verification and move to `In review`; do not close the issue. Close only after delivery, acceptance evidence, and required Feature Contract conformance exist. Post a completion comment with contract revision and scenario IDs when applicable, close the issue, verify `Done`, recompute directly affected dependencies, promote newly unblocked tickets to `Ready`, and check the parent outcome. Never infer parent completion only from closed children.
+Apply the policy-specific completion gate. Pull-request work remains `In review` until its PR gate is met. Integration-branch work may close without remote delivery only after its commits are locally reachable from the specified integration branch, the tree is clean, and required verification passes. Post a completion comment with local or remote execution evidence plus contract revision and scenario IDs when applicable, close the issue, verify `Done`, recompute directly affected dependencies, promote newly unblocked tickets to `Ready`, and check the parent outcome. Never infer parent completion only from closed children.
 
 ### Reconcile the queue
 

@@ -12,7 +12,7 @@ Before publishing, read the [Kaam-dō tracker contract](../kaam-do/TRACKER.md) a
 
 ## 1. Gather
 
-Read the current conversation, relevant code, `CONTEXT.md`/`CONTEXT-MAP.md`, applicable ADRs, and any originating Wayfinder map or Notion ticket. Identify the source repositories and work/personal scope.
+Read the current conversation, relevant code, `CONTEXT.md`/`CONTEXT-MAP.md`, applicable ADRs, and any originating Wayfinder map or Notion ticket. Identify the source repositories, work/personal scope, and execution policy for each repository. Propose `integration-branch` with forbidden remote writes for work and `pull-request` for personal only as defaults; require approval rather than inferring permission.
 
 Complete when every consequential claim in the draft can be traced to conversation, code, domain documentation, or an explicit reference.
 
@@ -45,6 +45,8 @@ Use this shape:
 
 ## Source repositories
 
+## Execution policy
+
 ## Implementation decisions
 
 ## Testing decisions
@@ -64,12 +66,12 @@ Complete when another fresh agent could judge scope and completion without the o
 
 ## 4. Approve
 
-Show the full draft, proposed title, scope, source repositories, Feature Contract level, canonical owner, and any proposed artifact. Ask for one approval or revision pass. Do not publish before approval.
+Show the full draft, proposed title, scope, source repositories, execution mode/branch/remote-write permission/completion gate, Feature Contract level, canonical owner, and any proposed artifact. Ask for one approval or revision pass. Do not publish before approval.
 
 Complete when the user approves the exact artifact.
 
 ## 5. Publish
 
-Create a `kind:task` issue in `m0hill/kaam-do` with the approved `scope:*` label and one `repo:<owner>/<repository>` label for every known source repository. Create missing repository labels lazily. Add the issue to the Kaam-dō Project and set Status to `Planned`. Link the originating Wayfinder map or Notion ticket under References.
+Create a `kind:task` issue in `m0hill/kaam-do` with the approved `scope:*` label, one `repo:<owner>/<repository>` label for every known source repository, and the approved `execution:*` label when one mode applies to the task. Create missing repository labels lazily. For mixed policies, keep the per-repository body contract authoritative and omit a misleading single execution label from the parent. Add the issue to the Kaam-dō Project and set Status to `Planned`. Link the originating Wayfinder map or Notion ticket under References.
 
 Read the issue and Project item back. Finish with its title and URL only after body, labels, repository identifiers, Project membership, and Status are correct.
