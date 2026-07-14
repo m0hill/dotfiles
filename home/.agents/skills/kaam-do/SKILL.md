@@ -23,7 +23,7 @@ Read [TRACKER.md](TRACKER.md) before writing to the tracker.
 ## Choosing a flow
 
 - **Small and clear:** create a task or work item, then let the user control implementation and review.
-- **Multi-session build:** `grill-with-docs` → `to-spec` → `to-tickets`; the user starts each ticket separately.
+- **Multi-session build:** `grill-me` → `to-spec` → `to-tickets`; the user starts each ticket separately.
 - **Huge and foggy:** `wayfinder` → resolve decision frontier → `to-spec` → `to-tickets`.
 - **Hard bug:** `diagnose` first; create implementation work only after the failure is understood.
 - **Runnable design question:** use `prototype`, retain the answer, and keep throwaway code off the main branch.

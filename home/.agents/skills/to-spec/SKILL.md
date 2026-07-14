@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # To Spec
 
-Turn settled conversation context into one buildable specification. Do not restart discovery; use `grill-with-docs` or `wayfinder` first when important decisions remain open.
+Turn settled conversation context into one buildable specification. Do not restart discovery; use `grill-me` or `wayfinder` first when important decisions remain open.
 
 Before publishing, read the [Kaam-dō tracker contract](../kaam-do/TRACKER.md).
 
