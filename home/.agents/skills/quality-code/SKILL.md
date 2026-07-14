@@ -109,7 +109,8 @@ type Result<T, E extends Error> =
 - If using classes for domain values, construct through parsers/smart constructors, keep invalid instances unconstructable, keep fields readonly, and do not hide I/O inside value classes.
 - Application/service modules should own real capabilities and coordinate domain modules, persistence, external calls, authorization, workflows, and telemetry.
 - Prefer classes with constructor injection when a module has dependencies, stateful resources, configuration, or multiple cohesive operations.
-- Avoid shallow wrappers, vague `Manager`/`Processor`/`Helper` names, repository-per-table defaults, and dependency bags passed into every function.
+- When a framework or dependency introduces a new cohesive abstraction, refactor callers around that abstraction instead of mechanically recreating the retired API with forwarding wrappers. Re-evaluate ownership, exports, and call sites before preserving the old shape. Keep an adapter only when it adds domain meaning, transformation, policy, context, or a deliberate compatibility boundary; a rename or argument reshaping alone does not justify it.
+- Avoid other shallow wrappers, vague `Manager`/`Processor`/`Helper` names, repository-per-table defaults, and dependency bags passed into every function.
 - No arbitrary method or file-size limits. Split when concepts are unrelated, change for different reasons, or require unrelated dependencies.
 
 ## Dependency interfaces, adapters, and persistence
