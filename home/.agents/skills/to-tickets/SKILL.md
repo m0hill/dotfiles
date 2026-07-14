@@ -20,9 +20,12 @@ Each ticket must:
 
 - deliver a narrow but complete, demonstrable path through the necessary layers;
 - fit in one fresh agent context;
-- target one source repository and normally one reviewable PR;
-- have observable acceptance criteria;
+- target exactly one source repository and normally one reviewable PR;
+- state the context, constraints, and inherited decisions a fresh agent must load;
+- have observable acceptance criteria with enough evidence requirements to decide completion;
 - name only blockers that genuinely prevent starting or finishing it.
+
+Conversation history is not a dependency. If a ticket cannot be executed from its body, parent, resolved blockers, linked repository, and durable docs, it is not ready to publish.
 
 Prefer vertical slices over schema/API/UI layer tickets. A small prerequisite refactor is valid when it makes the change easy.
 
@@ -34,6 +37,7 @@ Present the result as an ordered graph:
 Title
 Source repository
 What it delivers
+Context to load
 Blocked by
 Acceptance criteria
 ```
@@ -48,7 +52,7 @@ Complete when the user approves the exact ticket graph.
 
 ## 4. Publish
 
-Create all issues first in dependency order, inheriting the parent's `scope:*` label and applying `kind:work-item`. Use this body:
+Create all issues first in dependency order, inheriting the parent's `scope:*` label and applying `kind:work-item` plus exactly one `repo:<owner>/<repository>` label. Create missing repository labels lazily. Use this body:
 
 ```markdown
 ## Parent
@@ -59,9 +63,11 @@ Create all issues first in dependency order, inheriting the parent's `scope:*` l
 
 ## Source repository
 
-## Execution links
+## Context to load
 
-## Notes
+## Constraints and decisions
+
+## Execution anchors
 ```
 
 Then, in a second pass:
@@ -80,7 +86,8 @@ Read back every issue and relationship through GitHub. Finish only when:
 - every ticket has exactly one scope and kind label;
 - every ticket is a native child of the parent;
 - every approved blocking edge exists and no extra edge exists;
-- every source repository is explicit;
+- every source repository is explicit and agrees with exactly one `repo:*` label;
+- a fresh agent can load all required context without the originating conversation;
 - blocked tickets are `Planned` and frontier tickets are `Ready`.
 
 Report the graph using linked titles, not a wall of issue numbers. Remind the user to start one frontier ticket in a fresh context when they choose; do not implement it.

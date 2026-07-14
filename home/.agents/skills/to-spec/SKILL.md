@@ -48,7 +48,7 @@ Use this shape:
 
 For ordinary work, use only the detail needed to remove implementation ambiguity. For a large product change, expand user-visible scenarios comprehensively. Do not manufacture a long user-story inventory to make the document look complete. Avoid file paths and code snippets unless a prototype produced a decision-rich state machine, schema, or type shape that prose would make less precise.
 
-Complete when another fresh agent could judge scope and completion without the original conversation.
+Complete when another fresh agent could judge scope and completion without the original conversation. Anything needed only from chat is still missing from the specification.
 
 ## 4. Approve
 
@@ -58,6 +58,6 @@ Complete when the user approves the exact artifact.
 
 ## 5. Publish
 
-Create a `kind:task` issue in `m0hill/kaam-do` with the approved `scope:*` label, add it to the Kaam-dō Project, and set Status to `Planned`. Link the originating Wayfinder map or Notion ticket under References.
+Create a `kind:task` issue in `m0hill/kaam-do` with the approved `scope:*` label and one `repo:<owner>/<repository>` label for every known source repository. Create missing repository labels lazily. Add the issue to the Kaam-dō Project and set Status to `Planned`. Link the originating Wayfinder map or Notion ticket under References.
 
-Read the issue and Project item back. Finish with its title and URL only after body, labels, Project membership, and Status are correct.
+Read the issue and Project item back. Finish with its title and URL only after body, labels, repository identifiers, Project membership, and Status are correct.
