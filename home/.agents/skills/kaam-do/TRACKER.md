@@ -74,8 +74,8 @@ Use optional `area:<name>` only for a recurring product/domain that may cross re
 
 Every executable task or work item has exactly one stable execution label:
 
-- `execution:integration-branch` — work lands on a specified local integration branch; source-repository remote writes are forbidden unless the issue explicitly overrides them.
-- `execution:pull-request` — work uses a ticket branch and is delivered through a pushed PR.
+- `execution:integration-branch` — only the specified integration branch may be published; agents may use any local branches but must not publish them.
+- `execution:pull-request` — ticket branches may be published and delivered through their own PRs.
 
 Scope provides only a proposed default:
 
@@ -84,7 +84,7 @@ scope:work     → execution:integration-branch
 scope:personal → execution:pull-request
 ```
 
-The approved parent specification is authoritative. Each child inherits the policy for its source repository. Never infer permission for `git push`, `gh pr create`, `gh pr merge`, or another source-remote write from scope alone.
+The approved parent specification is authoritative. Each child inherits the policy for its source repository. Before publishing a branch or creating a PR, verify that its head branch is allowed by the policy.
 
 Record details in the issue body:
 
@@ -93,8 +93,9 @@ Record details in the issue body:
 
 - Mode: integration-branch | pull-request
 - Integration branch or PR base: branch-name
-- Remote writes: forbidden | ask | allowed
-- Local side branches: forbidden | allowed | preferred
+- Published branches: integration branch only | ticket branches allowed
+- Pull requests: integration branch only | ticket branches allowed | not required
+- Local branches: unrestricted
 - Ticket completion gate: explicit evidence
 - Parent completion gate: explicit evidence
 ```
@@ -163,8 +164,8 @@ Post a checkpoint after meaningful progress and before every session boundary. U
 **Working branch:** branch-name
 **Base commit:** full SHA
 **Head commit:** full SHA or Uncommitted
-**Pull request:** URL, Not opened yet, or Not applicable
-**Remote writes:** forbidden | ask | allowed
+**Published branches:** integration branch only | ticket branches allowed
+**Pull request:** URL, Not opened yet, or Not required
 
 ### Completed
 - Durable results already achieved.
@@ -226,7 +227,7 @@ Before closing, post:
 - None, or linked separately tracked work.
 ```
 
-Completion follows the issue's execution policy. Pull-request work is not delivered until its PR completion gate is met. Integration-branch work may complete without a push when its commits are reachable from the specified local integration branch and its local verification gate passes.
+Completion follows the issue's execution policy. Pull-request work is not delivered until its ticket-branch PR gate is met. Integration-branch work completes when its commits are pushed to the specified integration branch and required checks pass; a per-ticket PR or merge is not required.
 
 ## Context loading protocol
 
@@ -324,17 +325,17 @@ Stop on repository mismatch, unrelated dirty work, a missing execution policy, o
 
 For `execution:integration-branch`:
 
-1. check out the specified local integration branch and update it only through already-authorized local operations;
-2. work directly there by default, or use an allowed local-only side branch;
-3. never push, create a PR, or mutate the source remote when `Remote writes` is `forbidden`;
-4. before closing a ticket, integrate any side-branch commits locally and verify the completion SHA is reachable from the integration branch;
-5. run required checks on the integration branch and record the local SHA.
+1. use the specified integration branch directly, or any temporary local branch;
+2. integrate local side-branch commits into the integration branch before completing the ticket;
+3. publish only the integration branch—never push a local ticket, scratch, or side branch;
+4. pushes may contain partial commits, and a draft PR is allowed when its head is the integration branch;
+5. before closing, verify the completion SHA is reachable from `origin/<integration-branch>` and required checks pass; a per-ticket merge is not required.
 
 For `execution:pull-request`:
 
 1. create a ticket branch such as `kaam-123-short-slug` from the approved base;
 2. record branch and base SHA in the first checkpoint;
-3. push and open a draft PR only when `Remote writes` is `allowed` or the user grants an `ask` operation;
+3. publish that ticket branch and open its PR;
 4. close only when the PR completion gate is met.
 
 Organization PRs do not need to link back to this private tracker.
@@ -357,7 +358,7 @@ After every mutation batch:
 - verify exactly one scope and kind label;
 - verify `repo:*` agrees with Source repository;
 - verify exactly one `execution:*` label agrees with the body policy on executable issues;
-- verify no source-remote write occurred under a forbidden policy;
+- verify no branch outside the policy's publish allowlist was pushed;
 - verify parent and dependency edges through the API;
 - verify blocked=`Planned`, frontier=`Ready`, active=`In progress`;
 - verify the latest checkpoint matches branch and PR evidence;

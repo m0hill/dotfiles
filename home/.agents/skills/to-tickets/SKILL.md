@@ -20,7 +20,7 @@ Each ticket must:
 
 - deliver a narrow but complete, demonstrable path through the necessary layers;
 - fit in one fresh agent context;
-- target exactly one source repository and inherit its execution mode, integration/base branch, remote-write permission, and completion gate;
+- target exactly one source repository and inherit its execution mode, integration/base branch, published-branch allowlist, PR policy, and completion gate;
 - use one reviewable PR only under `execution:pull-request`; never invent a PR boundary for `execution:integration-branch`;
 - state the context, constraints, and inherited decisions a fresh agent must load;
 - when a Feature Contract applies, name its revision, owned scenario IDs/interfaces/transitions, contract-change permission, and conformance command;
@@ -71,8 +71,9 @@ Create all issues first in dependency order, inheriting the parent's `scope:*` l
 
 - Mode:
 - Integration branch or PR base:
-- Remote writes:
-- Local side branches:
+- Published branches:
+- Pull requests:
+- Local branches:
 - Ticket completion gate:
 
 ## Context to load
@@ -111,7 +112,7 @@ Read back every issue and relationship through GitHub. Finish only when:
 - every approved blocking edge exists and no extra edge exists;
 - every source repository is explicit and agrees with exactly one `repo:*` label;
 - every ticket has exactly one `execution:*` label agreeing with its inherited body policy;
-- integration-branch tickets contain no invented push, PR, or merge requirement;
+- integration-branch tickets publish only the named integration branch and contain no invented per-ticket PR or merge requirement;
 - a fresh agent can load all required context without the originating conversation;
 - Feature Contract ownership, revision, and conformance are explicit where applicable;
 - no horizontal ticket creates an exhaustive speculative contract without delivering behavior;
