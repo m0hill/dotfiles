@@ -82,6 +82,15 @@ return function(config)
 			secrets = {},
 		},
 		{
+			id = "codexgateway",
+			name = "Codex Gateway",
+			description = "Monitor and control the codex-gateway LaunchAgent.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/codexgateway/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
 			id = "gemini",
 			name = "Gemini OCR",
 			description = "Capture a region and extract text with Gemini.",

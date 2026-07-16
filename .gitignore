@@ -28,3 +28,6 @@ home/.pi/agent/mcp-cache.json
 home/.pi/agent/mcp-npx-cache.json
 home/.pi/agent/mcp-onboarding.json
 home/.pi/agent/mcp-oauth/
+
+#cloudflared config
+config/.cloudflared/*.yml

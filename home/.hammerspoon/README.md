@@ -10,6 +10,7 @@ There is one local menubar controller and local modules for launcher, tiling, au
 - `packages/screenshotcopy/`
 - `packages/colorpicker/`
 - `packages/ports/`
+- `packages/codexgateway/`
 - `packages/stt/`
 - `packages/gemini/`
 - `packages/lyrics/`
@@ -43,6 +44,10 @@ No Spoon. No registry. No package versions.
 │   ├── ports/
 │   │   ├── init.lua
 │   │   ├── ports.json
+│   │   └── README.md
+│   ├── codexgateway/
+│   │   ├── init.lua
+│   │   ├── codexgateway.json
 │   │   └── README.md
 │   ├── stt/
 │   │   ├── init.lua
@@ -112,6 +117,13 @@ The controller menu always shows all local modules.
 - shows listening localhost TCP ports inside the manager's Ports submenu
 - rows show `:port process pid` with actions to open, copy details, copy the list, or terminate after confirmation
 - refreshes every `5s` using `lsof`
+
+### Codex Gateway
+
+- monitors the `com.m0hill.codex-gateway` user LaunchAgent
+- reports local `/health` status
+- provides start, restart, stop, and log actions
+- disabling the module stops monitoring, not the gateway service
 
 ### STT
 
