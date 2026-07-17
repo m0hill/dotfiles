@@ -9,7 +9,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-c</string>
-    <string>set -eu; /bin/mkdir -p "$HOME/Library/Logs"; exec "$HOME/.local/bin/mise" exec cloudflared@2026.7.2 -- cloudflared tunnel --config "$HOME/.cloudflared/config.yml" run</string>
+    <string>set -eu; /bin/mkdir -p "$HOME/Library/Logs"; exec "$HOME/.local/bin/mise" exec cloudflared@2026.7.2 -- cloudflared tunnel --config "$HOME/.cloudflared/config.yml" --loglevel error --transport-loglevel error run &gt;/dev/null 2&gt;&gt; "$HOME/Library/Logs/codex-gateway-tunnel.error.log"</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -21,9 +21,5 @@
   <key>ProcessType</key>
   <string>Background</string>
 
-  <key>StandardOutPath</key>
-  <string>/Users/mohil/Library/Logs/codex-gateway-tunnel.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/mohil/Library/Logs/codex-gateway-tunnel.error.log</string>
 </dict>
 </plist>

@@ -18,7 +18,6 @@ return function(manager)
 			name = "Gateway",
 			label = "com.m0hill.codex-gateway",
 			plist = HOME .. "/Library/LaunchAgents/com.m0hill.codex-gateway.plist",
-			log = HOME .. "/Library/Logs/codex-gateway.log",
 			errorLog = HOME .. "/Library/Logs/codex-gateway.error.log",
 			status = "checking",
 			loaded = false,
@@ -30,7 +29,6 @@ return function(manager)
 			name = "Tunnel",
 			label = "com.m0hill.codex-gateway-tunnel",
 			plist = HOME .. "/Library/LaunchAgents/com.m0hill.codex-gateway-tunnel.plist",
-			log = HOME .. "/Library/Logs/codex-gateway-tunnel.log",
 			errorLog = HOME .. "/Library/Logs/codex-gateway-tunnel.error.log",
 			status = "checking",
 			loaded = false,
@@ -250,7 +248,6 @@ return function(manager)
 			{ title = "Restart", disabled = service.busy or not service.loaded, fn = function() restartService(service) end },
 			{ title = "Stop", disabled = service.busy or not service.loaded, fn = function() stopService(service) end },
 			{ title = "-" },
-			{ title = "Open Log", fn = function() openPath(service.log) end },
 			{ title = "Open Error Log", fn = function() openPath(service.errorLog) end },
 		}
 	end

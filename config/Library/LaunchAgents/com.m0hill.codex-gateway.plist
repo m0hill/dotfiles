@@ -9,7 +9,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-c</string>
-    <string>set -eu; /bin/mkdir -p "$HOME/Library/Logs"; cd "$HOME/projects/codex-gateway"; exec "$HOME/.local/bin/mise" exec node@24.12.0 -- "$HOME/.nub/bin/nub" run start &gt;&gt; "$HOME/Library/Logs/codex-gateway.log" 2&gt;&gt; "$HOME/Library/Logs/codex-gateway.error.log"</string>
+    <string>set -eu; /bin/mkdir -p "$HOME/Library/Logs"; cd "$HOME/projects/codex-gateway"; exec "$HOME/.local/bin/mise" exec node@24.12.0 -- "$HOME/.nub/bin/nub" src/index.ts &gt;/dev/null 2&gt;&gt; "$HOME/Library/Logs/codex-gateway.error.log"</string>
   </array>
 
   <key>EnvironmentVariables</key>
