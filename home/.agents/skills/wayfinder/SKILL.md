@@ -14,7 +14,7 @@ Choose exactly one mode.
 
 ## Chart a map
 
-1. **Name the destination.** Grill until the artifact or decision that ends wayfinding is precise enough to bound scope. If the whole route already fits one session, stop and recommend `grill-me` instead.
+1. **Name the destination.** Grill until the artifact or decision that ends wayfinding is precise enough to bound scope. If the whole route already fits one session, stop and recommend `grilling` instead.
 2. **Map breadth-first.** Surface sharp decision questions across the effort. When behavior may need a Feature Contract, resolve only genuine uncertainties: contract level, canonical owner, interface/orchestration/state boundaries, scenario consumers, distribution, compatibility, and conformance. Do not assume a DSL, XState, or executable contract is required. Put foreseeable but still-unphraseable questions in Fog; put excluded work Out of scope.
 3. **Approve the map.** Show the destination, initial decision tickets, blocker graph, Fog, and exclusions. Do not publish before user approval.
 4. **Publish.** Create one `kind:task` map issue with `wayfinder:map`, inherited scope, known `repo:*` labels, and Status `In progress`. Create approved decisions as native `kind:work-item` children with one `wayfinder:*` type and a repository label only when their execution location is known. Put every standing constraint and context source in the map Notes so future sessions do not depend on this conversation. Wire blockers in a second pass. Set frontier tickets to `Ready` and blocked tickets to `Planned`.

@@ -47,7 +47,7 @@ Read open items and native dependency summaries. Keep blocked work `Planned`, un
 ## Choosing planning depth
 
 - **Small and clear:** capture one task or work item.
-- **Multi-session build:** `grill-me` → `to-spec` → `to-tickets`.
+- **Multi-session build:** `grilling` → `to-spec` → `to-tickets`.
 - **Huge and foggy:** `wayfinder` → decision frontier → `to-spec` → `to-tickets`.
 - **Hard bug:** `diagnose` first; track implementation after the failure is understood.
 - **Runnable design question:** `prototype`; retain the verdict and keep throwaway code off main.

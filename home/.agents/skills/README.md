@@ -2,15 +2,13 @@
 
 ## Source attribution
 
-The skills below are adapted from [Matt Pocock's skills repository](https://github.com/mattpocock/skills). Use the pinned source when comparing local changes, and the `main` link when checking for updates.
+The skills below are adapted from [Matt Pocock's skills repository](https://github.com/mattpocock/skills). Each source link is pinned to the revision used locally; use the tracking links when checking for updates.
 
-Reference revision: [`9603c1cc`](https://github.com/mattpocock/skills/commit/9603c1cc8118d08bc1b3bf34cf714f62178dea3b)
-
-| Local skill | Source at reference revision | Track updates | Local adaptation |
+| Local skill | Pinned source | Track updates | Local adaptation |
 | --- | --- | --- | --- |
 | `code-review` | [`engineering/code-review`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/code-review/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md) | Adds adversarial-risk review, Feature Contracts, and Pi diff-review tooling. |
 | `diagnose` | [`engineering/diagnosing-bugs`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/diagnosing-bugs/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/diagnosing-bugs/SKILL.md) | Adds an analysis-only mode and state-space bug analysis. |
-| `grill-me` | [`productivity/grilling`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/productivity/grilling/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md) | Derived from `grilling`, not the separate upstream `grill-me` wrapper. |
+| `grilling` | [`productivity/grilling` from PR #593](https://github.com/mattpocock/skills/blob/b8fd9af/skills/productivity/grilling/SKILL.md) | [`PR #593`](https://github.com/mattpocock/skills/pull/593), [`main`](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md) | Uses the round-by-round frontier interview. |
 | `improve-codebase-architecture` | [`engineering/improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/improve-codebase-architecture/SKILL.md) and [`engineering/codebase-design`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/codebase-design/SKILL.md) | [`architecture`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md), [`design`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) | Combines both into an evidence-first workflow without the upstream HTML report. |
 | `prototype` | [`engineering/prototype`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/prototype/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/prototype/SKILL.md) | Integrates outcomes with Kaam-dō planning and Feature Contracts. |
 | `tdd` | [`engineering/tdd`](https://github.com/mattpocock/skills/blob/9603c1cc8118d08bc1b3bf34cf714f62178dea3b/skills/engineering/tdd/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/tdd/SKILL.md) | Retains additional interface-design, deep-module, and refactoring references. |

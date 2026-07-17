@@ -1,0 +1,5 @@
+interface:
+  display_name: "Grilling"
+  short_description: "Stress-test a plan in question rounds"
+policy:
+  allow_implicit_invocation: false
