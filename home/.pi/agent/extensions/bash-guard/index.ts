@@ -13,6 +13,8 @@ const YES = "Yes"
 const NO = "No"
 const EXPLAIN = "Explain"
 const EXPLAIN_TIMEOUT_MS = 20_000
+const EXPLAIN_PROVIDER = "openai-codex"
+const EXPLAIN_MODEL = "gpt-5.6-luna"
 const PHONE_MODE_EVENT = "phone:mode"
 
 const EXPLAIN_SYSTEM_PROMPT = [
@@ -243,7 +245,10 @@ async function explainCommand(
   matches: SensitiveMatch[],
   ctx: ExtensionContext
 ): Promise<string> {
-  if (!ctx.model) return "I could not generate an explanation because no active model is selected."
+  const model = ctx.modelRegistry.find(EXPLAIN_PROVIDER, EXPLAIN_MODEL)
+  if (!model) {
+    return `I could not generate an explanation because ${EXPLAIN_PROVIDER}/${EXPLAIN_MODEL} is unavailable.`
+  }
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), EXPLAIN_TIMEOUT_MS)
@@ -256,6 +261,7 @@ async function explainCommand(
       label: "Bash guard explanation",
       prompt: buildExplanationPrompt(command, matches, ctx),
       systemPrompt: EXPLAIN_SYSTEM_PROMPT,
+      model,
       thinkingLevel: "low",
       tools: [],
       readOnly: true,

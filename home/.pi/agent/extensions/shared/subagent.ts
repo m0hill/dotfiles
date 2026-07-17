@@ -89,6 +89,7 @@ export type TrackedSubagentOptions = {
   systemPrompt: string
   tools?: string[]
   customTools?: ToolDefinition[]
+  model?: AgentSessionOptions["model"]
   thinkingLevel?: ThinkingLevel
   readOnly?: boolean
   timeoutMs?: number
@@ -426,7 +427,8 @@ export function createSystemPromptResourceLoader(systemPrompt: string): Resource
 export async function runTrackedAgent(
   options: TrackedSubagentOptions
 ): Promise<TrackedSubagentResult> {
-  if (!options.ctx.model) throw new Error(`No active model selected for ${options.label}.`)
+  const model = options.model ?? options.ctx.model
+  if (!model) throw new Error(`No model selected for ${options.label}.`)
 
   const current = store()
   if (options.ctx.hasUI) current.ui = options.ctx.ui
@@ -475,7 +477,7 @@ export async function runTrackedAgent(
     const created = await createAgentSession({
       cwd: options.ctx.cwd,
       sessionManager: SessionManager.inMemory(options.ctx.cwd),
-      model: options.ctx.model,
+      model,
       modelRegistry: options.ctx.modelRegistry as never,
       thinkingLevel,
       tools: [...tools, ...effectiveCustomTools.map((tool) => tool.name)],
