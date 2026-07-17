@@ -1,6 +1,6 @@
 ---
 name: kaam-do
-description: Operate the central Kaam-dō agent work queue. Use when capturing, normalizing, starting, resuming, checkpointing, reviewing, or finishing tracked work across source repositories, or when another skill needs the tracker contract.
+description: Tracker adapter for the central Kaam-dō work queue. Use whenever docs/agents/issue-tracker.md selects Kaam-dō, when another skill needs to publish or read Kaam-dō maps, specifications, or tickets, or when managing tracked work across source repositories.
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Kaam-dō is durable memory for agents whose conversation context is disposable:
 - comments hold append-only checkpoints and completion evidence;
 - native relationships and Project fields hold current workflow state.
 
-Read [TRACKER.md](TRACKER.md) before any tracker write. When the parent has a Feature Contract, load the canonical contract convention and exact artifact revision before source work.
+Read [TRACKER.md](TRACKER.md) before any tracker write. When `wayfinder`, `to-spec`, or `to-tickets` selects this adapter, apply the tracker contract while continuing that skill's planning workflow. When the parent has a Feature Contract, load the canonical contract convention and exact artifact revision before source work.
 
 ## Choose one operation
 

@@ -41,7 +41,7 @@ Do enough legwork to understand the relevant call paths, data flow, state transi
 
 Ask where the originating spec is when it cannot be found from the review context. If the user says there is no spec, the Spec axis reports `no spec available` and does not invent requirements.
 
-If the spec contains a Feature Contract, load its exact revision, canonical artifacts, owned interfaces, orchestration, state model, scenario IDs, consumers, delegation surface, and conformance commands. Compare those references with the branch and latest Kaam-dō checkpoint; a stale or missing revision is a review finding when it prevents trustworthy conformance review.
+If the spec contains a Feature Contract, load its exact revision, canonical artifacts, owned interfaces, orchestration, state model, scenario IDs, consumers, delegation surface, and conformance commands. Compare those references with the branch and latest tracker context; a stale or missing revision is a review finding when it prevents trustworthy conformance review.
 
 Quote the spec or Feature Contract line/section for every Spec finding.
 

@@ -118,27 +118,28 @@ A native issue blocker means `Planned`, not `Waiting`. Closing a blocker does no
 
 ## Stable issue bodies
 
-A task/specification records:
+A specification keeps the content produced by `to-spec` and adds tracker metadata without replacing that skill's sections:
 
 ```markdown
-## Outcome
-## Problem and context
-## Completion criteria
+## Problem Statement
+## Solution
+## User Stories
+## Implementation Decisions
+## Testing Decisions
 ## Source repositories
 ## Execution policy
-## Decisions
-## Testing decisions
 ## Feature Contract (when applicable)
-## Out of scope
-## References
+## Out of Scope
+## Further Notes
 ```
 
-A work item records:
+A delivery work item keeps the content produced by `to-tickets` and adds the source and execution contract:
 
 ```markdown
 ## Parent
-## What to deliver
+## What to build
 ## Acceptance criteria
+## Blocked by
 ## Source repository
 ## Execution policy
 ## Context to load

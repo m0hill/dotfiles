@@ -25,7 +25,7 @@ If genuinely ambiguous, ask. If the user is unavailable, choose from the surroun
 4. Keep state in memory unless persistence itself is the question.
 5. Skip production polish, tests, speculative abstractions, and unrelated error handling.
 6. Surface relevant state after every action or variant switch.
-7. After the user reaches a verdict, fold only the validated decision into production work. Keep the prototype off main on a throwaway branch and link that primary source from the Kaam-dō issue.
+7. After the user reaches a verdict, fold only the validated decision into production work. Keep the prototype off main on a throwaway branch and link that primary source from the implementation issue.
 8. If the question informs a Feature Contract, record the verdict on the parent issue: contract level, interface/state/scenario decision, affected consumers, and proposed canonical artifact. The prototype is evidence, never the canonical production contract.
 
 A prototype is complete only when its question and verdict are recorded, any affected Feature Contract decision is durable, and the main branch contains no abandoned prototype surface.
