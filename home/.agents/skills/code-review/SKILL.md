@@ -55,11 +55,27 @@ Apply the smell baseline below in addition to repo standards:
 - Baseline smells are judgement calls, not hard violations.
 - Skip anything tooling already enforces unless the diff clearly bypasses or weakens the tooling.
 
-### 4. Run the three axes independently
+### 4. Run the three axes in parallel
 
-Run Adversarial Risk, Standards, and Spec independently. Use parallel subagents when they are available; otherwise run the axes sequentially but keep notes separate. Do not merge, rerank, or let one axis suppress another.
+If subagents are available, run three in parallel using the harness's available delegation mechanism. They must work independently so one axis cannot suppress or bias another.
 
-Each axis is complete only after every changed file has been considered and every reported finding is tied to a concrete file and line range.
+Include the target label, user focus, diff command, commit list, and changed-file list in every prompt. Require every finding to name a concrete file and line range, assign confidence from `0` to `1`, explain impact, and recommend a fix. Cap each report at 400 words.
+
+**Adversarial Risk subagent** — include the full Axis A criteria below and this brief:
+
+> Try to disprove the change. Trace the changed behavior through its call paths and report only material correctness, security, data-integrity, concurrency, compatibility, rollback, or operability risks. For each finding explain what fails, why this code is vulnerable, likely impact, and the smallest effective fix. Do not invent runtime behavior or report style-only concerns.
+
+**Standards subagent** — include the standards-source files and the full smell baseline from Axis B, then use this brief:
+
+> Report every documented-standard breach with the standard file and rule, plus any material baseline smell with the changed hunk. Label baseline smells as judgement calls; documented repo standards override them. Search nearby code for existing utilities, components, hooks, and flows before claiming reinvention or inconsistency. Skip checks already enforced by tooling unless the diff bypasses or weakens that tooling.
+
+**Spec subagent** — include the spec contents and Feature Contract material from Axis C, then use this brief:
+
+> Report requirements that are missing or partial, behavior that was not requested and creates scope or risk, and requirements that appear implemented incorrectly. Quote the spec section for every finding. When a Feature Contract applies, check its exact revision, owned interfaces, orchestration, state model, scenarios, consumers, delegation surface, and conformance commands.
+
+If no spec exists, skip the Spec subagent and report `no spec available`. If subagents are unavailable, run the same briefs as three independent sequential passes and keep their notes separate.
+
+Do not merge or rerank the reports. Each axis is complete only after every changed file has been considered.
 
 #### Axis A — Adversarial Risk
 
@@ -143,7 +159,7 @@ Do not include style feedback, naming feedback, low-value cleanup, or speculativ
 
 Use `needs attention` if there is any material finding worth blocking on. Use `approve` only when you cannot support any substantive finding from the provided context.
 
-When working inside an active diff review UI, leave one concise review comment per material finding and finish the review with a terse summary. For normal chat output, use this format:
+Use this format:
 
 ```markdown
 ## Verdict
