@@ -7,8 +7,8 @@
 #   bash hitl-loop.template.sh
 #
 # Two helpers:
-#   step "<instruction>"          -> show instruction, wait for Enter
-#   capture VAR "<question>"      -> show question, read response into VAR
+#   step "<instruction>"          → show instruction, wait for Enter
+#   capture VAR "<question>"      → show question, read response into VAR
 #
 # At the end, captured values are printed as KEY=VALUE for the agent to parse.
 
@@ -28,14 +28,14 @@ capture() {
 
 # --- edit below ---------------------------------------------------------
 
-step "Open the app and navigate to the screen or flow that reproduces the bug."
+step "Open the app at http://localhost:3000 and sign in."
 
-capture REPRODUCED "Did the reported bug occur? (y/n)"
+capture ERRORED "Click the 'Export' button. Did it throw an error? (y/n)"
 
-capture SYMPTOM "Paste the exact error/message/visible symptom/timing, or 'none':"
+capture ERROR_MSG "Paste the error message (or 'none'):"
 
 # --- edit above ---------------------------------------------------------
 
 printf '\n--- Captured ---\n'
-printf 'REPRODUCED=%s\n' "$REPRODUCED"
-printf 'SYMPTOM=%s\n' "$SYMPTOM"
+printf 'ERRORED=%s\n' "$ERRORED"
+printf 'ERROR_MSG=%s\n' "$ERROR_MSG"

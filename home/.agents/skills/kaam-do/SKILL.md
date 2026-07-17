@@ -49,7 +49,7 @@ Read open items and native dependency summaries. Keep blocked work `Planned`, un
 - **Small and clear:** capture one task or work item.
 - **Multi-session build:** `grilling` → `to-spec` → `to-tickets`.
 - **Huge and foggy:** `wayfinder` → decision frontier → `to-spec` → `to-tickets`.
-- **Hard bug:** `diagnose` first; track implementation after the failure is understood.
+- **Hard bug:** `diagnosing-bugs` first; track implementation after the failure is understood.
 - **Runnable design question:** `prototype`; retain the verdict and keep throwaway code off main.
 
 Kaam-dō owns lifecycle and handoff, not autonomous implementation. The user chooses a frontier ticket; agents make every subsequent state transition explicit and recoverable.
