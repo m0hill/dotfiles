@@ -1,77 +1,75 @@
 ---
 name: to-spec
-description: Turn the current conversation into a proportionate specification and publish it as a Kaam-dō parent task.
+description: Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed.
 disable-model-invocation: true
 ---
 
-# To Spec
+This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
 
-Turn settled conversation context into one buildable specification. Do not restart discovery; use `grilling` or `wayfinder` first when important decisions remain open.
+The issue tracker and triage label vocabulary should have been provided to you — run `/setup-matt-pocock-skills` if not.
 
-Before publishing, read the [Kaam-dō tracker contract](../kaam-do/TRACKER.md) and load `docs/FEATURE-CONTRACTS.md` from the tracker repository.
+## Process
 
-## 1. Gather
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
 
-Read the current conversation, relevant code, `CONTEXT.md`/`CONTEXT-MAP.md`, applicable ADRs, and any originating Wayfinder map or Notion ticket. Identify the source repositories, work/personal scope, and execution policy for each repository. Propose `integration-branch` for work, where only the named integration branch may be published, and `pull-request` for personal, where ticket branches may be published. Require approval rather than inferring the branch allowlist.
+2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
-Complete when every consequential claim in the draft can be traced to conversation, code, domain documentation, or an explicit reference.
+Check with the user that these seams match their expectations.
 
-## 2. Choose the test seam and contract level
+3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
 
-Prefer an existing high-level public seam. Propose a new seam only when behavior cannot be tested coherently through an existing one.
+<spec-template>
 
-Choose the smallest Feature Contract level that fits:
+## Problem Statement
 
-- **Narrative** — one straightforward implementation; acceptance criteria are sufficient.
-- **Executable scenarios** — behavior must align across implementations, repositories, compatibility versions, or risky edge cases.
-- **Stateful executable** — legal transitions, retries, cancellation, concurrency, or recovery are central.
+The problem that the user is facing, from the user's perspective.
 
-Do not introduce a machine or shared scenario corpus merely to make the specification look rigorous. For executable levels, name the canonical owner, current or proposed artifact location, consumers, stable scenario IDs, and conformance commands.
+## Solution
 
-Complete when observable test boundaries and the minimum justified contract level are explicit.
+The solution to the problem, from the user's perspective.
 
-## 3. Draft proportionately
+## User Stories
 
-Use this shape:
+A LONG, numbered list of user stories. Each user story should be in the format of:
 
-```markdown
-## Outcome
+1. As an <actor>, I want a <feature>, so that <benefit>
 
-## Problem and context
+<user-story-example>
+1. As a mobile bank customer, I want to see balance on my accounts, so that I can make better informed decisions about my spending
+</user-story-example>
 
-## User-visible behavior
+This list of user stories should be extremely extensive and cover all aspects of the feature.
 
-## Completion criteria
+## Implementation Decisions
 
-## Source repositories
+A list of implementation decisions that were made. This can include:
 
-## Execution policy
+- The modules that will be built/modified
+- The interfaces of those modules that will be modified
+- Technical clarifications from the developer
+- Architectural decisions
+- Schema changes
+- API contracts
+- Specific interactions
 
-## Implementation decisions
+Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
 
-## Testing decisions
+Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-## Feature Contract
+## Testing Decisions
 
-<!-- Omit for Narrative unless owned boundaries need clarification. For executable levels, use the canonical Feature Contract template. -->
+A list of testing decisions that were made. Include:
 
-## Out of scope
+- A description of what makes a good test (only test external behavior, not implementation details)
+- Which modules will be tested
+- Prior art for the tests (i.e. similar types of tests in the codebase)
 
-## References
-```
+## Out of Scope
 
-For ordinary work, use only the detail needed to remove implementation ambiguity. For a large product change, expand user-visible scenarios comprehensively. Do not manufacture a long user-story inventory to make the document look complete. Avoid file paths and code snippets unless a prototype produced a decision-rich state machine, schema, or type shape that prose would make less precise.
+A description of the things that are out of scope for this spec.
 
-Complete when another fresh agent could judge scope and completion without the original conversation. For an executable contract, it must also be able to locate the canonical artifact or its proposed owner, identify required consumers, and run or plan the conformance command. Anything needed only from chat is still missing.
+## Further Notes
 
-## 4. Approve
+Any further notes about the feature.
 
-Show the full draft, proposed title, scope, source repositories, execution mode, branch publish allowlist, PR policy, and completion gate, Feature Contract level, canonical owner, and any proposed artifact. Ask for one approval or revision pass. Do not publish before approval.
-
-Complete when the user approves the exact artifact.
-
-## 5. Publish
-
-Create a `kind:task` issue in `m0hill/kaam-do` with the approved `scope:*` label, one `repo:<owner>/<repository>` label for every known source repository, and the approved `execution:*` label when one mode applies to the task. Create missing repository labels lazily. For mixed policies, keep the per-repository body contract authoritative and omit a misleading single execution label from the parent. Add the issue to the Kaam-dō Project and set Status to `Planned`. Link the originating Wayfinder map or Notion ticket under References.
-
-Read the issue and Project item back. Finish with its title and URL only after body, labels, repository identifiers, Project membership, and Status are correct.
+</spec-template>
