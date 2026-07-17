@@ -2,3 +2,4 @@ dist/
 node_modules/
 settings.json
 trust.json
+models-store.json

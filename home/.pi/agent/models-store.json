@@ -390,7 +390,7 @@
         "maxTokens": 65536
       }
     ],
-    "checkedAt": 1784296577323
+    "checkedAt": 1784317883161
   },
   "opencode": {
     "models": [
@@ -1783,7 +1783,7 @@
         "maxTokens": 65536
       }
     ],
-    "checkedAt": 1784296578345
+    "checkedAt": 1784317883159
   },
   "openai-codex": {
     "models": [
@@ -2021,6 +2021,6 @@
         }
       }
     ],
-    "checkedAt": 1784296577585
+    "checkedAt": 1784317883173
   }
 }
