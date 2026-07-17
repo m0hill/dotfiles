@@ -1,5 +1,0 @@
-interface:
-  display_name: "Cleanup"
-  short_description: "Clean up changes to fit the codebase"
-policy:
-  allow_implicit_invocation: false

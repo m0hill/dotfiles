@@ -35,7 +35,7 @@ If the user did not provide a fixed point and no active diff/review context is a
 - Fail early on a bad ref or an empty diff.
 - Capture changed files before reviewing details.
 
-Do enough legwork to understand the relevant call paths, data flow, state transitions, and existing neighbouring patterns. Do not review isolated hunks when the risk depends on how the feature is wired.
+Do enough legwork to understand the relevant call paths, data flow, state transitions, and existing neighbouring patterns. Search for existing utilities, components, hooks, and flows before accepting new ones; report material reinvention or inconsistency, but do not demand reuse when no suitable pattern exists. Do not review isolated hunks when the risk depends on how the feature is wired.
 
 ### 2. Identify the spec and Feature Contract
 

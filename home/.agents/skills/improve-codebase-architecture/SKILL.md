@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 Find global architecture friction and propose **deepening opportunities**: refactors that turn shallow modules into deeper ones with better leverage, locality, and test seams.
 
-This is not the small-stuff cleanup skill:
+This is not a local code review:
 
-- Use `cleanup` for a diff, PR, file, or local slop/reuse review.
+- Use `code-review` for a diff, PR, file, or local slop/reuse review.
 - Use `quality-code` as the TypeScript/full-stack implementation quality bar.
 - Use this skill when the question is broader: module shape, seams, repeated friction across callers, testability gaps, or architecture that makes agents/humans bounce around.
 
@@ -41,7 +41,7 @@ Clarify whether the user wants:
 
 - a whole-codebase architecture review,
 - one subsystem/module reviewed,
-- refactor candidates after a bug/cleanup revealed friction,
+- refactor candidates after a bug or review revealed friction,
 - or help designing a specific deeper module.
 
 If scope is clear, do not ask. If scope is too broad, propose a concrete slice to inspect first.
@@ -131,7 +131,7 @@ If the user asks to implement, keep the first slice small:
 Start with one of:
 
 - `no architecture issue found` — current shape is fine for the inspected scope.
-- `local cleanup only` — issues are small enough for `cleanup`, not architecture work.
+- `local cleanup only` — issues are local review findings, not architecture work.
 - `architecture candidates found` — list ranked candidates.
 
 Then provide the candidate list or the chosen design plan.
