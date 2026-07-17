@@ -1,0 +1,5 @@
+interface:
+  display_name: "Diverge"
+  short_description: "Explore and converge on creative directions"
+policy:
+  allow_implicit_invocation: false

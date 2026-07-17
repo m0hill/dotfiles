@@ -1,0 +1,3 @@
+interface:
+  display_name: "Kaam-dō"
+  short_description: "Operate the central agent work queue"

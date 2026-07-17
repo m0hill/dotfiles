@@ -1,0 +1,3 @@
+interface:
+  display_name: "Open Source"
+  short_description: "Inspect dependency and repository source"

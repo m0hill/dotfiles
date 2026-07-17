@@ -1,0 +1,3 @@
+interface:
+  display_name: "Quality Code"
+  short_description: "Write production-quality TypeScript"

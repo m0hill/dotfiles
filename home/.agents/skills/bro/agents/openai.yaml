@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bro"
+  short_description: "Restate a message without jargon"
+policy:
+  allow_implicit_invocation: false

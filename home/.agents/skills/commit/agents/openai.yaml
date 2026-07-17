@@ -1,0 +1,5 @@
+interface:
+  display_name: "Commit"
+  short_description: "Create safe, atomic Git commits"
+policy:
+  allow_implicit_invocation: false

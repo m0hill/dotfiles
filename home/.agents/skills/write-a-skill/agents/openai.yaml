@@ -1,0 +1,5 @@
+interface:
+  display_name: "Writing Great Skills"
+  short_description: "Write predictable, effective agent skills"
+policy:
+  allow_implicit_invocation: false
