@@ -1,7 +1,6 @@
 ---
 name: grilling
 description: Interview the user relentlessly about a plan, decision, or idea in rounds until reaching shared understanding.
-disable-model-invocation: true
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.

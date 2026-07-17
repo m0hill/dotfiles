@@ -1,7 +1,6 @@
 ---
 name: research
 description: Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated in the background.
-disable-model-invocation: true
 ---
 
 If subagents are available, delegate the research in the background so other work can continue. Otherwise, do the same research directly.

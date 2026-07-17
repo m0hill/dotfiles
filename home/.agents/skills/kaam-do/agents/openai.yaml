@@ -1,5 +1,3 @@
 interface:
   display_name: "Kaam-dō"
   short_description: "Use the central agent work queue"
-policy:
-  allow_implicit_invocation: false

@@ -1,7 +1,6 @@
 ---
 name: opensrc-skill
 description: Use when the user asks to inspect, search, or understand source code for npm packages, PyPI packages, crates.io crates, or GitHub/GitLab/Bitbucket repositories. Teaches how to use the installed opensrc CLI with normal bash, rg, find, and read instead of custom source tools.
-disable-model-invocation: true
 ---
 
 # Opensrc Source Lookup

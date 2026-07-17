@@ -1,7 +1,6 @@
 ---
 name: quality-code
 description: Apply correct-by-construction TypeScript standards for errors, parsing, domain types, modules, adapters, testing, observability, and maintainability.
-disable-model-invocation: true
 ---
 
 # Quality TypeScript Code

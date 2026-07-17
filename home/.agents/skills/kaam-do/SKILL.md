@@ -1,7 +1,6 @@
 ---
 name: kaam-do
 description: Tracker adapter for the central Kaam-dō work queue. Use whenever docs/agents/issue-tracker.md selects Kaam-dō, when another skill needs to publish or read Kaam-dō maps, specifications, or tickets, or when managing tracked work across source repositories.
-disable-model-invocation: true
 ---
 
 # Kaam-dō

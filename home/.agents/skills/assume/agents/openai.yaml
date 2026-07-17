@@ -1,5 +1,3 @@
 interface:
   display_name: "Assume"
   short_description: "Run AWS commands through Granted profiles"
-policy:
-  allow_implicit_invocation: false

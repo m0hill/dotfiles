@@ -1,7 +1,6 @@
 ---
 name: quality-python-code
 description: Guides agents to write typed, idiomatic, observable, testable production Python 3.11+ code with boundary validation, domain-specific exceptions, cohesive modules, and real-seam tests. Use when writing, reviewing, refactoring, or cleaning up Python application, service, worker, CLI, or library code.
-disable-model-invocation: true
 ---
 
 # Quality Python code
