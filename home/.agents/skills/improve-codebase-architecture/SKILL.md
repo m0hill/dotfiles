@@ -1,137 +1,71 @@
 ---
 name: improve-codebase-architecture
-description: "Codebase-wide architecture review for deepening opportunities: shallow modules, weak seams, tangled callers, and testability gaps. Use when the user asks to improve architecture, find refactor opportunities across modules, or make a codebase easier to test or navigate. Not for local PR cleanup."
+description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
 disable-model-invocation: true
 ---
 
 # Improve Codebase Architecture
 
-Find global architecture friction and propose **deepening opportunities**: refactors that turn shallow modules into deeper ones with better leverage, locality, and test seams.
+Surface architectural friction and propose **deepening opportunities** — refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
 
-This is not a local code review:
+This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
-- Use `code-review` for a diff, PR, file, or local slop/reuse review.
-- Use `quality-code` as the TypeScript/full-stack implementation quality bar.
-- Use this skill when the question is broader: module shape, seams, repeated friction across callers, testability gaps, or architecture that makes agents/humans bounce around.
-
-## Vocabulary
-
-Use these terms consistently. Full definitions live in [LANGUAGE.md](LANGUAGE.md).
-
-- **Module** — anything with an interface and an implementation: function, class, package, slice.
-- **Interface** — everything callers must know: types, invariants, ordering, errors, config, performance.
-- **Implementation** — the code inside the module.
-- **Depth** — leverage at the interface. Deep modules hide a lot of behavior behind a small interface.
-- **Seam** — where an interface lives; a place behavior can be altered without editing in place.
-- **Adapter** — a concrete thing satisfying an interface at a seam.
-- **Leverage** — what callers get from depth.
-- **Locality** — what maintainers get from depth: change and bugs concentrate in one place.
-
-Core tests:
-
-- **Deletion test**: if deleting the module makes complexity vanish, it was pass-through waste; if complexity reappears across callers, it was earning its keep.
-- **Interface is the test surface**: tests should cross the same seam callers use.
-- **One adapter = hypothetical seam; two adapters = real seam**: avoid fake ports with only one adapter.
+- Run the `/codebase-design` skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
+- The domain language in `CONTEXT.md` gives names to good seams; ADRs in `docs/adr/` record decisions this command should not re-litigate.
 
 ## Process
 
-### 1. Establish scope
+### 1. Explore
 
-Clarify whether the user wants:
+**Scope before you scan — YAGNI.** Deepening a module pays off by making future changes to it easier, so put extra weight on the parts of the codebase that have recently changed. Decide *where* to look before you look:
 
-- a whole-codebase architecture review,
-- one subsystem/module reviewed,
-- refactor candidates after a bug or review revealed friction,
-- or help designing a specific deeper module.
+- If the user named a direction — a module, a subsystem, a pain point — take it, and skip the inference below.
+- Otherwise, walk back a good stretch of the commit history (`git log --oneline`) to find the codebase's hot spots — the files and areas that keep coming up — and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
 
-If scope is clear, do not ask. If scope is too broad, propose a concrete slice to inspect first.
+Read the project's domain glossary (`CONTEXT.md`) and any ADRs in the area you're touching first.
 
-### 2. Read durable context
+Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
 
-Before judging architecture, read what exists:
+- Where does understanding one concept require bouncing between many small modules?
+- Where are modules **shallow** — interface nearly as complex as the implementation?
+- Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
+- Where do tightly-coupled modules leak across their seams?
+- Which parts of the codebase are untested, or hard to test through their current interface?
 
-- `AGENTS.md`, README, or other project docs for conventions.
-- `CONTEXT.md` or `CONTEXT-MAP.md` for domain language, if present.
-- `docs/adr/` and nearby ADRs for decisions not to re-litigate.
-- Existing tests around the area; tests reveal the real seams.
+Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
-Use the project's domain words in findings. If a concept is named in `CONTEXT.md`, use that name instead of inventing a new one.
+### 2. Present candidates as an HTML report
 
-### 3. Explore friction
+Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path.
 
-Walk the codebase with normal tools: `rg`, `find`, `read`, language-aware tools when available, and focused test searches. Sample callers before judging an interface.
+The report uses **Tailwind via CDN** for layout and styling, and **Mermaid via CDN** for diagrams where a graph/flow/sequence reliably communicates the structure. Mix Mermaid with hand-crafted CSS/SVG visuals — use Mermaid when relationships are graph-shaped (call graphs, dependencies, sequences), and hand-built divs/SVG when you want something more editorial (mass diagrams, cross-sections, collapse animations). Each candidate gets a **before/after visualisation**. Be visual.
 
-Look for friction you actually experience:
+For each candidate, render a card with:
 
-- Understanding one concept requires bouncing between many small modules.
-- A module's interface is nearly as complex as its implementation.
-- Helpers exist only so tests can reach internals, while real behavior is assembled elsewhere.
-- Callers repeat sequencing, parsing, authorization, error handling, retries, or state transitions.
-- Multiple modules change together because their seams leak.
-- Tests mock internals instead of crossing a real interface.
-- There is only one adapter behind a port, or no local substitute where tests need one.
-- A bug fix was hard because state or behavior had no single owner.
+- **Files** — which files/modules are involved
+- **Problem** — why the current architecture is causing friction
+- **Solution** — plain English description of what would change
+- **Benefits** — explained in terms of locality and leverage, and how tests would improve
+- **Before / After diagram** — side-by-side, custom-drawn, illustrating the shallowness and the deepening
+- **Recommendation strength** — one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge
 
-Do not force a refactor because a file is large. Size is not the smell; low leverage and poor locality are.
+End the report with a **Top recommendation** section: which candidate you'd tackle first and why.
 
-### 4. Classify dependency shape
+**Use CONTEXT.md vocabulary for the domain, and the `/codebase-design` vocabulary for the architecture.** If `CONTEXT.md` defines "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
 
-For each promising candidate, classify dependencies using [DEEPENING.md](DEEPENING.md):
+**ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly in the card (e.g. a warning callout: _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-1. **In-process** — pure/in-memory; usually easiest to deepen.
-2. **Local-substitutable** — local test stand-ins exist; test through the deep module with the stand-in.
-3. **Remote but owned** — use a port at the seam with production and test adapters.
-4. **True external** — inject a port and test with a mock/fake adapter.
+See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram patterns, and styling guidance.
 
-This prevents shallow advice like “just extract a service” without a test strategy.
+Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
 
-### 5. Present candidates before editing
+### 3. Grilling loop
 
-Do not start moving architecture around immediately. Present a ranked list first.
+Once the user picks a candidate, run the `/grilling` skill to walk the decision tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
-For each candidate include:
+Side effects happen inline as decisions crystallize — run the `/domain-modeling` skill to keep the domain model current as you go:
 
-1. **Modules/files** involved.
-2. **Problem**: the current friction, grounded in evidence.
-3. **Current interface burden**: what callers/tests must know today.
-4. **Deepening move**: what should sit behind the seam instead.
-5. **Benefits** in terms of leverage, locality, and testing.
-6. **Dependency/test strategy** from the dependency classification.
-7. **Risk/scope**: likely blast radius and safest first slice.
-
-Ask: “Which candidate should we explore or implement?”
-
-### 6. Explore a chosen candidate
-
-Once the user picks one, grill the design:
-
-- What behavior belongs behind the seam?
-- What must remain outside because it varies by caller?
-- Which invariants should the module own?
-- What errors should cross the interface?
-- Which tests should survive internal refactors?
-- Which adapter shapes are real, not hypothetical?
-
-If the user wants multiple interface options, read [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md) and produce alternatives before recommending one.
-
-If a new domain term or rejected architecture decision should be durable, offer to update `CONTEXT.md` or add an ADR. Do not silently write architecture docs unless the user agrees.
-
-### 7. Implement only on request
-
-If the user asks to implement, keep the first slice small:
-
-- Preserve behavior.
-- Add or move tests to the new interface seam.
-- Delete obsolete shallow tests only after the deep-interface tests cover the behavior.
-- Avoid broad migrations unless explicitly requested.
-- Leave follow-up candidates as notes instead of hiding extra architecture churn in the first change.
-
-## Output format
-
-Start with one of:
-
-- `no architecture issue found` — current shape is fine for the inspected scope.
-- `local cleanup only` — issues are local review findings, not architecture work.
-- `architecture candidates found` — list ranked candidates.
-
-Then provide the candidate list or the chosen design plan.
+- **Naming a deepened module after a concept not in `CONTEXT.md`?** Add the term to `CONTEXT.md`. Create the file lazily if it doesn't exist.
+- **Sharpening a fuzzy term during the conversation?** Update `CONTEXT.md` right there.
+- **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing — skip ephemeral reasons ("not worth it right now") and self-evident ones.
+- **Want to explore alternative interfaces for the deepened module?** Run the `/codebase-design` skill and use its design-it-twice parallel sub-agent pattern.
