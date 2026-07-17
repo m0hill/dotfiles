@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: Master code review for branches, PRs, and WIP diffs since a fixed point. Use when asked to review code, review since X, assess ship/no-ship risk, compare against a spec/PRD, or check repo standards.
+disable-model-invocation: true
 ---
 
 # Master Code Review

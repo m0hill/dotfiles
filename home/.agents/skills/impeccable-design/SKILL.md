@@ -2,6 +2,7 @@
 name: impeccable-design
 description: Code-first design-system workflow adapted from pbakaus/impeccable for Pi. Use when the user mentions Impeccable, PRODUCT.md, DESIGN.md, design systems, UI critique/audit/polish/extract/harden, anti-AI-slop frontend work, or wants agents to preserve a product's visual direction in code.
 license: Apache-2.0 concepts adapted from pbakaus/impeccable
+disable-model-invocation: true
 ---
 
 # Impeccable Design for Pi

@@ -1,6 +1,7 @@
 ---
 name: diagnose
 description: Diagnose bugs and regressions with a tight feedback loop plus state-space analysis when state matters. Use when debugging broken, failing, throwing, flaky, slow, racey, retry/recovery, or unexpected-state behavior, or when the user asks to analyze before fixing.
+disable-model-invocation: true
 ---
 
 # Diagnose

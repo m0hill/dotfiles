@@ -1,3 +1,5 @@
 interface:
   display_name: "Herdr"
   short_description: "Control workspaces and agents inside herdr"
+policy:
+  allow_implicit_invocation: false

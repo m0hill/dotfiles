@@ -1,6 +1,7 @@
 ---
 name: boring-code
 description: Enforces boring, direct, locality-first coding choices and resists unnecessary abstraction. Use when writing or refactoring any code, especially when deciding whether to add helpers, wrappers, validators, generic utilities, or future-proofing layers.
+disable-model-invocation: true
 ---
 
 # Boring Code

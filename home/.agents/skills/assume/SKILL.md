@@ -1,6 +1,7 @@
 ---
 name: assume
 description: Use when running AWS commands through Granted/assume in headless environments, scripts, CI-like shells, or coding-agent harnesses where shell aliases do not persist. Applies when the user asks to assume AWS profiles, test AWS access, run read-only AWS commands, or switch between SIND AWS environments.
+disable-model-invocation: true
 ---
 
 Use Granted assume in headless mode instead of relying on shell aliases or sourced environment

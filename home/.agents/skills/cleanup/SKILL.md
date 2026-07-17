@@ -1,6 +1,7 @@
 ---
 name: cleanup
 description: Cleanup code changes after reviewing for reuse, composition, codebase consistency, and slop. Use when asked to review PRs/diffs, check code reuse, composition, cleanliness, or whether code fits the codebase.
+disable-model-invocation: true
 ---
 
 # Code Cleanup

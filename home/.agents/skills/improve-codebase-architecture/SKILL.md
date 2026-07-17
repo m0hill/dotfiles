@@ -1,6 +1,7 @@
 ---
 name: improve-codebase-architecture
 description: "Codebase-wide architecture review for deepening opportunities: shallow modules, weak seams, tangled callers, and testability gaps. Use when the user asks to improve architecture, find refactor opportunities across modules, or make a codebase easier to test or navigate. Not for local PR cleanup."
+disable-model-invocation: true
 ---
 
 # Improve Codebase Architecture

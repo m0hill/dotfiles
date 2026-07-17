@@ -1,3 +1,5 @@
 interface:
   display_name: "Open Source"
   short_description: "Inspect dependency and repository source"
+policy:
+  allow_implicit_invocation: false

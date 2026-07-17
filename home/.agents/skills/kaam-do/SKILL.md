@@ -1,6 +1,7 @@
 ---
 name: kaam-do
 description: Operate the central Kaam-dō agent work queue. Use when capturing, normalizing, starting, resuming, checkpointing, reviewing, or finishing tracked work across source repositories, or when another skill needs the tracker contract.
+disable-model-invocation: true
 ---
 
 # Kaam-dō

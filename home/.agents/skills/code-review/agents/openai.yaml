@@ -1,3 +1,5 @@
 interface:
   display_name: "Code Review"
   short_description: "Review changes for correctness and risk"
+policy:
+  allow_implicit_invocation: false

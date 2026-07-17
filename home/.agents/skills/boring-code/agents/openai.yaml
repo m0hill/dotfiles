@@ -1,3 +1,5 @@
 interface:
   display_name: "Boring Code"
   short_description: "Prefer direct, locality-first code"
+policy:
+  allow_implicit_invocation: false

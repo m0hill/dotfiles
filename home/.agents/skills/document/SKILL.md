@@ -1,6 +1,7 @@
 ---
 name: document
 description: Write evidence-based PR descriptions, changelog entries, release notes, and incident postmortems. Use when the user asks to document a change, prepare PR prose, update a changelog, announce a release, or record an incident.
+disable-model-invocation: true
 ---
 
 # Document
