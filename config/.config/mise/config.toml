@@ -1,6 +1,6 @@
 [tools]
+pnpm = "latest"
 node = "lts"
 python = "latest"
 bun = "latest"
-pnpm = "latest"
 cloudflared = "2026.7.2"
