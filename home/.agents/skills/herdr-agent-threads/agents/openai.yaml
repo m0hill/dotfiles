@@ -1,0 +1,4 @@
+interface:
+  display_name: "Herdr Agent Threads"
+  short_description: "Run tasked Pi peers with deterministic message routing"
+  default_prompt: "Use $herdr-agent-threads to start a tasked Pi peer."

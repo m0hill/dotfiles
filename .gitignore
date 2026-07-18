@@ -7,6 +7,7 @@
 atuin-receipt.json
 node_modules/
 .pnpm-store/
+**/*.pyc
 
 # opensrc - source code for packages
 opensrc/
