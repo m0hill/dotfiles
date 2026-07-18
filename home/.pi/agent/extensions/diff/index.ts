@@ -1098,7 +1098,7 @@ function summaryTask(session: ReviewSession): string {
     "Inspect the patch and repository context. Use diff_summary_tldr first, then diff_summary_file and diff_summary_block only where they add useful explanation.",
     "Explain what was implemented, likely developer intent, implementation flow, and a useful review order.",
     "Avoid noisy summaries for trivial changes and group related adjacent changes.",
-    "Call diff_summary_done when finished, then reply to the requesting Herdr peer with an inform message containing a concise result.",
+    "Call diff_summary_done when finished, then use threadctl message inform to notify the requesting parent peer with a concise result. The task is not complete until that command succeeds.",
   ].join("\n")
 }
 
@@ -1114,7 +1114,7 @@ function reviewTask(session: ReviewSession): string {
     "After gathering the independent reports, use diff_review_comment once per material finding and call diff_review_done even when there are no findings.",
     "Anchor comments to line/range/file only when directly tied to the diff; otherwise use a global anchor.",
     "Use additions/deletions line numbers from the patch and keep comments actionable, non-duplicative, and honest about uncertainty.",
-    "Finally, reply to the requesting Herdr peer with an inform message containing the verdict and finding counts.",
+    "After diff_review_done, use threadctl message inform to notify the requesting parent peer with the verdict and finding counts. The task is not complete until that command succeeds.",
   ].join("\n")
 }
 
@@ -1770,7 +1770,6 @@ export default function diff(pi: ExtensionAPI): void {
       return {
         content: [{ type: "text", text: `Marked diff review ${reviewId} as done.` }],
         details: { reviewId, commentCount: state.comments.length },
-        terminate: true,
       }
     },
   })
