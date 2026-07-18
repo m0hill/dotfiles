@@ -556,6 +556,33 @@ def command_focus(args: argparse.Namespace) -> JsonObject:
     return {"action": "focused", "peer": args.peer, "pane_id": pane_id}
 
 
+def command_close(args: argparse.Namespace) -> JsonObject:
+    pane = resolve_peer(args.peer)
+    pane_id = string_field(pane, "pane_id")
+    workspace_id = peer_workspace_id()
+    if workspace_id is None or pane.get("workspace_id") != workspace_id:
+        raise ThreadControlError(
+            f"Pane {pane_id} is not a peer in the {WORKSPACE_LABEL!r} workspace"
+        )
+
+    pane = get_pane(pane_id)
+    status = str(pane.get("agent_status", "unknown"))
+    if status not in {"idle", "done"}:
+        raise ThreadControlError(
+            f"Peer {pane_id} is {status}; only idle or done peers can be closed"
+        )
+
+    tab_id = string_field(pane, "tab_id")
+    herdr("tab", "close", tab_id)
+    return {
+        "action": "closed",
+        "peer": args.peer,
+        "pane_id": pane_id,
+        "tab_id": tab_id,
+        "status": status,
+    }
+
+
 def text_options(parser: argparse.ArgumentParser, name: str) -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(f"--{name}")
@@ -622,6 +649,10 @@ def parser() -> argparse.ArgumentParser:
     focus = commands.add_parser("focus", help="Focus a peer pane for human takeover")
     add_peer_argument(focus)
     focus.set_defaults(handler=command_focus)
+
+    close = commands.add_parser("close", help="Close an idle or done peer's tab")
+    add_peer_argument(close)
+    close.set_defaults(handler=command_close)
     return root
 
 

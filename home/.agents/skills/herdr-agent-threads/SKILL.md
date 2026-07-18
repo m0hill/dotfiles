@@ -21,6 +21,7 @@ list
 read    --peer PEER [--lines N]
 wait    --peer PEER [--status idle|working|blocked|done] [--timeout MS]
 focus   --peer PEER
+close   --peer PEER
 ```
 
 `PEER` is a peer name or a pane ID (like `w9:p1`). Names must be unique, task-based (e.g. `auth-review`, `db-migration`), and use only letters, numbers, hyphens, underscores.
@@ -89,7 +90,10 @@ threadctl list                                   # all peer threads and their st
 threadctl read --peer auth-review --lines 120    # transcript, without focusing
 threadctl wait --peer auth-review --status done --timeout 120000
 threadctl focus --peer auth-review               # human takeover of the live session
+threadctl close --peer auth-review               # manually close its tab when idle/done
 ```
+
+`close` is always manual. It closes the peer's entire tab only when its current agent status is `idle` or `done`; it refuses `working`, `blocked`, `unknown`, and non-peer panes. Never close a peer merely because it sent a response—wait for the user or controlling agent to explicitly request closure.
 
 Herdr status is operational evidence; the peer's message is the communication outcome. If a peer disappears or `wait` times out, report it as unreachable rather than fabricating a response.
 
