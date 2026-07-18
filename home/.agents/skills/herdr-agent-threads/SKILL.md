@@ -27,7 +27,7 @@ focus   --peer PEER
 
 ## Start a tasked peer
 
-`start` always requires a task and delivers it immediately; a peer is never created idle. Put everything the peer needs in the task — context, constraints, expected output. The peer cannot see your conversation.
+`start` always requires a task and delivers it immediately; a peer is never created idle. A peer has no previous conversation context and does not inherit skills you loaded or instructions you read. Put everything it needs in the task: relevant context, constraints, expected output, and the names or paths of any skills or supporting files it must read. Never assume the peer knows what happened earlier in your session.
 
 Before starting a peer, confirm `--agent`, `--model`, and `--thinking` with the user through your question tool (offer the choices from the table below, recommending one). Skip the question only when the user already specified them or asked you to proceed without asking.
 

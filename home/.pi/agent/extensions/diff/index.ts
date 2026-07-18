@@ -1,7 +1,6 @@
 import { spawn, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import {
-  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -424,15 +423,6 @@ function reviewPathForSession(session: ReviewSession): string {
   return session.patchPath.replace(/\.patch$/, ".review.json")
 }
 
-function artifactPathFor(
-  cwd: string,
-  id: string,
-  kind: "summary" | "review",
-  suffix: string
-): string {
-  return join(projectDirForCwd(cwd), `${id}.${kind}.${suffix}`)
-}
-
 function emptyProgress(startedAt?: number): AnalysisProgress {
   return {
     startedAt,
@@ -683,16 +673,20 @@ function writeContentSnapshot(
   return path
 }
 
-function validatePatchLine(
+function sourceLineText(line: string | undefined): string | undefined {
+  return line?.replace(/\r?\n$/, "")
+}
+
+export function validatePatchLine(
   actual: string | undefined,
   expected: string | undefined,
   label: string
 ): string | undefined {
-  if (actual === expected) return undefined
+  if (sourceLineText(actual) === sourceLineText(expected)) return undefined
   return `${label} does not match the saved patch`
 }
 
-function validateSnapshotAgainstPatch(
+export function validateSnapshotAgainstPatch(
   file: FileDiffMetadata,
   oldContent: string,
   newContent: string
@@ -792,10 +786,16 @@ function buildContentSnapshots(
   })
 }
 
+export function joinPatchDocuments(...patches: string[]): string {
+  return patches
+    .filter((patch) => patch.trim())
+    .map((patch) => (patch.endsWith("\n") ? patch : `${patch}\n`))
+    .join("")
+}
+
 function worktreePatch(cwd: string): string {
   const tracked = runGit(cwd, ["diff", "HEAD", "--patch", "--find-renames", "--find-copies"])
-  const untracked = untrackedPatches(cwd)
-  return [tracked.trim(), untracked.trim()].filter(Boolean).join("\n")
+  return joinPatchDocuments(tracked, untrackedPatches(cwd))
 }
 
 function currentBranch(ctx: ExtensionCommandContext): string | undefined {
@@ -1089,64 +1089,56 @@ function sharedAnalysisContext(session: ReviewSession): string[] {
   ]
 }
 
-function summaryPrompt(session: ReviewSession): string {
+function summaryTask(session: ReviewSession): string {
   return [
-    "You are the summary subagent for a diff UI.",
-    "Your job is to help the human reviewer understand what was implemented, the likely developer intent, the flow of the change, and a suggested order for reviewing it.",
-    "Post useful results as soon as you have them; do not wait until the end.",
+    "Summarize the active diff for its browser UI.",
     "",
     ...sharedAnalysisContext(session),
     "",
-    "Use diff_summary_tldr first with: a concise TLDR, the likely developer intent, implementation flow, and suggested review flow.",
-    "Use diff_summary_file for changed files that deserve their own explanation.",
-    "Use diff_summary_block for meaningful changed blocks and anchor them to additions/deletions line ranges from the patch.",
-    "It is okay to mention obvious risks or correctness concerns when they help explain the change.",
-    "Avoid noisy summaries for trivial one-line changes. Group related adjacent changes.",
-    "Call diff_summary_done when finished.",
+    "Inspect the patch and repository context. Use diff_summary_tldr first, then diff_summary_file and diff_summary_block only where they add useful explanation.",
+    "Explain what was implemented, likely developer intent, implementation flow, and a useful review order.",
+    "Avoid noisy summaries for trivial changes and group related adjacent changes.",
+    "Call diff_summary_done when finished, then reply to the requesting Herdr peer with an inform message containing a concise result.",
   ].join("\n")
 }
 
-function reviewPrompt(session: ReviewSession): string {
+function reviewTask(session: ReviewSession): string {
   return [
-    "You are the review subagent for a diff UI.",
-    "Review this diff and leave concise PR-style comments.",
+    "Run the code-review skill against the active diff and publish the result to its browser UI.",
     "",
     ...sharedAnalysisContext(session),
     "",
-    "You may inspect the repository normally with available tools to understand global context.",
-    "Use diff_review_comment for each useful finding and diff_review_done when finished, even if there are no findings.",
-    "Anchor comments to line/range/file only when the finding is directly tied to the diff.",
-    "Use a global anchor for findings caused by the diff but not located on a changed line.",
-    "For line/range anchors, use line numbers from the additions or deletions side. Changed lines are preferred; validated expanded context lines are also accepted when directly relevant.",
-    "Keep comments actionable, non-duplicative, and honest about uncertainty.",
+    "Load and follow the code-review skill completely, including its independent review axes and Herdr delegation.",
+    "For nested Herdr review peers, proceed without another agent/model/thinking question and use the defaults.",
+    "The active diff is the fixed review context; do not ask the user to choose another target.",
+    "After gathering the independent reports, use diff_review_comment once per material finding and call diff_review_done even when there are no findings.",
+    "Anchor comments to line/range/file only when directly tied to the diff; otherwise use a global anchor.",
+    "Use additions/deletions line numbers from the patch and keep comments actionable, non-duplicative, and honest about uncertainty.",
+    "Finally, reply to the requesting Herdr peer with an inform message containing the verdict and finding counts.",
   ].join("\n")
 }
 
-function extractTextFromMessage(message: unknown): string[] {
-  if (!message || typeof message !== "object" || !("content" in message)) return []
-  const content = (message as { content?: unknown }).content
-  if (typeof content === "string") return [content]
-  if (!Array.isArray(content)) return []
-  return content.flatMap((part) => {
-    if (!part || typeof part !== "object" || !("type" in part)) return []
-    return (part as { type?: unknown; text?: unknown }).type === "text" &&
-      typeof (part as { text?: unknown }).text === "string"
-      ? [(part as { text: string }).text]
-      : []
-  })
-}
+function analysisOrchestrationPrompt(session: ReviewSession, choice: string): string {
+  const tasks: string[] = []
+  if (choice === "Summary + review" || choice === "Summary only") {
+    tasks.push(
+      `Start one Herdr peer named diff-summary-${session.id.slice(0, 8)} with this complete task:\n\n${summaryTask(session)}`
+    )
+  }
+  if (choice === "Summary + review" || choice === "Review only") {
+    tasks.push(
+      `Start one Herdr peer named diff-review-${session.id.slice(0, 8)} with this complete task:\n\n${reviewTask(session)}`
+    )
+  }
 
-function toolArgsPreview(args: unknown): string | undefined {
-  if (!args || typeof args !== "object") return undefined
-  const json = JSON.stringify(args)
-  return json.length > 120 ? `${json.slice(0, 120)}…` : json
-}
-
-function getPiInvocation(args: string[]): { command: string; args: string[] } {
-  const currentScript = process.argv[1]
-  if (currentScript && existsSync(currentScript))
-    return { command: process.execPath, args: [currentScript, ...args] }
-  return { command: "pi", args }
+  return [
+    "Use the subagent tool now to load the Herdr agent-thread instructions, then follow them for this request.",
+    "The user selected this analysis in the diff UI, so proceed without another agent/model/thinking question and use the Herdr defaults.",
+    "Start the requested peers concurrently, using the current working directory. Do not perform their work in this parent session.",
+    "After successful starts, end the turn; Herdr will push their replies back here.",
+    "",
+    ...tasks,
+  ].join("\n\n")
 }
 
 function markAnalysisRunning(cwd: string, id: string, kind: "summary" | "review"): void {
@@ -1158,276 +1150,6 @@ function markAnalysisRunning(cwd: string, id: string, kind: "summary" | "review"
   state.lastActivityAt = startedAt
   if (kind === "summary") writeSummaryState(cwd, id, state as SummaryState)
   else writeReviewState(cwd, id, state as AiReviewState)
-}
-
-function updateAnalysisProgress(
-  cwd: string,
-  id: string,
-  kind: "summary" | "review",
-  update: (state: SummaryState | AiReviewState) => void
-): void {
-  const state = kind === "summary" ? readSummaryState(cwd, id) : readReviewState(cwd, id)
-  update(state)
-  state.lastActivityAt = Date.now()
-  if (kind === "summary") writeSummaryState(cwd, id, state as SummaryState)
-  else writeReviewState(cwd, id, state as AiReviewState)
-}
-
-function sessionContextForParent(session: ReviewSession): string {
-  return [
-    `Review id: ${session.id}`,
-    `Title: ${session.title}`,
-    `Mode: ${compactSessionMode(session)}`,
-    `Patch command: ${session.command}`,
-    `Patch snapshot path: ${session.patchPath}`,
-  ].join("\n")
-}
-
-function diffSnapshotForParent(session: ReviewSession): string {
-  const patch = readFileSync(session.patchPath, "utf8").trim()
-  return patch ? `<diff>\n${patch}\n</diff>` : "<diff>\n(empty diff)\n</diff>"
-}
-
-function analysisContextMessage(session: ReviewSession, choice: string): string {
-  return [
-    "AI diff analysis started.",
-    "",
-    "Initial request:",
-    `Generate ${choice.toLowerCase()} for the selected diff so the parent agent can continue discussing the changes, summaries, and review findings later.`,
-    "",
-    sessionContextForParent(session),
-    "",
-    "Exact diff snapshot reviewed by child agents:",
-    diffSnapshotForParent(session),
-  ].join("\n")
-}
-
-function formatSummaryBlock(block: SummaryBlock): string {
-  return [
-    `- ${block.file} ${block.side} lines ${block.start}-${block.end}: ${block.title}`,
-    `  ${block.summary}`,
-  ].join("\n")
-}
-
-function formatSummaryStateForParent(summary: SummaryState): string {
-  const sections = [
-    summary.tldr ? `TLDR:\n${summary.tldr}` : undefined,
-    summary.developerIntent ? `Developer intent:\n${summary.developerIntent}` : undefined,
-    summary.implementationFlow.length
-      ? `Implementation flow:\n${summary.implementationFlow.map((line) => `- ${line}`).join("\n")}`
-      : undefined,
-    summary.suggestedReviewFlow.length
-      ? `Suggested review flow:\n${summary.suggestedReviewFlow.map((line) => `- ${line}`).join("\n")}`
-      : undefined,
-    summary.files.length
-      ? `File summaries:\n${summary.files.map((file) => `- ${file.file}: ${file.summary}`).join("\n")}`
-      : undefined,
-    summary.blocks.length
-      ? `Block summaries:\n${summary.blocks.map(formatSummaryBlock).join("\n")}`
-      : undefined,
-    summary.error ? `Summary error:\n${summary.error}` : undefined,
-  ].filter((section): section is string => Boolean(section))
-
-  return sections.join("\n\n") || "No summary content was posted."
-}
-
-function reviewAnchorText(anchor: ReviewAnchor): string {
-  switch (anchor.kind) {
-    case "global":
-      return "global"
-    case "file":
-      return anchor.file
-    case "line":
-      return `${anchor.file} ${anchor.side} line ${anchor.line}`
-    case "range":
-      return `${anchor.file} ${anchor.side} lines ${anchor.start}-${anchor.end}`
-  }
-}
-
-function formatReviewComment(comment: AiReviewComment, index: number): string {
-  return [
-    `${index + 1}. [${comment.severity}/${comment.category}/${comment.confidence}] ${comment.title}`,
-    `   Anchor: ${reviewAnchorText(comment.anchor)}`,
-    `   Finding: ${comment.body}`,
-    comment.recommendation ? `   Recommendation: ${comment.recommendation}` : undefined,
-  ]
-    .filter((line): line is string => Boolean(line))
-    .join("\n")
-}
-
-function formatReviewStateForParent(review: AiReviewState): string {
-  const severityCounts = REVIEW_SEVERITIES.map(
-    (severity) =>
-      `${severity}: ${review.comments.filter((comment) => comment.severity === severity).length}`
-  ).join(", ")
-  return [
-    `Findings: ${review.comments.length} (${severityCounts})`,
-    review.summary ? `Review summary:\n${review.summary}` : undefined,
-    review.comments.length
-      ? `Review comments:\n${review.comments.map(formatReviewComment).join("\n\n")}`
-      : "Review comments:\n(none)",
-    review.error ? `Review error:\n${review.error}` : undefined,
-  ]
-    .filter((section): section is string => Boolean(section))
-    .join("\n\n")
-}
-
-function finishAnalysis(
-  pi: ExtensionAPI,
-  cwd: string,
-  session: ReviewSession,
-  kind: "summary" | "review",
-  error?: string
-): void {
-  updateAnalysisProgress(cwd, session.id, kind, (state) => {
-    state.status = error ? "error" : "done"
-    state.finishedAt = Date.now()
-    if (error) state.error = error
-  })
-
-  if (kind === "summary") {
-    const summary = readSummaryState(cwd, session.id)
-    pi.sendMessage({
-      customType: "diff-summary-complete",
-      display: true,
-      content: [
-        "AI diff summary completed.",
-        "",
-        sessionContextForParent(session),
-        "",
-        formatSummaryStateForParent(summary),
-      ].join("\n"),
-    })
-    return
-  }
-
-  const review = readReviewState(cwd, session.id)
-  pi.sendMessage({
-    customType: "diff-review-complete",
-    display: true,
-    content: [
-      "AI diff review completed.",
-      "",
-      sessionContextForParent(session),
-      "",
-      formatReviewStateForParent(review),
-    ].join("\n"),
-  })
-}
-
-function startAnalysisSubagent(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-  session: ReviewSession,
-  kind: "summary" | "review"
-): void {
-  const cwd = ctx.cwd
-  markAnalysisRunning(cwd, session.id, kind)
-  const prompt = kind === "summary" ? summaryPrompt(session) : reviewPrompt(session)
-  const taskPath = artifactPathFor(cwd, session.id, kind, "task.md")
-  const jsonlPath = artifactPathFor(cwd, session.id, kind, "jsonl")
-  const outputPath = artifactPathFor(cwd, session.id, kind, "output.md")
-  writeFileSync(taskPath, prompt, { encoding: "utf8", mode: 0o600 })
-  writeFileSync(jsonlPath, "", "utf8")
-  writeFileSync(outputPath, "", "utf8")
-
-  const args = [
-    "--mode",
-    "json",
-    "-p",
-    "--no-session",
-    "--no-extensions",
-    "--extension",
-    join(__dirname, "index.ts"),
-  ]
-  const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined
-  if (model) args.push("--model", model)
-  args.push(`@${taskPath}`)
-
-  const invocation = getPiInvocation(args)
-  const proc = spawn(invocation.command, invocation.args, {
-    cwd,
-    stdio: ["ignore", "pipe", "pipe"],
-  })
-  let stdoutBuffer = ""
-  let stderr = ""
-
-  const processLine = (line: string): void => {
-    if (!line.trim()) return
-    appendFileSync(jsonlPath, `${line}\n`, "utf8")
-    let event: { type?: string; toolName?: string; args?: unknown; message?: unknown }
-    try {
-      event = JSON.parse(line) as {
-        type?: string
-        toolName?: string
-        args?: unknown
-        message?: unknown
-      }
-    } catch {
-      return
-    }
-
-    if (event.type === "tool_execution_start" && event.toolName) {
-      updateAnalysisProgress(cwd, session.id, kind, (state) => {
-        state.currentTool = event.toolName
-        state.toolCount++
-      })
-    }
-
-    if (event.type === "tool_execution_end" && event.toolName) {
-      updateAnalysisProgress(cwd, session.id, kind, (state) => {
-        state.recentTools.push({
-          tool: event.toolName || "tool",
-          args: toolArgsPreview(event.args),
-          at: Date.now(),
-        })
-        state.recentTools = state.recentTools.slice(-10)
-        state.currentTool = undefined
-      })
-    }
-
-    if (event.type === "message_end" && event.message) {
-      const text = extractTextFromMessage(event.message).join("\n").trim()
-      if (text) {
-        appendFileSync(outputPath, `${text}\n\n`, "utf8")
-        updateAnalysisProgress(cwd, session.id, kind, (state) => {
-          state.recentOutput.push(...text.split("\n").filter(Boolean).slice(-5))
-          state.recentOutput = state.recentOutput.slice(-20)
-        })
-      }
-      const usage = (event.message as { role?: string; usage?: Record<string, unknown> }).usage
-      if ((event.message as { role?: string }).role === "assistant") {
-        updateAnalysisProgress(cwd, session.id, kind, (state) => {
-          state.usage.turns++
-          state.usage.input += typeof usage?.input === "number" ? usage.input : 0
-          state.usage.output += typeof usage?.output === "number" ? usage.output : 0
-          state.usage.cacheRead += typeof usage?.cacheRead === "number" ? usage.cacheRead : 0
-          state.usage.cacheWrite += typeof usage?.cacheWrite === "number" ? usage.cacheWrite : 0
-          const cost = usage?.cost as { total?: unknown } | undefined
-          state.usage.cost += typeof cost?.total === "number" ? cost.total : 0
-        })
-      }
-    }
-  }
-
-  proc.stdout.on("data", (chunk) => {
-    stdoutBuffer += chunk.toString()
-    const lines = stdoutBuffer.split("\n")
-    stdoutBuffer = lines.pop() ?? ""
-    for (const line of lines) processLine(line)
-  })
-  proc.stderr.on("data", (chunk) => {
-    stderr += chunk.toString()
-  })
-  proc.on("error", (error) => {
-    finishAnalysis(pi, cwd, session, kind, errorMessage(error))
-  })
-  proc.on("close", (code) => {
-    if (stdoutBuffer.trim()) processLine(stdoutBuffer)
-    const failed =
-      code !== 0 ? stderr.trim() || `${kind} subagent exited with code ${code}` : undefined
-    finishAnalysis(pi, cwd, session, kind, failed)
-  })
 }
 
 async function maybeStartAiAnalysis(
@@ -1444,19 +1166,15 @@ async function maybeStartAiAnalysis(
   ])
   if (!choice || choice === "Skip") return
 
-  pi.sendMessage({
-    customType: "diff-analysis-context",
-    display: false,
-    content: analysisContextMessage(session, choice),
-  })
-
   if (choice === "Summary + review" || choice === "Summary only") {
-    startAnalysisSubagent(pi, ctx, session, "summary")
+    markAnalysisRunning(ctx.cwd, session.id, "summary")
   }
   if (choice === "Summary + review" || choice === "Review only") {
-    startAnalysisSubagent(pi, ctx, session, "review")
+    markAnalysisRunning(ctx.cwd, session.id, "review")
   }
-  notify(ctx, `AI ${choice.toLowerCase()} started. Watch the diff UI for updates.`, "info")
+
+  pi.sendUserMessage(analysisOrchestrationPrompt(session, choice))
+  notify(ctx, `AI ${choice.toLowerCase()} queued through Herdr.`, "info")
 }
 
 // Prompt construction
