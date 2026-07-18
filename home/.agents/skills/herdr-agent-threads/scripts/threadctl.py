@@ -23,6 +23,15 @@ RESPONSE_PERFORMATIVES = frozenset(
     {"agree", "refuse", "inform", "failure", "not-understood"}
 )
 PERFORMATIVES = ["request", *sorted(RESPONSE_PERFORMATIVES), "cancel"]
+AGENTS = ["pi", "claude"]
+AGENT_MODELS = {
+    "pi": ["sol", "luna", "terra"],
+    "claude": ["fable", "opus", "sonnet"],
+}
+AGENT_THINKING = {
+    "pi": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+    "claude": ["low", "medium", "high", "xhigh", "max"],
+}
 SHELLS = {"zsh", "bash", "fish", "sh", "nu"}
 SHELL_SETTLE_SECONDS = 10.0
 
@@ -191,25 +200,57 @@ def foreground_non_shell(pane_id: str) -> list[str]:
     ]
 
 
-def ensure_idle_pi(pane: JsonObject, model: str | None, cwd: Path) -> JsonObject:
+def launch_command(agent: str, model: str | None, thinking: str | None) -> list[str]:
+    if model and model not in AGENT_MODELS[agent]:
+        raise ThreadControlError(
+            f"{agent} models are {', '.join(AGENT_MODELS[agent])}; got {model!r}"
+        )
+    if thinking and thinking not in AGENT_THINKING[agent]:
+        raise ThreadControlError(
+            f"{agent} thinking levels are {', '.join(AGENT_THINKING[agent])}; "
+            f"got {thinking!r}"
+        )
+    if agent == "pi":
+        command = ["pi"]
+        if model:
+            command.extend(["--model", f"openai-codex/gpt-5.6-{model}"])
+        if thinking:
+            command.extend(["--thinking", thinking])
+        return command
+    # Peers run unattended; auto mode avoids permission prompts nobody can answer.
+    command = ["claude", "--permission-mode", "auto"]
+    if model:
+        command.extend(["--model", model])
+    if thinking:
+        command.extend(["--effort", thinking])
+    return command
+
+
+def ensure_idle_agent(
+    pane: JsonObject,
+    agent_kind: str,
+    model: str | None,
+    thinking: str | None,
+    cwd: Path,
+) -> JsonObject:
     pane_id = string_field(pane, "pane_id")
     pane = get_pane(pane_id)
     agent = pane.get("agent")
     status = str(pane.get("agent_status", "unknown"))
-    if agent == "pi":
+    if agent == agent_kind:
         if status not in {"idle", "done"}:
             raise ThreadControlError(
                 f"Peer {pane_id} is {status}; refusing to overwrite active work"
             )
-        if model:
+        if model or thinking:
             raise ThreadControlError(
-                "--model applies only when launching a new Pi peer; "
-                f"pane {pane_id} already runs Pi"
+                "--model and --thinking apply only when launching a new peer; "
+                f"pane {pane_id} already runs {agent_kind}"
             )
         return pane
     if agent is not None:
         raise ThreadControlError(
-            f"Pane {pane_id} runs {agent}, not Pi; choose another name"
+            f"Pane {pane_id} runs {agent}, not {agent_kind}; choose another name"
         )
 
     # Shell startup helpers (e.g. path_helper) briefly hold the foreground in a
@@ -228,12 +269,31 @@ def ensure_idle_pi(pane: JsonObject, model: str | None, cwd: Path) -> JsonObject
 
     if Path(str(pane.get("foreground_cwd") or pane.get("cwd") or cwd)).resolve() != cwd:
         herdr("pane", "run", pane_id, f"cd {shlex.quote(str(cwd))}")
-    command = ["pi"]
-    if model:
-        command.extend(["--model", model])
-    herdr("pane", "run", pane_id, shlex.join(command))
-    herdr("wait", "agent-status", pane_id, "--status", "idle", "--timeout", "30000")
-    return get_pane(pane_id)
+    command = launch_command(agent_kind, model, thinking)
+    # Launch can fail transiently (e.g. the CLI self-updates and exits asking
+    # for a restart), so verify the agent is actually alive and retry once.
+    for _ in range(2):
+        herdr("pane", "run", pane_id, shlex.join(command))
+        try:
+            herdr(
+                "wait",
+                "agent-status",
+                pane_id,
+                "--status",
+                "idle",
+                "--timeout",
+                "30000",
+            )
+        except ThreadControlError:
+            pass
+        time.sleep(1.0)
+        pane = get_pane(pane_id)
+        if pane.get("agent") == agent_kind and foreground_non_shell(pane_id):
+            return pane
+    raise ThreadControlError(
+        f"Launched {agent_kind} in pane {pane_id} but it did not stay running; "
+        "read the pane to inspect its output"
+    )
 
 
 def read_text(args: argparse.Namespace, name: str) -> str:
@@ -287,9 +347,33 @@ def deliver(pane_id: str, message: str, *, queue: bool) -> None:
         )
     # `pane run` is for shell commands; agents need typed text plus an explicit
     # Enter, otherwise the message can sit unsubmitted in the input editor.
-    herdr("pane", "send-text", pane_id, message)
-    time.sleep(0.3)
-    herdr("pane", "send-keys", pane_id, "enter")
+    was_idle = status not in {"working", "blocked"}
+    for attempt in range(2):
+        herdr("pane", "send-text", pane_id, message)
+        time.sleep(0.5)
+        herdr("pane", "send-keys", pane_id, "enter")
+        if not was_idle:
+            return
+        # A just-launched TUI can swallow the text or the Enter entirely (startup
+        # screens, editor not attached yet). Verify the agent started working;
+        # re-press Enter, then retry the whole send once before giving up.
+        for _ in range(6):
+            time.sleep(1.0)
+            pane = get_pane(pane_id)
+            if not pane.get("agent") or not foreground_non_shell(pane_id):
+                raise ThreadControlError(
+                    f"Recipient agent in pane {pane_id} exited during delivery; "
+                    "the message was not received"
+                )
+            if str(pane.get("agent_status")) == "working":
+                return
+            herdr("pane", "send-keys", pane_id, "enter")
+        if attempt == 0:
+            time.sleep(2.0)
+    raise ThreadControlError(
+        f"Delivered text to pane {pane_id} but the agent never started processing; "
+        "read the pane to inspect its state"
+    )
 
 
 def new_conversation() -> str:
@@ -329,7 +413,7 @@ def command_start(args: argparse.Namespace) -> JsonObject:
         )
 
     pane = existing[0] if existing else create_peer_tab(name, cwd)
-    pane = ensure_idle_pi(pane, args.model, cwd)
+    pane = ensure_idle_agent(pane, args.agent, args.model, args.thinking, cwd)
     pane_id = string_field(pane, "pane_id")
     herdr("pane", "rename", pane_id, name)
 
@@ -347,6 +431,7 @@ def command_start(args: argparse.Namespace) -> JsonObject:
     return {
         "action": "started",
         "name": name,
+        "agent": args.agent,
         "pane_id": pane_id,
         "cwd": str(cwd),
         "sender": sender,
@@ -491,7 +576,22 @@ def parser() -> argparse.ArgumentParser:
     start.add_argument("--name", required=True, help="Task-based peer name")
     text_options(start, "task")
     start.add_argument("--cwd", help="Peer working directory (default: current)")
-    start.add_argument("--model", help="Pi model (only when launching a new Pi)")
+    start.add_argument(
+        "--agent",
+        choices=AGENTS,
+        default="pi",
+        help="Agent CLI to run in the peer pane (default: pi)",
+    )
+    start.add_argument(
+        "--model",
+        help="Model (pi: sol|luna|terra; claude: fable|opus|sonnet; "
+        "default: agent's default)",
+    )
+    start.add_argument(
+        "--thinking",
+        help="Thinking level (pi: off..max; claude: low..max; "
+        "default: agent's default)",
+    )
     start.set_defaults(handler=command_start)
 
     message = commands.add_parser("message", help="Format and route a peer message")

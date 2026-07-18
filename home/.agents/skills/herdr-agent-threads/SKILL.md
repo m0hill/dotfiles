@@ -5,14 +5,15 @@ description: Coordinate independent Pi peer threads in Herdr. Use when creating,
 
 # Herdr agent threads
 
-Each peer is an ordinary, independent interactive Pi session. All peers live in one dedicated `subagents` workspace, one tab per peer, managed entirely by the CLI — never choose or ask about panes, tabs, or workspaces. Any thread may start peers and message any peer; there is no hierarchy and no restrictions.
+Each peer is an ordinary, independent interactive agent session (Pi or Claude Code). All peers live in one dedicated `subagents` workspace, one tab per peer, managed entirely by the CLI — never choose or ask about panes, tabs, or workspaces. Any thread may start peers and message any peer, whatever agent either end runs; there is no hierarchy and no restrictions.
 
 Everything runs through the `threadctl` command. This file is its complete interface — never read its implementation or raw Herdr state. Every command prints JSON: `ok: true` with the fields shown, or `ok: false` with an `error` that says exactly what to fix.
 
 ## Command reference
 
 ```text
-start   --name NAME (--task TEXT | --task-file PATH) [--cwd DIR] [--model MODEL]
+start   --name NAME (--task TEXT | --task-file PATH) [--cwd DIR]
+        [--agent pi|claude] [--model MODEL] [--thinking LEVEL]
 message (request|agree|refuse|inform|failure|not-understood|cancel)
         --to PEER (--content TEXT | --content-file PATH)
         [--conversation ID] [--reply-to ID] [--queue]
@@ -28,11 +29,20 @@ focus   --peer PEER
 
 `start` always requires a task and delivers it immediately; a peer is never created idle. Put everything the peer needs in the task — context, constraints, expected output. The peer cannot see your conversation.
 
+Before starting a peer, confirm `--agent`, `--model`, and `--thinking` with the user through your question tool (offer the choices from the table below, recommending one). Skip the question only when the user already specified them or asked you to proceed without asking.
+
 ```bash
 threadctl start --name auth-review --task-file /tmp/task.md --cwd ~/projects/myapp
 ```
 
-`--cwd` sets the peer's working directory (default: yours). `--model` picks the Pi model when a new Pi is launched. Starting with the name of an existing *idle* peer reuses it (`"reused": true`); `start` refuses to interrupt a busy peer.
+`--cwd` sets the peer's working directory (default: yours). `--agent` picks which CLI the peer runs (default: `pi`). `--model` and `--thinking` set the model and thinking/effort level, per agent:
+
+| agent | `--model` | `--thinking` |
+|---|---|---|
+| pi | `sol` `luna` `terra` | `off` `minimal` `low` `medium` `high` `xhigh` `max` |
+| claude | `fable` `opus` `sonnet` | `low` `medium` `high` `xhigh` `max` |
+
+Omit either for the agent's defaults; both apply only when a new agent is launched. Starting with the name of an existing *idle* peer reuses it (`"reused": true`); `start` refuses to interrupt a busy peer.
 
 Success returns the pane ID and a `conversation_id` — quote that ID when discussing the exchange.
 
