@@ -91,6 +91,15 @@ return function(config)
 			secrets = {},
 		},
 		{
+			id = "paper",
+			name = "Paper",
+			description = "Run the local Paper maintenance script.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/paper/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
 			id = "gemini",
 			name = "Gemini OCR",
 			description = "Capture a region and extract text with Gemini.",
