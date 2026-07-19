@@ -4,3 +4,6 @@ mouse_capture = true
 agent_panel_scope = "all"
 [ui.toast.clipboard]
 enabled = false
+
+[experimental]
+kitty_graphics = true
