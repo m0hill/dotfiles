@@ -29,6 +29,8 @@ Minimal project config:
 
 Proxy mode is the default. Use `toolMode: "direct"` only when you intentionally want MCP server tools registered as first-class Pi tools.
 
+Servers connected explicitly with `/mcp-connect`, `mcp({ connect: "name" })`, `/mcp-reload`, or a successful `/mcp-auth` are remembered in `~/.pi/agent/mcp-connections.json` and reconnect automatically in future sessions. In lazy mode, unscoped tool search and resource discovery stay limited to these remembered servers instead of connecting every configured server. `/mcp-disconnect <name>` removes that saved preference. This works independently of `startup`: `"eager"`, which still connects every enabled server.
+
 ## Commands
 
 - `/mcp-list` shows configured servers and connection status.

@@ -4,6 +4,7 @@ import { Text } from "@earendil-works/pi-tui"
 import type { Tool } from "@modelcontextprotocol/sdk/types.js"
 import type { TSchema } from "typebox"
 import { Type } from "typebox"
+import { automaticConnectionServerNames } from "./automatic-connections.js"
 import {
   callMcpTool,
   formatResourceContent,
@@ -11,6 +12,7 @@ import {
   toolParameters,
 } from "./catalog.js"
 import { loadMcpConfig } from "./config.js"
+import { ConnectionStore } from "./connection-store.js"
 import { formatMcpServerTarget, redactSecrets } from "./display.js"
 import { handlePiElicitation } from "./elicitation.js"
 import { McpManager, type McpToolEntry } from "./manager.js"
@@ -90,6 +92,8 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   let latestContext: ExtensionContext | undefined
   let configGeneration = 0
   let backgroundConnectionRefresh: Promise<void> | undefined
+  let rememberedServerNames = new Set<string>()
+  const connectionStore = new ConnectionStore()
   const elicitationContexts = new AsyncLocalStorage<ExtensionContext | undefined>()
 
   async function ensureManager(ctx: ExtensionContext) {
@@ -120,11 +124,20 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     return { activeManager, generation }
   }
 
+  async function connectAutomaticServers(activeManager: McpManager, options: CancellableOptions) {
+    const serverNames = automaticConnectionServerNames(config, rememberedServerNames)
+    await Promise.all(
+      serverNames.map((name) =>
+        activeManager.connect(name, {
+          intent: "automatic",
+          signal: options.signal,
+        })
+      )
+    )
+  }
+
   async function connectConfiguredServers(activeManager: McpManager, generation: number) {
-    await activeManager.connectAll({
-      intent: "automatic",
-      signal: undefined,
-    })
+    await connectAutomaticServers(activeManager, { signal: undefined })
     if (manager !== activeManager || configGeneration !== generation) return
     registerDynamicTools()
   }
@@ -289,6 +302,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       intent: "explicit",
       signal: undefined,
     })
+    await rememberConnectedServer(server, status)
     registerDynamicTools()
     return proxyText(formatStatus(server, config.servers[server], status), {
       mode: "connect",
@@ -548,10 +562,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   }
 
   async function ensureProxyServersConnected(options: CancellableOptions) {
-    await requireManager().connectAll({
-      intent: "automatic",
-      signal: options.signal,
-    })
+    await connectAutomaticServers(requireManager(), options)
 
     registerDynamicTools()
     updateLatestMcpStatus()
@@ -704,9 +715,11 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     latestContext = ctx
     const loaded = await loadConfigured(ctx)
+    rememberedServerNames = new Set(await connectionStore.connectedServerNames(config))
     updateMcpStatus(ctx)
-    if (startupMode(config) === "eager")
+    if (automaticConnectionServerNames(config, rememberedServerNames).length > 0) {
       startBackgroundConnectionRefresh(ctx, loaded.activeManager, loaded.generation)
+    }
   })
 
   pi.on("session_shutdown", async () => {
@@ -731,10 +744,13 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     description: "Reload MCP config and reconnect servers",
     handler: async (_args, ctx) => {
       const loaded = await loadConfigured(ctx)
-      await loaded.activeManager.connectAll({
+      const statuses = await loaded.activeManager.connectAll({
         intent: "explicit",
         signal: undefined,
       })
+      await Promise.all(
+        Object.entries(statuses).map(([name, status]) => rememberConnectedServer(name, status))
+      )
       registerDynamicTools()
       updateMcpStatus(ctx)
       showCommandMessage(pi, "MCP Reloaded", await statusText(requireManager(), config))
@@ -755,6 +771,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         intent: "explicit",
         signal: undefined,
       })
+      await rememberConnectedServer(name, status)
       registerDynamicTools()
       updateMcpStatus(ctx)
       showCommandMessage(
@@ -776,6 +793,8 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       }
       await ensureManager(ctx)
       await requireManager().disconnect(name)
+      await connectionStore.forget(config, name)
+      rememberedServerNames.delete(name)
       registerDynamicTools()
       updateMcpStatus(ctx)
       showCommandMessage(pi, `MCP Disconnect: ${name}`, `Disconnected ${name}`)
@@ -800,6 +819,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       const status = await requireManager().authenticate(name, async (url) => {
         showCommandMessage(pi, "Open MCP OAuth URL", url)
       })
+      await rememberConnectedServer(name, status)
       registerDynamicTools()
       updateMcpStatus(ctx)
       showCommandMessage(pi, `MCP Auth: ${name}`, formatStatus(name, config.servers[name], status))
@@ -878,6 +898,12 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     },
   })
 
+  async function rememberConnectedServer(name: string, status: McpStatus) {
+    if (status.status !== "connected") return
+    await connectionStore.remember(config, name)
+    rememberedServerNames.add(name)
+  }
+
   function oauthServerNames() {
     return Object.entries(config.servers)
       .filter(([, server]) => server.type === "remote" && server.oauth !== false)
@@ -913,10 +939,6 @@ function useProxyTool(config: McpConfig) {
     config.toolMode === "proxy" ||
     (config.toolMode !== "direct" && Object.keys(config.servers).length > 0)
   )
-}
-
-function startupMode(config: McpConfig) {
-  return config.startup ?? "lazy"
 }
 
 function buildSearchPattern(
