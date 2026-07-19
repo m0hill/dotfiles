@@ -2,7 +2,7 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, color picking, port monitoring, speech, OCR, overlays, and Spotify controls:
+There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, color picking, port monitoring, local scripts, speech, OCR, overlays, and Spotify controls:
 
 - `packages/launcher/`
 - `packages/tiler/`
@@ -11,6 +11,7 @@ There is one local menubar controller and local modules for launcher, tiling, au
 - `packages/colorpicker/`
 - `packages/ports/`
 - `packages/codexgateway/`
+- `packages/paper/`
 - `packages/stt/`
 - `packages/gemini/`
 - `packages/lyrics/`
