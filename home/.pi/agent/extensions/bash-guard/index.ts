@@ -5,6 +5,7 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent"
+import type { BackgroundToolInput } from "../background-terminal/index.ts"
 import { runTrackedAgent } from "../shared/subagent"
 
 // Constants
@@ -302,9 +303,20 @@ export default function bashGuardExtension(pi: ExtensionAPI): void {
   })
 
   pi.on("tool_call", async (event, ctx) => {
-    if (!isToolCallEventType("bash", event)) return
+    let command: string
+    if (isToolCallEventType("bash", event)) {
+      command = event.input.command
+    } else if (
+      isToolCallEventType<"background", BackgroundToolInput>("background", event) &&
+      (event.input.action === "start" ||
+        (event.input.action === undefined && event.input.command !== undefined)) &&
+      event.input.command !== undefined
+    ) {
+      command = event.input.command
+    } else {
+      return
+    }
 
-    const command = event.input.command
     const matches = getSensitiveMatches(command)
     if (matches.length === 0) return
 
