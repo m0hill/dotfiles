@@ -18,7 +18,7 @@
       "CronList"
     ]
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus",
   "disableClaudeAiConnectors": true,
   "disableBundledSkills": true,
   "hooks": {
@@ -48,7 +48,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
