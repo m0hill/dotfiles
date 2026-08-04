@@ -1,6 +1,7 @@
 ---
 name: ui-design-guidelines
 description: Evidence-based UI design guidance. Use when designing, implementing, reviewing, or critiquing interface hierarchy, layout, spacing, typography, color, dark mode, elevation, icons, buttons, states, feedback, microinteractions, or image overlays.
+disable-model-invocation: true
 ---
 
 # UI Design Guidelines
