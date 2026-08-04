@@ -16,6 +16,7 @@ There is one local menubar controller and local modules for launcher, tiling, au
 - `packages/gemini/`
 - `packages/lyrics/`
 - `packages/spotifyvolume/`
+- `packages/nomusic/`
 
 No Spoon. No registry. No package versions.
 
@@ -153,6 +154,13 @@ The controller menu always shows all local modules.
 - leaves the real Mac volume up/down/mute keys alone
 - each press changes Spotify's `sound volume` by `5%`
 - requires Hammerspoon Accessibility permission and Spotify Automation permission
+
+### No Music
+
+- prevents Apple Music and legacy iTunes from launching
+- uses a small Swift `NSWorkspace` listener managed by Hammerspoon
+- builds its helper automatically on first start
+- can optionally open Spotify, another app, or a URL instead
 
 ## Notes
 

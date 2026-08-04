@@ -135,6 +135,15 @@ return function(config)
 			secrets = {},
 		},
 		{
+			id = "nomusic",
+			name = "No Music",
+			description = "Prevent Apple Music or iTunes from launching.",
+			defaultEnabled = true,
+			entryPath = PACKAGES_DIR .. "/nomusic/init.lua",
+			hotkeys = {},
+			secrets = {},
+		},
+		{
 			id = "nothingear",
 			name = "Nothing Ear",
 			description = "Control Nothing Ear ANC, EQ, bass, and battery over BLE.",
