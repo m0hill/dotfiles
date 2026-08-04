@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import Iterator, TypeAlias, cast
 
 JsonObject: TypeAlias = dict[str, object]
 
@@ -154,23 +157,44 @@ def peer_workspace_id() -> str | None:
     return string_field(matches[0], "workspace_id") if matches else None
 
 
+@contextmanager
+def workspace_creation_lock() -> Iterator[None]:
+    """Serialize creation of the shared workspace across threadctl processes."""
+    lock_path = Path(tempfile.gettempdir()) / f"threadctl-{os.getuid()}-workspace.lock"
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    with os.fdopen(descriptor, "r+") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+
 def create_peer_tab(name: str, cwd: Path) -> JsonObject:
-    """Create the peer's tab (and the workspace if needed); return its root pane."""
+    """Create the peer's tab, atomically creating its workspace if needed."""
     workspace_id = peer_workspace_id()
     if workspace_id is None:
-        created = herdr(
-            "workspace",
-            "create",
-            "--cwd",
-            str(cwd),
-            "--label",
-            WORKSPACE_LABEL,
-            "--no-focus",
-        )
-        herdr(
-            "tab", "rename", string_field(object_field(created, "tab"), "tab_id"), name
-        )
-        return object_field(created, "root_pane")
+        # Another parallel `start` may have observed the same absence. Re-check
+        # under an inter-process lock so exactly one caller creates the workspace.
+        with workspace_creation_lock():
+            workspace_id = peer_workspace_id()
+            if workspace_id is None:
+                created = herdr(
+                    "workspace",
+                    "create",
+                    "--cwd",
+                    str(cwd),
+                    "--label",
+                    WORKSPACE_LABEL,
+                    "--no-focus",
+                )
+                herdr(
+                    "tab",
+                    "rename",
+                    string_field(object_field(created, "tab"), "tab_id"),
+                    name,
+                )
+                return object_field(created, "root_pane")
     created = herdr(
         "tab",
         "create",

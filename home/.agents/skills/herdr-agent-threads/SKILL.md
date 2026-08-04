@@ -32,6 +32,8 @@ close   --peer PEER
 
 Before starting a peer, confirm `--agent`, `--model`, and `--thinking` with the user through your question tool (offer the choices from the table below, recommending one). Skip the question only when the user already specified them or asked you to proceed without asking.
 
+Independent `start` commands may run concurrently. `threadctl` atomically creates the shared `subagents` workspace when the first peers race to start, so do not serialize starts or create the workspace separately with raw `herdr` commands.
+
 ```bash
 threadctl start --name auth-review --task-file /tmp/task.md --cwd ~/projects/myapp
 ```
