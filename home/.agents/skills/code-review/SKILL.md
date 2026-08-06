@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Master code review for branches, PRs, and WIP diffs since a fixed point. Use when asked to review code, review since X, assess ship/no-ship risk, compare against a spec/PRD, or check repo standards.
+description: Master code review for branches, PRs, and WIP diffs since a fixed point. Use when asked to review code, review since X, assess ship/no-ship risk, compare against a spec, or check repo standards.
 ---
 
 # Master Code Review
@@ -9,7 +9,7 @@ Review the change as a skeptical ship/no-ship reviewer across three independent 
 
 1. **Adversarial Risk** — strongest grounded reasons the change should not ship yet.
 2. **Standards** — whether the diff follows documented repo standards plus the smell baseline below.
-3. **Spec** — whether the diff faithfully implements the originating issue, PRD, or spec.
+3. **Spec** — whether the diff faithfully implements the originating issue or spec.
 
 Default to skepticism. Do not give credit for intent, partial fixes, or likely follow-up work. Report only material, defensible findings.
 

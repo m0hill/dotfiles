@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Scaffold the per-repo configuration that the engineering skills assume:
 
-- **Issue tracker** — where issues live (Kaam-dō by default; repository GitHub Issues and local markdown are also supported)
+- **Issue tracker** — where issues live (local markdown under `.scratch/` by default; repository GitHub Issues are also supported)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
 
@@ -37,13 +37,12 @@ Lead each section with the recommended answer so the user can accept it in a wor
 
 **Section A — Issue tracker.**
 
-> Explainer: The "issue tracker" is where issues live for this repo. Skills like `to-tickets`, `triage`, `to-spec`, and `qa` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
+> Explainer: The "issue tracker" is where issues live for this repo. Skills like `to-tickets`, `triage`, and `to-spec` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
 
-Recommend **Kaam-dō** unless the user asks to keep planning in the repository or local workspace. Offer:
+Recommend **Local markdown**. Offer:
 
-- **Kaam-dō** — issues for all projects live in the private central `m0hill/kaam-do` tracker; code and PRs remain in this source repository.
-- **GitHub** — issues live in this repository's GitHub Issues (uses the `gh` CLI).
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repository.
+- **GitHub** — issues live in this repository's GitHub Issues (uses the `gh` CLI).
 
 Record the choice in `docs/agents/issue-tracker.md`. The GitHub template carries a "PRs as a request surface" flag, defaulted **off** — leave it off and don't raise it; a user who wants external PRs in the triage queue can flip the flag later.
 
@@ -103,9 +102,8 @@ Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.
 
 Write the selected tracker configuration to `docs/agents/issue-tracker.md`:
 
-- **Kaam-dō** — copy [issue-tracker-kaam-do.md](./issue-tracker-kaam-do.md) in full. Do not duplicate the tracker contract bundled with the `kaam-do` skill.
-- **GitHub** — copy [issue-tracker-github.md](./issue-tracker-github.md) in full and adapt only confirmed repository-specific values.
 - **Local markdown** — copy [issue-tracker-local.md](./issue-tracker-local.md) in full and adapt only confirmed repository-specific values.
+- **GitHub** — copy [issue-tracker-github.md](./issue-tracker-github.md) in full and adapt only confirmed repository-specific values.
 
 Use these remaining seed templates as starting points for their respective docs:
 
