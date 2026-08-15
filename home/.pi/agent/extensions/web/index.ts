@@ -4,6 +4,7 @@ import { Type, type Static } from "typebox"
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp"
 const DEFAULT_MAX_TOKENS = 5000
 const MAX_TEXT_CHARS = 50_000
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
 type HttpUrl = string & { readonly __brand: "HttpUrl" }
 type SearchMode = "code-context" | "web-search-fallback"
@@ -54,6 +55,51 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
+async function readResponseText(
+  response: Response,
+  maxBytes = MAX_RESPONSE_BYTES
+): Promise<string> {
+  const contentLength = response.headers.get("content-length")
+  if (contentLength) {
+    const declaredBytes = Number.parseInt(contentLength, 10)
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+      await response.body?.cancel().catch(() => undefined)
+      throw new Error(`Response too large (exceeds ${maxBytes} bytes)`)
+    }
+  }
+
+  if (!response.body) return ""
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+
+      totalBytes += value.byteLength
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new Error(`Response too large (exceeds ${maxBytes} bytes)`)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  const body = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(body)
+}
+
 async function callExaMcp(
   toolName: string,
   args: Record<string, unknown>,
@@ -74,12 +120,10 @@ async function callExaMcp(
     signal: withTimeout(signal, 60_000),
   })
 
+  const body = await readResponseText(response)
   if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Exa MCP error ${response.status}: ${text.slice(0, 500)}`)
+    throw new Error(`Exa MCP error ${response.status}: ${body.slice(0, 500)}`)
   }
-
-  const body = await response.text()
   const parsed = parseMcpResponse(body)
 
   if (parsed.error) {
@@ -228,7 +272,7 @@ async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
     signal: withTimeout(signal, 30_000),
   })
   const contentType = response.headers.get("content-type") ?? "unknown"
-  const body = await response.text()
+  const body = await readResponseText(response)
 
   if (!response.ok) {
     throw new Error(`Fetch failed ${response.status} ${response.statusText}: ${body.slice(0, 500)}`)
