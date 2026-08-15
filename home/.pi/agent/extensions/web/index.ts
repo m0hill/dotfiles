@@ -259,7 +259,7 @@ export default function (pi: ExtensionAPI) {
     parameters: webSearchSchema,
     async execute(_toolCallId: string, params: WebSearchParams, signal?: AbortSignal) {
       const query = params.query.trim()
-      if (!query) return toToolResult("Error: No query provided.")
+      if (!query) throw new Error("No query provided")
 
       try {
         const text = await callExaMcp(
@@ -274,9 +274,9 @@ export default function (pi: ExtensionAPI) {
           signal
         )
         return toToolResult(text, { query })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        return toToolResult(`Error: ${message}`, { query, error: message })
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        throw new Error(`Web search failed: ${message}`, { cause })
       }
     },
   })
@@ -290,7 +290,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId: string, params: CodeSearchParams, signal?: AbortSignal) {
       const query = params.query.trim()
       const maxTokens = clampInt(params.maxTokens, DEFAULT_MAX_TOKENS, 1000, 50_000)
-      if (!query) return toToolResult("Error: No query provided.")
+      if (!query) throw new Error("No query provided")
 
       try {
         const text = await callExaMcp(
@@ -300,12 +300,12 @@ export default function (pi: ExtensionAPI) {
         )
         const mode: SearchMode = "code-context"
         return toToolResult(trimApproxTokens(text, maxTokens), { query, maxTokens, mode })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
         const missingTool =
           message.toLowerCase().includes("tool") && message.toLowerCase().includes("not found")
         if (!missingTool) {
-          return toToolResult(`Error: ${message}`, { query, maxTokens, error: message })
+          throw new Error(`Code search failed: ${message}`, { cause })
         }
 
         try {
@@ -322,13 +322,11 @@ export default function (pi: ExtensionAPI) {
           )
           const mode: SearchMode = "web-search-fallback"
           return toToolResult(trimApproxTokens(text, maxTokens), { query, maxTokens, mode })
-        } catch (fallbackErr) {
+        } catch (fallbackCause) {
           const fallbackMessage =
-            fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-          return toToolResult(`Error: ${fallbackMessage}`, {
-            query,
-            maxTokens,
-            error: fallbackMessage,
+            fallbackCause instanceof Error ? fallbackCause.message : String(fallbackCause)
+          throw new Error(`Code search fallback failed: ${fallbackMessage}`, {
+            cause: fallbackCause,
           })
         }
       }
@@ -347,9 +345,9 @@ export default function (pi: ExtensionAPI) {
         const url = parseHttpUrl(params.url.trim())
         const text = await fetchUrl(url, signal)
         return toToolResult(text, { url })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        return toToolResult(`Error: ${message}`, { url: params.url, error: message })
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        throw new Error(`Fetch URL failed: ${message}`, { cause })
       }
     },
   })
