@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises"
+import { isIP } from "node:net"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 
@@ -5,6 +7,7 @@ const EXA_MCP_URL = "https://mcp.exa.ai/mcp"
 const DEFAULT_MAX_TOKENS = 5000
 const MAX_TEXT_CHARS = 50_000
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+const MAX_REDIRECTS = 5
 
 type HttpUrl = string & { readonly __brand: "HttpUrl" }
 type SearchMode = "code-context" | "web-search-fallback"
@@ -242,7 +245,112 @@ function parseHttpUrl(input: string): HttpUrl {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Only http:// and https:// URLs are supported")
   }
+  if (parsed.username || parsed.password) {
+    throw new Error("URL credentials are not supported")
+  }
   return parsed.toString() as HttpUrl
+}
+
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.replace(/^\[/, "").replace(/\]$/, "")
+}
+
+function parseIpv6Hex16(segment: string | undefined): number | undefined {
+  if (!segment || !/^[0-9a-f]{1,4}$/i.test(segment)) return undefined
+  const value = Number.parseInt(segment, 16)
+  return Number.isFinite(value) ? value : undefined
+}
+
+function parseEmbeddedIpv4(ip: string): string | undefined {
+  const prefix = ip.startsWith("::ffff:") ? "::ffff:" : ip.startsWith("::") ? "::" : undefined
+  if (!prefix) return undefined
+
+  const suffix = ip.slice(prefix.length)
+  if (isIP(suffix) === 4) return suffix
+
+  const segments = suffix.split(":")
+  if (segments.length !== 2) return undefined
+  const high = parseIpv6Hex16(segments[0])
+  const low = parseIpv6Hex16(segments[1])
+  if (high === undefined || low === undefined) return undefined
+  return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`
+}
+
+function isPrivateOrLocalIp(input: string): boolean {
+  const ip = stripIpv6Brackets(input).toLowerCase()
+  const embeddedIpv4 = parseEmbeddedIpv4(ip)
+  if (embeddedIpv4) return isPrivateOrLocalIp(embeddedIpv4)
+
+  const version = isIP(ip)
+  if (version === 4) {
+    const [first = -1, second = -1] = ip.split(".").map(Number)
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    )
+  }
+  if (version === 6) {
+    return ip === "::" || ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || /^fe[89ab]/.test(ip)
+  }
+  return false
+}
+
+async function assertPublicUrl(url: URL): Promise<void> {
+  const hostname = stripIpv6Brackets(url.hostname).toLowerCase()
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new Error("Blocked private or local host")
+  }
+  if (isPrivateOrLocalIp(hostname)) {
+    throw new Error("Blocked private or local IP address")
+  }
+  if (isIP(hostname)) return
+
+  let addresses: Array<{ address: string }>
+  try {
+    addresses = await lookup(hostname, { all: true, verbatim: true })
+  } catch (cause) {
+    throw new Error(`Could not resolve host: ${hostname}`, { cause })
+  }
+  if (addresses.some(({ address }) => isPrivateOrLocalIp(address))) {
+    throw new Error("Blocked private or local IP address")
+  }
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308
+}
+
+async function fetchPublicUrl(
+  initialUrl: HttpUrl,
+  signal?: AbortSignal
+): Promise<{ response: Response; finalUrl: HttpUrl }> {
+  let currentUrl = initialUrl
+  const operationSignal = withTimeout(signal, 30_000)
+
+  for (let redirects = 0; ; redirects += 1) {
+    const parsed = new URL(currentUrl)
+    await assertPublicUrl(parsed)
+
+    const response = await fetch(currentUrl, {
+      redirect: "manual",
+      headers: { "User-Agent": "pi-web-extension/1.0" },
+      signal: operationSignal,
+    })
+    if (!isRedirectStatus(response.status)) {
+      return { response, finalUrl: currentUrl }
+    }
+
+    await response.body?.cancel().catch(() => undefined)
+    const location = response.headers.get("location")
+    if (!location) throw new Error("Redirect response was missing a Location header")
+    if (redirects >= MAX_REDIRECTS) throw new Error(`Too many redirects (maximum ${MAX_REDIRECTS})`)
+    currentUrl = parseHttpUrl(new URL(location, currentUrl).toString())
+  }
 }
 
 function htmlToText(html: string): { title?: string; text: string } {
@@ -266,11 +374,7 @@ function htmlToText(html: string): { title?: string; text: string } {
 }
 
 async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
-  const response = await fetch(url, {
-    redirect: "follow",
-    headers: { "User-Agent": "pi-web-extension/1.0" },
-    signal: withTimeout(signal, 30_000),
-  })
+  const { response, finalUrl } = await fetchPublicUrl(url, signal)
   const contentType = response.headers.get("content-type") ?? "unknown"
   const body = await readResponseText(response)
 
@@ -279,7 +383,7 @@ async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
   }
 
   const header = [
-    `URL: ${response.url}`,
+    `URL: ${finalUrl}`,
     `Status: ${response.status}`,
     `Content-Type: ${contentType}`,
   ]
