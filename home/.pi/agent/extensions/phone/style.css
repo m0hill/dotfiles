@@ -336,10 +336,6 @@ button.primary:hover {
   line-height: 1.55;
 }
 
-.shj-syn-cmnt {
-  color: var(--fg-muted);
-}
-
 .markdown table {
   width: 100%;
   border-collapse: collapse;
@@ -357,24 +353,6 @@ button.primary:hover {
   border: 1px solid var(--border);
   padding: 7px 9px;
   text-align: left;
-}
-
-#jump-latest {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--composer-h) + 34px + env(safe-area-inset-bottom));
-  z-index: 101;
-  border-radius: 999px;
-  padding: 9px 14px;
-  background: rgb(229 229 229 / 0.94);
-  color: var(--accent-fg);
-  border-color: rgb(255 255 255 / 0.32);
-  box-shadow: var(--shadow);
-  transform: translateX(-50%);
-}
-
-#jump-latest[hidden] {
-  display: none;
 }
 
 #composer {
@@ -429,6 +407,7 @@ textarea {
   line-height: 1.45;
   outline: none;
   overflow-y: auto;
+  field-sizing: content;
 }
 
 textarea::placeholder {
@@ -468,18 +447,6 @@ textarea::placeholder {
   min-height: 42px;
   margin: 0;
   border-radius: 999px;
-}
-
-#composer.multiline textarea {
-  grid-column: 1 / -1;
-}
-
-#composer.multiline #mic {
-  grid-column: 2;
-}
-
-#composer.multiline #send {
-  grid-column: 3;
 }
 
 #mic {
@@ -605,10 +572,6 @@ textarea::placeholder {
     width: 100%;
     margin-left: 0;
     margin-right: auto;
-  }
-
-  #jump-latest {
-    bottom: calc(var(--composer-h) + 24px + env(safe-area-inset-bottom));
   }
 
   #composer {

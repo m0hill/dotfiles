@@ -16,11 +16,21 @@ import type {
 } from "@earendil-works/pi-coding-agent"
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai"
 import MarkdownIt from "markdown-it"
-import { event, js, mod, post, read, reply, state, unsafeHtml } from "datastar-kit"
+import {
+  event,
+  js,
+  mod,
+  post,
+  read,
+  reply,
+  state,
+  unsafeHtml,
+  type SignalState,
+} from "datastar-kit"
 import { bodyLimit } from "hono/body-limit"
 import { Hono } from "hono/tiny"
-import { Type, type Static } from "typebox"
-import { Value } from "typebox/value"
+import { Type, type Static, type TSchema } from "typebox"
+import { ParseError, Value } from "typebox/value"
 
 const DATASTAR_RUNTIME =
   "https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"
@@ -63,21 +73,23 @@ type FeedbackSession = {
   readonly id: string
   readonly title: string
   readonly source: string
-  readonly document: string
   readonly rendered: RenderedMarkdown
   annotations: Annotation[]
 }
 
-const feedbackInputSchema = Type.Object({
+const newAnnotationSchema = Type.Object({
   quote: Type.String(),
   comment: Type.String(),
-  globalComment: Type.String(),
-  editingComment: Type.String(),
-  selectionStart: Type.Integer(),
-  selectionEnd: Type.Integer(),
+  selectionStart: Type.Integer({ minimum: 0 }),
+  selectionEnd: Type.Integer({ minimum: 1 }),
 })
 
-type ParsedForm = Static<typeof feedbackInputSchema>
+const annotationCommentSchema = Type.Object({ editingComment: Type.String() })
+const submitFeedbackSchema = Type.Object({ globalComment: Type.String() })
+
+type NewAnnotation = Static<typeof newAnnotationSchema>
+type AnnotationComment = Static<typeof annotationCommentSchema>
+type SubmitFeedback = Static<typeof submitFeedbackSchema>
 
 type ParseResult<T> =
   | { readonly _tag: "ok"; readonly value: T }
@@ -113,20 +125,53 @@ function lastAssistantText(ctx: ExtensionContext): string | undefined {
   return undefined
 }
 
-function parseForm(input: unknown): ParseResult<ParsedForm> {
-  if (!Value.Check(feedbackInputSchema, input)) {
-    return { _tag: "error", message: "Invalid feedback form." }
+function parseSignals<const Schema extends TSchema>(
+  schema: Schema,
+  input: SignalState
+): ParseResult<Static<Schema>> {
+  try {
+    return { _tag: "ok", value: Value.Parse(schema, input) }
+  } catch (error) {
+    if (error instanceof ParseError) {
+      return { _tag: "error", message: "Invalid feedback form." }
+    }
+    throw error
   }
-  return {
-    _tag: "ok",
-    value: {
-      ...input,
-      quote: input.quote.trim(),
-      comment: input.comment.trim(),
-      globalComment: input.globalComment.trim(),
-      editingComment: input.editingComment.trim(),
-    },
+}
+
+function parseNewAnnotation(input: SignalState): ParseResult<NewAnnotation> {
+  const parsed = parseSignals(newAnnotationSchema, input)
+  if (parsed._tag === "error") return parsed
+
+  const value = {
+    ...parsed.value,
+    quote: parsed.value.quote.trim(),
+    comment: parsed.value.comment.trim(),
   }
+  if (!value.quote || !value.comment) {
+    return { _tag: "error", message: "Select text and add a comment." }
+  }
+  if (value.selectionEnd <= value.selectionStart) {
+    return { _tag: "error", message: "Select document text again." }
+  }
+  return { _tag: "ok", value }
+}
+
+function parseAnnotationComment(input: SignalState): ParseResult<AnnotationComment> {
+  const parsed = parseSignals(annotationCommentSchema, input)
+  if (parsed._tag === "error") return parsed
+
+  const editingComment = parsed.value.editingComment.trim()
+  return editingComment
+    ? { _tag: "ok", value: { editingComment } }
+    : { _tag: "error", message: "Add an annotation comment." }
+}
+
+function parseSubmitFeedback(input: SignalState): ParseResult<SubmitFeedback> {
+  const parsed = parseSignals(submitFeedbackSchema, input)
+  return parsed._tag === "error"
+    ? parsed
+    : { _tag: "ok", value: { globalComment: parsed.value.globalComment.trim() } }
 }
 
 function slugifyHeading(label: string, seen: Map<string, number>): string {
@@ -170,7 +215,6 @@ function createFeedbackSession(title: string, source: string, document: string):
     id: randomUUID(),
     title,
     source,
-    document,
     rendered: renderMarkdown(document),
     annotations: [],
   }
@@ -471,18 +515,9 @@ function createFeedbackApp(pi: ExtensionAPI) {
     const session = sessions.get(context.req.param("sessionId"))
     if (session === undefined) return context.text("Not Found", 404)
 
-    const parsed = parseForm(await read.signals(context.req.raw))
+    const parsed = parseNewAnnotation(await read.signals(context.req.raw))
     if (parsed._tag === "error") {
       return reply.signals(feedbackForm.patch({ error: parsed.message }))
-    }
-    if (!parsed.value.quote || !parsed.value.comment) {
-      return reply.signals(feedbackForm.patch({ error: "Select text and add a comment." }))
-    }
-    if (
-      parsed.value.selectionStart < 0 ||
-      parsed.value.selectionEnd <= parsed.value.selectionStart
-    ) {
-      return reply.signals(feedbackForm.patch({ error: "Select document text again." }))
     }
     session.annotations.push({
       id: randomUUID(),
@@ -513,12 +548,9 @@ function createFeedbackApp(pi: ExtensionAPI) {
     const session = sessions.get(context.req.param("sessionId"))
     if (session === undefined) return context.text("Not Found", 404)
 
-    const parsed = parseForm(await read.signals(context.req.raw))
+    const parsed = parseAnnotationComment(await read.signals(context.req.raw))
     if (parsed._tag === "error") {
       return reply.signals(feedbackForm.patch({ error: parsed.message }))
-    }
-    if (!parsed.value.editingComment) {
-      return reply.signals(feedbackForm.patch({ error: "Add an annotation comment." }))
     }
     const annotationIndex = session.annotations.findIndex(
       (annotation) => annotation.id === context.req.param("annotationId")
@@ -560,7 +592,7 @@ function createFeedbackApp(pi: ExtensionAPI) {
     const session = sessions.get(context.req.param("sessionId"))
     if (session === undefined) return context.text("Not Found", 404)
 
-    const parsed = parseForm(await read.signals(context.req.raw))
+    const parsed = parseSubmitFeedback(await read.signals(context.req.raw))
     if (parsed._tag === "error") {
       return reply.signals(feedbackForm.patch({ error: parsed.message }))
     }
@@ -595,7 +627,7 @@ function createFeedbackApp(pi: ExtensionAPI) {
     const session = sessions.get(context.req.param("sessionId"))
     if (session === undefined) return context.text("Not Found", 404)
 
-    const parsed = parseForm(await read.signals(context.req.raw))
+    const parsed = parseSubmitFeedback(await read.signals(context.req.raw))
     if (parsed._tag === "error") {
       return reply.signals(feedbackForm.patch({ error: parsed.message }))
     }
@@ -616,10 +648,6 @@ function createFeedbackApp(pi: ExtensionAPI) {
   })
 
   return app
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function startServer(pi: ExtensionAPI): Promise<number> {
@@ -681,30 +709,27 @@ async function openLastFeedback(pi: ExtensionAPI, ctx: ExtensionContext): Promis
   await openFeedback(pi, ctx, "Last response", "the previous assistant response", document)
 }
 
+async function reportOpenFailure(ctx: ExtensionContext, open: () => Promise<void>): Promise<void> {
+  try {
+    await open()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    ctx.ui.notify(`Could not open feedback: ${message}`, "error")
+  }
+}
+
 /** Registers the server-driven browser feedback commands and shortcut. */
 export default function feedback(pi: ExtensionAPI): void {
   pi.on("session_shutdown", stopServer)
 
   pi.registerShortcut("ctrl+alt+f", {
     description: "Annotate the last assistant response in the browser",
-    handler: async (ctx) => {
-      try {
-        await openLastFeedback(pi, ctx)
-      } catch (error) {
-        ctx.ui.notify(`Could not open feedback: ${errorMessage(error)}`, "error")
-      }
-    },
+    handler: (ctx) => reportOpenFailure(ctx, () => openLastFeedback(pi, ctx)),
   })
 
   pi.registerCommand("feedback-last", {
     description: "Annotate the last assistant response in the browser",
-    handler: async (_args, ctx) => {
-      try {
-        await openLastFeedback(pi, ctx)
-      } catch (error) {
-        ctx.ui.notify(`Could not open feedback: ${errorMessage(error)}`, "error")
-      }
-    },
+    handler: (_args, ctx) => reportOpenFailure(ctx, () => openLastFeedback(pi, ctx)),
   })
 
   pi.registerCommand("feedback-file", {
@@ -716,12 +741,10 @@ export default function feedback(pi: ExtensionAPI): void {
         ctx.ui.notify("Add a file path and submit again.", "info")
         return
       }
-      try {
+      await reportOpenFailure(ctx, async () => {
         const path = resolve(ctx.cwd, input)
         await openFeedback(pi, ctx, basename(path), `file ${path}`, readFileSync(path, "utf8"))
-      } catch (error) {
-        ctx.ui.notify(`Could not open feedback: ${errorMessage(error)}`, "error")
-      }
+      })
     },
   })
 }
