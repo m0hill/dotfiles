@@ -120,9 +120,9 @@ function buildApprovalPrompt(command: string, matches: SensitiveMatch[]): string
   return [command, "", reasons].join("\n")
 }
 
-function conversationalApprovalReason(command: string, askWhy: boolean): string {
+export function conversationalApprovalReason(command: string, askWhy: boolean): string {
   const instruction = askWhy
-    ? "Briefly explain why this command is needed, then wait for the user to approve or reject it."
+    ? "Briefly explain why this command is needed, then retry the exact same tool call so the approval dialog is shown again. Do not ask the user to approve in chat."
     : "Ask the user whether to run it, then wait for approval."
   return [`Sensitive command requires approval: ${command}`, instruction].join("\n")
 }
