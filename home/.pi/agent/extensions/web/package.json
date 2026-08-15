@@ -1,0 +1,18 @@
+{
+  "name": "mohil-pi-web",
+  "private": true,
+  "description": "Web search, code search, and public URL fetching tools for Pi.",
+  "type": "module",
+  "dependencies": {
+    "html-to-text": "9.0.5",
+    "linkedom": "0.18.12",
+    "turndown": "7.2.0",
+    "turndown-plugin-gfm": "1.0.2"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "packageManager": "pnpm@10.33.4"
+}

@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises"
 import { isIP } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { StringEnum } from "@earendil-works/pi-ai"
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -10,6 +11,10 @@ import {
   truncateHead,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent"
+import { convert as convertHtmlToText } from "html-to-text"
+import { parseHTML } from "linkedom"
+import TurndownService from "turndown"
+import { gfm } from "turndown-plugin-gfm"
 import { Type, type Static } from "typebox"
 
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp"
@@ -20,6 +25,15 @@ const MAX_REDIRECTS = 5
 type HttpUrl = string & { readonly __brand: "HttpUrl" }
 type SearchMode = "code-context" | "web-search-fallback"
 type WebOperation = "web-search" | "code-search" | "fetch-url"
+type FetchFormat = "markdown" | "text" | "html"
+
+interface StructuredSearchResult {
+  title: string
+  url: string
+  snippet?: string
+  publishedAt?: string
+  source?: string
+}
 
 const recencyFilterSchema = Type.Union([
   Type.Literal("day"),
@@ -45,6 +59,11 @@ const codeSearchSchema = Type.Object({
 
 const fetchUrlSchema = Type.Object({
   url: Type.String({ description: "HTTP/HTTPS URL to fetch" }),
+  format: Type.Optional(
+    StringEnum(["markdown", "text", "html"] as const, {
+      description: "Output format for HTML pages. Defaults to markdown.",
+    })
+  ),
 })
 
 type WebSearchParams = Static<typeof webSearchSchema>
@@ -220,15 +239,59 @@ function maxTokensToResultCount(maxTokens: number): number {
   return Math.min(20, Math.max(5, Math.ceil(maxTokens / 1000)))
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x2F;/g, "/")
+function parseStructuredSearchResults(text: string): StructuredSearchResult[] {
+  const sections = text.replace(/\r\n/g, "\n").split(/\n(?=Title: )/)
+  const results: StructuredSearchResult[] = []
+
+  for (const section of sections) {
+    const lines = section.split("\n")
+    let title = ""
+    let url: HttpUrl | undefined
+    let publishedAt: string | undefined
+    let source: string | undefined
+    const snippetLines: string[] = []
+    let readingSnippet = false
+
+    for (const line of lines) {
+      if (!readingSnippet && line.startsWith("Title: ")) {
+        title = line.slice("Title: ".length).trim()
+      } else if (!readingSnippet && line.startsWith("URL: ")) {
+        try {
+          url = parseHttpUrl(line.slice("URL: ".length).trim())
+        } catch {}
+      } else if (!readingSnippet && line.startsWith("Published Date: ")) {
+        publishedAt = line.slice("Published Date: ".length).trim() || undefined
+      } else if (!readingSnippet && line.startsWith("Published: ")) {
+        publishedAt = line.slice("Published: ".length).trim() || undefined
+      } else if (!readingSnippet && line.startsWith("Source: ")) {
+        source = line.slice("Source: ".length).trim() || undefined
+      } else if (!readingSnippet && line.startsWith("Author: ")) {
+        source ??= line.slice("Author: ".length).trim() || undefined
+      } else if (
+        !readingSnippet &&
+        (line.startsWith("Text:") || line.startsWith("Highlights:"))
+      ) {
+        readingSnippet = true
+        snippetLines.push(line.slice(line.indexOf(":") + 1).trim())
+      } else if (readingSnippet && !/^\s*---+\s*$/.test(line)) {
+        snippetLines.push(line)
+      }
+    }
+
+    if (!url) continue
+    const fullSnippet = snippetLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+    const snippet =
+      fullSnippet.length > 1000 ? `${fullSnippet.slice(0, 997).trimEnd()}...` : fullSnippet
+    results.push({
+      title: title || url,
+      url,
+      ...(snippet ? { snippet } : {}),
+      ...(publishedAt ? { publishedAt } : {}),
+      ...(source ? { source } : {}),
+    })
+  }
+
+  return results
 }
 
 async function toToolResult(
@@ -381,27 +444,82 @@ async function fetchPublicUrl(
   }
 }
 
-function htmlToText(html: string): { title?: string; text: string } {
-  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
-  const text = decodeHtmlEntities(
-    html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<\/(p|div|section|article|header|footer|main|li|h[1-6]|br|tr)>/gi, "\n")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/[ \t\f\v]+/g, " ")
-      .replace(/\n\s+/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  )
-  return {
-    title: title ? decodeHtmlEntities(title.replace(/<[^>]+>/g, "").trim()) : undefined,
-    text,
-  }
+const turndown = new TurndownService({
+  headingStyle: "atx",
+  bulletListMarker: "-",
+  codeBlockStyle: "fenced",
+})
+turndown.use(gfm)
+
+function resolveHtmlUrl(value: string, baseUrl: HttpUrl, allowMailto: boolean): string | undefined {
+  try {
+    const resolved = new URL(value, baseUrl)
+    if (resolved.protocol === "http:" || resolved.protocol === "https:") return resolved.toString()
+    if (allowMailto && resolved.protocol === "mailto:") return resolved.toString()
+  } catch {}
+  return undefined
 }
 
-async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
+function extractReadableHtml(html: string, baseUrl: HttpUrl): { title?: string; html: string } {
+  const { document } = parseHTML(html)
+  const title = document.querySelector("title")?.textContent?.trim() || undefined
+  const root =
+    document.querySelector("article") ??
+    document.querySelector("main") ??
+    document.querySelector("[role='main']") ??
+    document.body ??
+    document.documentElement
+
+  for (const element of root.querySelectorAll(
+    "script, style, noscript, template, nav, header, footer, aside, form, iframe, canvas, svg"
+  )) {
+    element.remove()
+  }
+  for (const element of root.querySelectorAll("[href]")) {
+    const href = element.getAttribute("href")
+    if (!href) continue
+    const resolved = resolveHtmlUrl(href, baseUrl, true)
+    if (resolved) element.setAttribute("href", resolved)
+    else element.removeAttribute("href")
+  }
+  for (const element of root.querySelectorAll("[src]")) {
+    const src = element.getAttribute("src")
+    if (!src) continue
+    const resolved = resolveHtmlUrl(src, baseUrl, false)
+    if (resolved) element.setAttribute("src", resolved)
+    else element.removeAttribute("src")
+  }
+
+  return { ...(title ? { title } : {}), html: root.innerHTML }
+}
+
+function renderHtml(html: string, baseUrl: HttpUrl, format: FetchFormat) {
+  const readable = extractReadableHtml(html, baseUrl)
+  if (format === "html") return { title: readable.title, content: html }
+  if (format === "text") {
+    return {
+      title: readable.title,
+      content: convertHtmlToText(readable.html, {
+        wordwrap: false,
+        selectors: [
+          { selector: "h1", options: { uppercase: false } },
+          { selector: "h2", options: { uppercase: false } },
+          { selector: "h3", options: { uppercase: false } },
+          { selector: "h4", options: { uppercase: false } },
+          { selector: "h5", options: { uppercase: false } },
+          { selector: "h6", options: { uppercase: false } },
+        ],
+      }).trim(),
+    }
+  }
+  return { title: readable.title, content: turndown.turndown(readable.html).trim() }
+}
+
+async function fetchUrl(
+  url: HttpUrl,
+  format: FetchFormat,
+  signal?: AbortSignal
+): Promise<{ output: string; details: Record<string, unknown> }> {
   const { response, finalUrl } = await fetchPublicUrl(url, signal)
   const contentType = response.headers.get("content-type") ?? "unknown"
   const body = await readResponseText(response)
@@ -415,14 +533,26 @@ async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
     `Status: ${response.status}`,
     `Content-Type: ${contentType}`,
   ]
-
+  let content = body
+  let title: string | undefined
   if (contentType.toLowerCase().includes("html")) {
-    const { title, text } = htmlToText(body)
+    const rendered = renderHtml(body, finalUrl, format)
+    content = rendered.content
+    title = rendered.title
     if (title) header.push(`Title: ${title}`)
-    return `${header.join("\n")}\n\n${text}`
   }
 
-  return `${header.join("\n")}\n\n${body}`
+  return {
+    output: `${header.join("\n")}\n\n${content}`,
+    details: {
+      url,
+      finalUrl,
+      status: response.status,
+      contentType,
+      format,
+      ...(title ? { title } : {}),
+    },
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -462,7 +592,12 @@ export default function (pi: ExtensionAPI) {
           },
           signal
         )
-        return toToolResult(text, "web-search", { query })
+        const results = parseStructuredSearchResults(text)
+        return toToolResult(text, "web-search", {
+          query,
+          resultCount: results.length,
+          results,
+        })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         throw new Error(`Web search failed: ${message}`, { cause })
@@ -528,7 +663,14 @@ export default function (pi: ExtensionAPI) {
             signal
           )
           const mode: SearchMode = "web-search-fallback"
-          return toToolResult(text, "code-search", { query, maxTokens, mode })
+          const results = parseStructuredSearchResults(text)
+          return toToolResult(text, "code-search", {
+            query,
+            maxTokens,
+            mode,
+            resultCount: results.length,
+            results,
+          })
         } catch (fallbackCause) {
           const fallbackMessage =
             fallbackCause instanceof Error ? fallbackCause.message : String(fallbackCause)
@@ -544,11 +686,12 @@ export default function (pi: ExtensionAPI) {
     name: "fetch_url",
     label: "Fetch URL",
     description:
-      "Fetch a normal HTTP/HTTPS URL and return text. HTML is lightly cleaned without external dependencies. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
-    promptSnippet: "Fetch a URL and return text or lightly cleaned HTML content.",
+      "Fetch a normal HTTP/HTTPS URL as readable markdown, plain text, or raw HTML. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
+    promptSnippet: "Fetch a URL as readable markdown, plain text, or raw HTML.",
     promptGuidelines: [
       "Use fetch_url when the user provides a known URL or after web_search identifies a page to inspect.",
       "Use web_search before fetch_url when the right URL is not yet known.",
+      "Prefer fetch_url format=markdown unless the user explicitly needs plain text or raw HTML.",
     ],
     parameters: fetchUrlSchema,
     async execute(
@@ -559,12 +702,13 @@ export default function (pi: ExtensionAPI) {
     ) {
       try {
         const url = parseHttpUrl(params.url.trim())
+        const format = params.format ?? "markdown"
         onUpdate?.({
-          content: [{ type: "text", text: `Fetching: ${url}` }],
+          content: [{ type: "text", text: `Fetching ${format}: ${url}` }],
           details: undefined,
         })
-        const text = await fetchUrl(url, signal)
-        return toToolResult(text, "fetch-url", { url })
+        const result = await fetchUrl(url, format, signal)
+        return toToolResult(result.output, "fetch-url", result.details)
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         throw new Error(`Fetch URL failed: ${message}`, { cause })
