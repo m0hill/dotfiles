@@ -1,16 +1,25 @@
 import { lookup } from "node:dns/promises"
+import { mkdtemp, writeFile } from "node:fs/promises"
 import { isIP } from "node:net"
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  truncateHead,
+  type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent"
 import { Type, type Static } from "typebox"
 
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp"
 const DEFAULT_MAX_TOKENS = 5000
-const MAX_TEXT_CHARS = 50_000
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 const MAX_REDIRECTS = 5
 
 type HttpUrl = string & { readonly __brand: "HttpUrl" }
 type SearchMode = "code-context" | "web-search-fallback"
+type WebOperation = "web-search" | "code-search" | "fetch-url"
 
 const recencyFilterSchema = Type.Union([
   Type.Literal("day"),
@@ -196,15 +205,6 @@ function clampInt(value: unknown, fallback: number, min: number, max: number): n
   return Math.min(max, Math.max(min, Math.floor(value)))
 }
 
-function trimChars(text: string, maxChars = MAX_TEXT_CHARS): string {
-  if (text.length <= maxChars) return text
-  return `${text.slice(0, maxChars).trimEnd()}\n\n[Truncated to ${maxChars} characters.]`
-}
-
-function trimApproxTokens(text: string, maxTokens: number): string {
-  return trimChars(text, Math.max(1000, maxTokens * 4))
-}
-
 function buildCodeFallbackQuery(query: string): string {
   const normalized = query.toLowerCase()
   const hasCodeTerms =
@@ -231,8 +231,36 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#x2F;/g, "/")
 }
 
-function toToolResult(text: string, details?: Record<string, unknown>) {
-  return { content: [{ type: "text" as const, text }], details }
+async function toToolResult(
+  text: string,
+  operation: WebOperation,
+  details?: Record<string, unknown>
+) {
+  const truncation = truncateHead(text, {
+    maxBytes: DEFAULT_MAX_BYTES,
+    maxLines: DEFAULT_MAX_LINES,
+  })
+  if (!truncation.truncated) {
+    return {
+      content: [{ type: "text" as const, text: truncation.content }],
+      details: { ...details, truncated: false },
+    }
+  }
+
+  const outputDirectory = await mkdtemp(join(tmpdir(), "pi-web-"))
+  const outputPath = join(outputDirectory, `${operation}.txt`)
+  await writeFile(outputPath, text, "utf8")
+
+  const notice = [
+    `Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines`,
+    `(${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}).`,
+    `Full output saved to: ${outputPath}`,
+  ].join(" ")
+
+  return {
+    content: [{ type: "text" as const, text: `${truncation.content}\n\n[${notice}]` }],
+    details: { ...details, truncated: true, fullOutputPath: outputPath },
+  }
 }
 
 function parseHttpUrl(input: string): HttpUrl {
@@ -391,10 +419,10 @@ async function fetchUrl(url: HttpUrl, signal?: AbortSignal): Promise<string> {
   if (contentType.toLowerCase().includes("html")) {
     const { title, text } = htmlToText(body)
     if (title) header.push(`Title: ${title}`)
-    return `${header.join("\n")}\n\n${trimChars(text)}`
+    return `${header.join("\n")}\n\n${text}`
   }
 
-  return `${header.join("\n")}\n\n${trimChars(body)}`
+  return `${header.join("\n")}\n\n${body}`
 }
 
 export default function (pi: ExtensionAPI) {
@@ -402,7 +430,7 @@ export default function (pi: ExtensionAPI) {
     name: "web_search",
     label: "Web Search",
     description:
-      "Minimal web search through Exa MCP. No API key, no curator, no provider fallback.",
+      "Minimal web search through Exa MCP. No API key or provider fallback. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Search the web through Exa MCP for current information.",
     parameters: webSearchSchema,
     async execute(_toolCallId: string, params: WebSearchParams, signal?: AbortSignal) {
@@ -421,7 +449,7 @@ export default function (pi: ExtensionAPI) {
           },
           signal
         )
-        return toToolResult(text, { query })
+        return toToolResult(text, "web-search", { query })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         throw new Error(`Web search failed: ${message}`, { cause })
@@ -432,7 +460,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "code_search",
     label: "Code Search",
-    description: "Search for code examples, docs, and API references through Exa MCP.",
+    description:
+      "Search for code examples, docs, and API references through Exa MCP. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Search code/docs/API examples through Exa MCP.",
     parameters: codeSearchSchema,
     async execute(_toolCallId: string, params: CodeSearchParams, signal?: AbortSignal) {
@@ -447,7 +476,7 @@ export default function (pi: ExtensionAPI) {
           signal
         )
         const mode: SearchMode = "code-context"
-        return toToolResult(trimApproxTokens(text, maxTokens), { query, maxTokens, mode })
+        return toToolResult(text, "code-search", { query, maxTokens, mode })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         const missingTool =
@@ -469,7 +498,7 @@ export default function (pi: ExtensionAPI) {
             signal
           )
           const mode: SearchMode = "web-search-fallback"
-          return toToolResult(trimApproxTokens(text, maxTokens), { query, maxTokens, mode })
+          return toToolResult(text, "code-search", { query, maxTokens, mode })
         } catch (fallbackCause) {
           const fallbackMessage =
             fallbackCause instanceof Error ? fallbackCause.message : String(fallbackCause)
@@ -485,14 +514,14 @@ export default function (pi: ExtensionAPI) {
     name: "fetch_url",
     label: "Fetch URL",
     description:
-      "Fetch a normal HTTP/HTTPS URL and return text. HTML is lightly cleaned without external dependencies.",
+      "Fetch a normal HTTP/HTTPS URL and return text. HTML is lightly cleaned without external dependencies. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Fetch a URL and return text or lightly cleaned HTML content.",
     parameters: fetchUrlSchema,
     async execute(_toolCallId: string, params: FetchUrlParams, signal?: AbortSignal) {
       try {
         const url = parseHttpUrl(params.url.trim())
         const text = await fetchUrl(url, signal)
-        return toToolResult(text, { url })
+        return toToolResult(text, "fetch-url", { url })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         throw new Error(`Fetch URL failed: ${message}`, { cause })
