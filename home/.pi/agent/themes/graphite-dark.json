@@ -34,6 +34,9 @@
     "thinkingText": "fgMuted",
 
     "selectedBg": "surfaceHover",
+    "scrollbarThumb": "borderStrong",
+    "searchMatchBg": "surfaceHover",
+    "searchMatchText": "fg",
     "userMessageBg": "surfaceCard",
     "userMessageText": "fg",
     "customMessageBg": "surface",
@@ -73,9 +76,10 @@
     "thinkingOff": "borderSubtle",
     "thinkingMinimal": "borderStrong",
     "thinkingLow": "fgMuted",
-    "thinkingMedium": "fgSecondary",
-    "thinkingHigh": "#9f1239",
+    "thinkingMedium": "#9f1239",
+    "thinkingHigh": "#be123c",
     "thinkingXhigh": "danger",
+    "thinkingMax": "#ff1744",
 
     "bashMode": "success"
   },
