@@ -1,5 +1,4 @@
 packages:
   - .
-  - agent/extensions/diff
   - agent/extensions/pi-mcp
   - agent/extensions/ts-context
