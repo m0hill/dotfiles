@@ -26,7 +26,12 @@ export type ContextBreakdownInput = {
     disableModelInvocation?: boolean
   }>
   tools: ReadonlyArray<{ name: string; description: string; parameters: unknown }>
-  messages: ReadonlyArray<{ role: string; tokens: number }>
+  messages: ReadonlyArray<{
+    role: string
+    tokens: number
+    estimatedThinkingTokens?: number
+    reportedReasoningTokens?: number
+  }>
   reportedTokens?: number
 }
 
@@ -62,16 +67,23 @@ export function buildContextBreakdown(input: ContextBreakdownInput): ContextBrea
 
   let userTokens = 0
   let assistantTokens = 0
+  let reasoningTokens = 0
   let toolResultTokens = 0
   let otherMessageTokens = 0
   for (const message of input.messages) {
     if (message.role === "user") userTokens += message.tokens
-    else if (message.role === "assistant") assistantTokens += message.tokens
-    else if (message.role === "toolResult") toolResultTokens += message.tokens
+    else if (message.role === "assistant") {
+      const estimatedThinkingTokens = Math.min(
+        message.tokens,
+        Math.max(0, message.estimatedThinkingTokens ?? 0)
+      )
+      assistantTokens += message.tokens - estimatedThinkingTokens
+      reasoningTokens += message.reportedReasoningTokens ?? estimatedThinkingTokens
+    } else if (message.role === "toolResult") toolResultTokens += message.tokens
     else otherMessageTokens += message.tokens
   }
 
-  const categories: ContextCategory[] = [
+  const nonReasoningCategories: ContextCategory[] = [
     { id: "system", label: "System prompt", tokens: systemTokens },
     { id: "memory", label: "Memory files", tokens: memoryTokens },
     { id: "skills", label: "Skills", tokens: skillTokens },
@@ -80,7 +92,24 @@ export function buildContextBreakdown(input: ContextBreakdownInput): ContextBrea
     { id: "assistant", label: "Assistant", tokens: assistantTokens },
     { id: "results", label: "Tool results", tokens: toolResultTokens },
     { id: "other", label: "Other messages", tokens: otherMessageTokens },
-  ].filter((category) => category.tokens > 0)
+  ]
+  const nonReasoningTokens = nonReasoningCategories.reduce(
+    (total, category) => total + category.tokens,
+    0
+  )
+  // Character estimates can overstate other categories, so keep the provider total authoritative.
+  const reasoningBudget =
+    input.reportedTokens === undefined
+      ? reasoningTokens
+      : Math.max(0, input.reportedTokens - nonReasoningTokens)
+  const classifiedReasoningTokens = Math.min(reasoningTokens, reasoningBudget)
+  const categories = nonReasoningCategories
+    .flatMap((category) =>
+      category.id === "assistant"
+        ? [category, { id: "reasoning", label: "Reasoning", tokens: classifiedReasoningTokens }]
+        : [category]
+    )
+    .filter((category) => category.tokens > 0)
 
   const measuredTokens = categories.reduce((total, category) => total + category.tokens, 0)
   const unclassifiedTokens = Math.max(0, (input.reportedTokens ?? 0) - measuredTokens)
@@ -142,10 +171,15 @@ export default function contextExtension(pi: ExtensionAPI): void {
         contextFiles: options.contextFiles ?? [],
         skills: options.skills ?? [],
         tools: pi.getAllTools().filter((tool) => activeTools.has(tool.name)),
-        messages: messages.map((message) => ({
-          role: message.role,
-          tokens: estimateTokens(message),
-        })),
+        messages: messages.map((message) => {
+          const reportedReasoningTokens = readReportedReasoningTokens(message)
+          return {
+            role: message.role,
+            tokens: estimateTokens(message),
+            estimatedThinkingTokens: estimateThinkingTokens(message),
+            ...(reportedReasoningTokens === undefined ? {} : { reportedReasoningTokens }),
+          }
+        }),
         reportedTokens: usage?.tokens ?? undefined,
       })
 
@@ -237,11 +271,40 @@ function categoryColor(id: string): ThemeColor {
       return "success"
     case "assistant":
       return "syntaxFunction"
+    case "reasoning":
+      return "warning"
     case "results":
       return "toolOutput"
     default:
       return "muted"
   }
+}
+
+function estimateThinkingTokens(message: unknown): number {
+  if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
+    return 0
+  }
+
+  let thinkingText = ""
+  for (const block of message.content) {
+    if (isRecord(block) && block.type === "thinking" && typeof block.thinking === "string") {
+      thinkingText += block.thinking
+    }
+  }
+  return textTokens(thinkingText)
+}
+
+function readReportedReasoningTokens(message: unknown): number | undefined {
+  // Pi normalizes this field across providers that expose a reasoning-token breakdown.
+  if (!isRecord(message) || !isRecord(message.usage)) return undefined
+  const reasoning = message.usage.reasoning
+  return typeof reasoning === "number" && Number.isFinite(reasoning) && reasoning >= 0
+    ? reasoning
+    : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 export function formatTokens(tokens: number): string {
