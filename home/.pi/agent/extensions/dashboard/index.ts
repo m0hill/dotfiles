@@ -12,7 +12,6 @@ import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@eare
 const GIT_POLL_INTERVAL_MS = 3_000
 const COMMAND_TIMEOUT_MS = 3_000
 const LIVE_TPS_UPDATE_INTERVAL_MS = 200
-const HIDDEN_STARTUP_SECTIONS = new Set(["[Context]", "[Skills]", "[Extensions]", "[Themes]"])
 const RESET = "\x1b[0m"
 const RED_PALETTE: Rgb[] = [
   [159, 18, 57],
@@ -31,16 +30,6 @@ const TITLE_LINES = [
 ]
 
 type Rgb = [number, number, number]
-
-type RenderableNode = {
-  children?: RenderableNode[]
-  invalidate(): void
-  render(width: number): string[]
-}
-
-type DashboardTui = RenderableNode & {
-  requestRender(force?: boolean): void
-}
 
 type PullRequest = {
   number: number
@@ -64,8 +53,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
   let gitInfo = EMPTY_GIT_INFO
   let render: (() => void) | undefined
   let gitPoll: ReturnType<typeof setInterval> | undefined
-  let startupCleanupTimers: Array<ReturnType<typeof setTimeout>> = []
-  let activeTui: DashboardTui | undefined
   let gitRefreshRunning = false
   let queriedPrBranch: string | null = null
   let generation = 0
@@ -75,19 +62,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
   let tokensPerSecond: number | undefined
 
   const requestRender = () => render?.()
-
-  function scheduleStartupCleanup(tui: DashboardTui): void {
-    for (const timer of startupCleanupTimers) clearTimeout(timer)
-    startupCleanupTimers = []
-
-    for (const delay of [0, 50, 250, 1_000]) {
-      startupCleanupTimers.push(
-        setTimeout(() => {
-          if (hideStartupSections(tui)) tui.requestRender(true)
-        }, delay)
-      )
-    }
-  }
 
   function resetStream(): void {
     streamStartedAt = undefined
@@ -184,9 +158,7 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
     if (activeCtx.mode !== "tui") return
 
     activeCtx.ui.setHeader((tui, theme) => {
-      activeTui = tui
       render = () => tui.requestRender()
-      scheduleStartupCleanup(tui)
       return {
         render(width: number): string[] {
           const safeWidth = Math.max(1, width)
@@ -218,10 +190,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
     queueGitRefresh()
     gitPoll = setInterval(queueGitRefresh, GIT_POLL_INTERVAL_MS)
     gitPoll.unref?.()
-  })
-
-  pi.on("resources_discover", () => {
-    if (activeTui) scheduleStartupCleanup(activeTui)
   })
 
   pi.on("model_select", requestRender)
@@ -272,9 +240,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
     generation += 1
     ctx = undefined
     render = undefined
-    activeTui = undefined
-    for (const timer of startupCleanupTimers) clearTimeout(timer)
-    startupCleanupTimers = []
     if (gitPoll) clearInterval(gitPoll)
     gitPoll = undefined
     if (activeCtx.mode === "tui") {
@@ -362,75 +327,6 @@ function formatGitInfo(info: GitInfo): string {
     label += ` · ${getCapabilities().hyperlinks ? hyperlink(text, info.pullRequest.url) : text}`
   }
   return label
-}
-
-function hideStartupSections(component: RenderableNode): boolean {
-  if (!Array.isArray(component.children)) return false
-
-  let changed = false
-  for (let index = 0; index < component.children.length; ) {
-    const child = component.children[index]
-    if (!child) break
-    const firstLine = renderedText(child)
-      .split("\n")
-      .find((line) => line.trim().length > 0)
-      ?.trim()
-
-    if (firstLine && HIDDEN_STARTUP_SECTIONS.has(firstLine)) {
-      const nextChild = component.children[index + 1]
-      const removeCount = nextChild && renderedText(nextChild).trim() === "" ? 2 : 1
-      component.children.splice(index, removeCount)
-      changed = true
-      continue
-    }
-
-    changed = hideStartupSections(child) || changed
-    index += 1
-  }
-
-  if (changed) component.invalidate()
-  return changed
-}
-
-function renderedText(component: RenderableNode): string {
-  try {
-    return stripAnsi(component.render(200).join("\n"))
-  } catch {
-    return ""
-  }
-}
-
-function stripAnsi(text: string): string {
-  let result = ""
-
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index)
-    if (code !== 27 && code !== 155) {
-      result += text[index]
-      continue
-    }
-
-    if (code === 27 && text[index + 1] === "]") {
-      index += 2
-      while (index < text.length && text.charCodeAt(index) !== 7) {
-        if (text.charCodeAt(index) === 27 && text[index + 1] === "\\") {
-          index += 1
-          break
-        }
-        index += 1
-      }
-      continue
-    }
-
-    if (code === 27 && text[index + 1] === "[") index += 1
-    while (index + 1 < text.length) {
-      const nextCode = text.charCodeAt(index + 1)
-      index += 1
-      if (nextCode >= 64 && nextCode <= 126) break
-    }
-  }
-
-  return result
 }
 
 function formatDirectory(cwd: string): string {
