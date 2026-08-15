@@ -432,10 +432,23 @@ export default function (pi: ExtensionAPI) {
     description:
       "Minimal web search through Exa MCP. No API key or provider fallback. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Search the web through Exa MCP for current information.",
+    promptGuidelines: [
+      "Use web_search when current public-web information is needed or the right URL is not yet known.",
+      "After web_search identifies a relevant page, use fetch_url to inspect its full content.",
+    ],
     parameters: webSearchSchema,
-    async execute(_toolCallId: string, params: WebSearchParams, signal?: AbortSignal) {
+    async execute(
+      _toolCallId: string,
+      params: WebSearchParams,
+      signal?: AbortSignal,
+      onUpdate?
+    ) {
       const query = params.query.trim()
       if (!query) throw new Error("No query provided")
+      onUpdate?.({
+        content: [{ type: "text", text: `Searching the web for: ${query}` }],
+        details: undefined,
+      })
 
       try {
         const text = await callExaMcp(
@@ -463,11 +476,24 @@ export default function (pi: ExtensionAPI) {
     description:
       "Search for code examples, docs, and API references through Exa MCP. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Search code/docs/API examples through Exa MCP.",
+    promptGuidelines: [
+      "Use code_search for programming APIs, library documentation, source examples, and debugging references.",
+      "Use web_search instead of code_search for general current information unrelated to software development.",
+    ],
     parameters: codeSearchSchema,
-    async execute(_toolCallId: string, params: CodeSearchParams, signal?: AbortSignal) {
+    async execute(
+      _toolCallId: string,
+      params: CodeSearchParams,
+      signal?: AbortSignal,
+      onUpdate?
+    ) {
       const query = params.query.trim()
       const maxTokens = clampInt(params.maxTokens, DEFAULT_MAX_TOKENS, 1000, 50_000)
       if (!query) throw new Error("No query provided")
+      onUpdate?.({
+        content: [{ type: "text", text: `Searching code context for: ${query}` }],
+        details: undefined,
+      })
 
       try {
         const text = await callExaMcp(
@@ -485,6 +511,10 @@ export default function (pi: ExtensionAPI) {
           throw new Error(`Code search failed: ${message}`, { cause })
         }
 
+        onUpdate?.({
+          content: [{ type: "text", text: "Code context unavailable; searching the web instead" }],
+          details: undefined,
+        })
         try {
           const text = await callExaMcp(
             "web_search_exa",
@@ -516,10 +546,23 @@ export default function (pi: ExtensionAPI) {
     description:
       "Fetch a normal HTTP/HTTPS URL and return text. HTML is lightly cleaned without external dependencies. Output is limited to 50KB or 2000 lines; complete truncated output is saved to a temporary file.",
     promptSnippet: "Fetch a URL and return text or lightly cleaned HTML content.",
+    promptGuidelines: [
+      "Use fetch_url when the user provides a known URL or after web_search identifies a page to inspect.",
+      "Use web_search before fetch_url when the right URL is not yet known.",
+    ],
     parameters: fetchUrlSchema,
-    async execute(_toolCallId: string, params: FetchUrlParams, signal?: AbortSignal) {
+    async execute(
+      _toolCallId: string,
+      params: FetchUrlParams,
+      signal?: AbortSignal,
+      onUpdate?
+    ) {
       try {
         const url = parseHttpUrl(params.url.trim())
+        onUpdate?.({
+          content: [{ type: "text", text: `Fetching: ${url}` }],
+          details: undefined,
+        })
         const text = await fetchUrl(url, signal)
         return toToolResult(text, "fetch-url", { url })
       } catch (cause) {
