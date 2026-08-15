@@ -19,6 +19,7 @@ import {
   event,
   get,
   js,
+  local,
   mod,
   post,
   read,
@@ -256,7 +257,9 @@ function PhonePage(props: { readonly idle: boolean }) {
     retryScaler: 2,
     retryMaxWait: 30_000,
   })
-  const sendDisabled = js<boolean>`${phoneSignals.refs.prompt}.trim() === ""`
+  const sending = local<boolean>("sending")
+  const sendDisabled = js<boolean>`${phoneSignals.refs.prompt}.trim() === "" || ${sending}`
+  const sendLabel = js<string>`${sending} ? "Sending…" : "Send"`
   const submitShortcut = js<void>`if (evt.key === "Enter" && (evt.metaKey || evt.ctrlKey)) { evt.preventDefault(); el.form.requestSubmit() }`
 
   return (
@@ -268,16 +271,18 @@ function PhonePage(props: { readonly idle: boolean }) {
       )}
     >
       <div id="phone-stream" data-init={connect} />
-      <header id="topbar">
-        <div id="topbar-title">
-          <span class="prompt">π</span>
-          <div>
-            <div id="title">phone handoff</div>
-            <div id="status" data-text={phoneSignals.refs.status} />
+      <header class="app-header">
+        <div class="app-header-content">
+          <div class="app-identity">
+            <span class="app-mark" aria-hidden="true">
+              π
+            </span>
+            <div>
+              <div class="app-title">Phone handoff</div>
+              <div class="app-status" data-text={phoneSignals.refs.status} />
+            </div>
           </div>
-        </div>
-        <div id="topbar-actions">
-          <button type="button" data-on:click={get("/api/state")}>
+          <button class="button button-secondary" type="button" data-on:click={get("/api/state")}>
             Refresh
           </button>
         </div>
@@ -287,9 +292,15 @@ function PhonePage(props: { readonly idle: boolean }) {
         <MessageFeed items={feedItems} />
       </div>
 
-      <form id="composer" data-on:submit={post("/api/send")}>
+      <form
+        id="composer"
+        class="composer"
+        data-indicator={sending}
+        data-on:submit={post("/api/send")}
+      >
         <textarea
           id="prompt"
+          class="composer-input"
           rows={1}
           placeholder="Message Pi…"
           data-bind={phoneSignals.refs.prompt}
@@ -298,6 +309,7 @@ function PhonePage(props: { readonly idle: boolean }) {
         <canvas id="waveform" aria-hidden="true" />
         <button
           id="mic"
+          class="button icon-button"
           type="button"
           aria-label="Record voice"
           title="Record voice"
@@ -313,8 +325,14 @@ function PhonePage(props: { readonly idle: boolean }) {
             <rect x="8" y="8" width="8" height="8" rx="1.5" />
           </svg>
         </button>
-        <button id="send" class="primary" type="submit" data-attr:disabled={sendDisabled}>
-          Send
+        <button
+          id="send"
+          class="button button-primary"
+          type="submit"
+          data-class:busy={sending}
+          data-attr:disabled={sendDisabled}
+        >
+          <span data-text={sendLabel}>Send</span>
         </button>
       </form>
     </div>

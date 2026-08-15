@@ -19,6 +19,7 @@ import MarkdownIt from "markdown-it"
 import {
   event,
   js,
+  local,
   mod,
   post,
   read,
@@ -242,12 +243,15 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
           <p class="no-anno">no annotations yet</p>
         ) : (
           props.session.annotations.map((annotation, index) => {
+            const updating = local<boolean>(`annotationBusy${index}`)
             const isSelected = js<boolean>`${feedbackForm.refs.selectedAnnotationId} === ${annotation.id}`
             const isEditing = js<boolean>`${feedbackForm.refs.editingAnnotationId} === ${annotation.id}`
             const isNotEditing = js<boolean>`${feedbackForm.refs.editingAnnotationId} !== ${annotation.id}`
             const selectAnnotation = js<void>`if (!evt.target.closest?.("button, textarea")) { ${feedbackForm.refs.selectedAnnotationId} = ${annotation.id}; window.feedback.activate(${annotation.start}, ${annotation.end}) }`
             const startEditing = js<void>`${feedbackForm.refs.editingAnnotationId} = ${annotation.id}; ${feedbackForm.refs.editingComment} = ${annotation.comment}; ${feedbackForm.refs.error} = ""`
             const cancelEditing = js<void>`${feedbackForm.refs.editingAnnotationId} = ""; ${feedbackForm.refs.editingComment} = ""; ${feedbackForm.refs.error} = ""`
+            const editDisabled = js<boolean>`${feedbackForm.refs.editingComment}.trim() === "" || ${updating}`
+            const saveLabel = js<string>`${updating} ? "Saving…" : "Save"`
             return (
               <article
                 class="annotation-card"
@@ -256,10 +260,13 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
                 data-on:click={selectAnnotation}
               >
                 <button
-                  class="close-btn"
+                  class="button icon-button delete-button close-btn"
                   type="button"
                   title="Delete annotation"
                   aria-label="Delete annotation"
+                  data-indicator={updating}
+                  data-class:busy={updating}
+                  data-attr:disabled={updating}
                   data-on:click={post(
                     `/sessions/${props.session.id}/annotations/${annotation.id}/delete`
                   )}
@@ -271,7 +278,7 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
                 <div class="anno-comment-wrap">
                   <div data-show={isNotEditing}>
                     <button
-                      class="edit-btn"
+                      class="button icon-button edit-btn"
                       type="button"
                       title="Edit annotation"
                       aria-label="Edit annotation"
@@ -283,23 +290,29 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
                   </div>
                   <div data-show={isEditing}>
                     <textarea
-                      class="edit-annotation-input"
+                      class="field-input edit-annotation-input"
                       aria-label="Edit annotation comment"
                       data-bind={feedbackForm.refs.editingComment}
                     />
                     <div class="edit-actions">
-                      <button type="button" data-on:click={cancelEditing}>
+                      <button
+                        class="button button-secondary"
+                        type="button"
+                        data-on:click={cancelEditing}
+                      >
                         Cancel
                       </button>
                       <button
-                        class="primary"
+                        class="button button-primary"
                         type="button"
-                        data-attr:disabled={js<boolean>`${feedbackForm.refs.editingComment}.trim() === ""`}
+                        data-indicator={updating}
+                        data-class:busy={updating}
+                        data-attr:disabled={editDisabled}
                         data-on:click={post(
                           `/sessions/${props.session.id}/annotations/${annotation.id}/edit`
                         )}
                       >
-                        Save
+                        <span data-text={saveLabel}>Save</span>
                       </button>
                     </div>
                   </div>
@@ -330,8 +343,14 @@ function TableOfContents(props: { readonly headings: readonly Heading[] }) {
 }
 
 function FeedbackPage(props: { readonly session: FeedbackSession }) {
-  const sendDisabled = js<boolean>`${feedbackForm.refs.annotationCount} === 0`
-  const addDisabled = js<boolean>`${feedbackForm.refs.quote}.trim() === "" || ${feedbackForm.refs.comment}.trim() === ""`
+  const submitting = local<boolean>("submittingFeedback")
+  const clearing = local<boolean>("submittingAndClearing")
+  const adding = local<boolean>("addingAnnotation")
+  const sendDisabled = js<boolean>`${feedbackForm.refs.annotationCount} === 0 || ${submitting} || ${clearing}`
+  const addDisabled = js<boolean>`${feedbackForm.refs.quote}.trim() === "" || ${feedbackForm.refs.comment}.trim() === "" || ${adding}`
+  const submitLabel = js<string>`${submitting} ? "Sending…" : "Send Feedback"`
+  const clearLabel = js<string>`${clearing} ? "Sending…" : "Send & Clear"`
+  const addLabel = js<string>`${adding} ? "Adding…" : "Add"`
   const captureSelection = js<void>`const selected = window.feedback.capture(el); if (selected) { ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true }`
   const syncDialog = js<void>`${feedbackForm.refs.dialogOpen} ? window.feedback.open(el) : (el.open && el.close())`
   const closeDialog = js<void>`${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
@@ -344,27 +363,36 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
         { ifMissing: true }
       )}
     >
-      <header id="topbar">
-        <div id="topbar-title">
-          <span class="prompt">›</span>
-          <h1 id="title">{props.session.title}</h1>
-        </div>
-        <div id="topbar-actions">
-          <button
-            type="button"
-            data-attr:disabled={sendDisabled}
-            data-on:click={post(`/sessions/${props.session.id}/submit-clear`)}
-          >
-            Send & Clear
-          </button>
-          <button
-            class="primary"
-            type="button"
-            data-attr:disabled={sendDisabled}
-            data-on:click={post(`/sessions/${props.session.id}/submit`)}
-          >
-            Send Feedback
-          </button>
+      <header class="app-header">
+        <div class="app-header-content">
+          <div class="app-identity">
+            <span class="app-mark" aria-hidden="true">
+              ›
+            </span>
+            <h1 class="app-title">{props.session.title}</h1>
+          </div>
+          <div class="app-actions">
+            <button
+              class="button button-secondary"
+              type="button"
+              data-indicator={clearing}
+              data-class:busy={clearing}
+              data-attr:disabled={sendDisabled}
+              data-on:click={post(`/sessions/${props.session.id}/submit-clear`)}
+            >
+              <span data-text={clearLabel}>Send & Clear</span>
+            </button>
+            <button
+              class="button button-primary"
+              type="button"
+              data-indicator={submitting}
+              data-class:busy={submitting}
+              data-attr:disabled={sendDisabled}
+              data-on:click={post(`/sessions/${props.session.id}/submit`)}
+            >
+              <span data-text={submitLabel}>Send Feedback</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -396,6 +424,8 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
               </div>
               <textarea
                 id="global-comment"
+                class="field-input"
+                aria-label="Global feedback"
                 data-bind={feedbackForm.refs.globalComment}
                 placeholder="Overall notes…"
               />
@@ -417,7 +447,7 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
             Selection
           </span>
           <button
-            class="dialog-close"
+            class="button icon-button dialog-close"
             type="button"
             title="Close"
             aria-label="Close annotation dialog"
@@ -430,6 +460,7 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
           <blockquote class="quote dialog-quote" data-text={feedbackForm.refs.quote} />
           <textarea
             id="comment"
+            class="field-input"
             autofocus
             aria-label="Annotation comment"
             data-bind={feedbackForm.refs.comment}
@@ -440,16 +471,18 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
         <div class="dialog-foot">
           <span class="dialog-hint">esc to cancel</span>
           <div class="dialog-actions">
-            <button type="button" data-on:click={closeDialog}>
+            <button class="button button-secondary" type="button" data-on:click={closeDialog}>
               Cancel
             </button>
             <button
-              class="primary"
+              class="button button-primary"
               type="button"
+              data-indicator={adding}
+              data-class:busy={adding}
               data-attr:disabled={addDisabled}
               data-on:click={post(`/sessions/${props.session.id}/annotations/add`)}
             >
-              Add
+              <span data-text={addLabel}>Add</span>
             </button>
           </div>
         </div>
@@ -473,7 +506,9 @@ function page(session: FeedbackSession): Response {
   return reply.page(<FeedbackPage session={session} />, {
     title: `Feedback · ${session.title}`,
     head: [
+      <meta name="viewport" content="width=device-width, initial-scale=1" />,
       <meta name="color-scheme" content="dark" />,
+      <meta name="referrer" content="no-referrer" />,
       <link rel="stylesheet" href="/assets/style.css" />,
       <script type="module" src="/assets/client.js" />,
       <script type="module" src={DATASTAR_RUNTIME} />,
