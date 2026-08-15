@@ -4,6 +4,8 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "Preserve",
     "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "datastar-kit",
     "allowJs": false,
     "moduleDetection": "force",
     "isolatedModules": true,
@@ -22,6 +24,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["agent/extensions/**/*.ts", "types/**/*.d.ts"],
+  "include": ["agent/extensions/**/*.ts", "agent/extensions/**/*.tsx", "types/**/*.d.ts"],
   "exclude": ["**/node_modules/**", "**/dist/**"]
 }
