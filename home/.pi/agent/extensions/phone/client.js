@@ -65,7 +65,7 @@ function drawWaveform() {
   const barCount = Math.max(24, Math.ceil(width / stride))
   const centerY = height / 2
   const step = Math.max(1, Math.floor(waveformData.length / barCount))
-  context.fillStyle = "rgba(246, 255, 245, 0.72)"
+  context.fillStyle = "rgba(245, 245, 245, 0.72)"
   if (waveformLevels.length !== barCount) waveformLevels = Array(barCount).fill(0)
 
   for (let index = 0; index < barCount; index += 1) {

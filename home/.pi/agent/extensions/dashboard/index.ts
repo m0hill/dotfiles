@@ -1,6 +1,6 @@
 import { homedir } from "node:os"
 import { relative } from "node:path"
-import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai"
+import type { AssistantMessage } from "@earendil-works/pi-ai"
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -11,7 +11,6 @@ import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@eare
 
 const GIT_POLL_INTERVAL_MS = 3_000
 const COMMAND_TIMEOUT_MS = 3_000
-const LIVE_TPS_UPDATE_INTERVAL_MS = 200
 const RESET = "\x1b[0m"
 const RED_PALETTE: Rgb[] = [
   [159, 18, 57],
@@ -56,18 +55,8 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
   let gitRefreshRunning = false
   let queriedPrBranch: string | null = null
   let generation = 0
-  let streamStartedAt: number | undefined
-  let streamedCharacters = 0
-  let lastTpsUpdate = 0
-  let tokensPerSecond: number | undefined
 
   const requestRender = () => render?.()
-
-  function resetStream(): void {
-    streamStartedAt = undefined
-    streamedCharacters = 0
-    lastTpsUpdate = 0
-  }
 
   async function refreshGit(activeCtx: ExtensionContext, activeGeneration: number): Promise<void> {
     if (gitRefreshRunning) return
@@ -151,8 +140,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
     generation += 1
     queriedPrBranch = null
     gitInfo = EMPTY_GIT_INFO
-    tokensPerSecond = undefined
-    resetStream()
 
     if (gitPoll) clearInterval(gitPoll)
     if (activeCtx.mode !== "tui") return
@@ -181,7 +168,7 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
         dispose: unsubscribe,
         invalidate() {},
         render(width: number): string[] {
-          return renderFooter(pi, activeCtx, gitInfo, tokensPerSecond, footerData, theme, width)
+          return renderFooter(pi, activeCtx, gitInfo, footerData, theme, width)
         },
       }
     })
@@ -199,41 +186,6 @@ export default function dashboardExtension(pi: ExtensionAPI): void {
   pi.on("input", () => {
     queueGitRefresh()
     return { action: "continue" }
-  })
-
-  pi.on("agent_start", () => {
-    tokensPerSecond = undefined
-    resetStream()
-    requestRender()
-  })
-
-  pi.on("message_start", (event) => {
-    if (event.message.role === "assistant") resetStream()
-  })
-
-  pi.on("message_update", (event) => {
-    if (event.message.role !== "assistant") return
-    const delta = contentDelta(event.assistantMessageEvent)
-    if (!delta) return
-
-    const now = Date.now()
-    streamStartedAt ??= now
-    streamedCharacters += delta.length
-    const elapsedMs = now - streamStartedAt
-    if (elapsedMs <= 0 || now - lastTpsUpdate < LIVE_TPS_UPDATE_INTERVAL_MS) return
-
-    lastTpsUpdate = now
-    tokensPerSecond = streamedCharacters / 4 / (elapsedMs / 1_000)
-    requestRender()
-  })
-
-  pi.on("message_end", (event) => {
-    if (event.message.role !== "assistant" || streamStartedAt === undefined) return
-    const elapsedMs = Date.now() - streamStartedAt
-    if (elapsedMs > 0 && event.message.usage.output > 0) {
-      tokensPerSecond = event.message.usage.output / (elapsedMs / 1_000)
-    }
-    requestRender()
   })
 
   pi.on("session_shutdown", (_event, activeCtx) => {
@@ -254,7 +206,6 @@ function renderFooter(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   gitInfo: GitInfo,
-  tokensPerSecond: number | undefined,
   footerData: ReadonlyFooterDataProvider,
   theme: Theme,
   width: number
@@ -268,8 +219,7 @@ function renderFooter(
   const contextPercent = usage?.percent == null ? "?" : `${Math.round(usage.percent)}%`
   const contextWindow = formatTokens(usage?.contextWindow ?? model?.contextWindow ?? 0)
   const cost = sessionCost(ctx)
-  const speed = tokensPerSecond === undefined ? "— tok/s" : `${Math.round(tokensPerSecond)} tok/s`
-  const usageLabel = `${contextPercent}/${contextWindow} · $${cost.toFixed(2)} · ${speed}`
+  const usageLabel = `${contextPercent}/${contextWindow} · $${cost.toFixed(2)}`
   const directory = theme.fg("text", formatDirectory(ctx.cwd))
   const gitLabel = formatGitInfo(gitInfo)
   const statuses = footerData.getExtensionStatuses()
@@ -300,11 +250,6 @@ function sessionCost(ctx: ExtensionContext): number {
     }
   }
   return cost
-}
-
-function contentDelta(event: AssistantMessageEvent): string | undefined {
-  if (event.type !== "text_delta" && event.type !== "thinking_delta") return undefined
-  return event.delta || undefined
 }
 
 function parsePullRequest(raw: string): PullRequest | null {

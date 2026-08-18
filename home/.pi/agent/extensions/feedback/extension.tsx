@@ -48,6 +48,7 @@ const feedbackForm = state({
   editingAnnotationId: "",
   editingComment: "",
   annotationCount: 0,
+  indexCollapsed: false,
   error: "",
 })
 
@@ -284,7 +285,7 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
                       aria-label="Edit annotation"
                       data-on:click={startEditing}
                     >
-                      ✎
+                      <span class="edit-icon" aria-hidden="true" />
                     </button>
                     <p class="anno-comment">{annotation.comment}</p>
                   </div>
@@ -354,12 +355,19 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
   const captureSelection = js<void>`const selected = window.feedback.capture(el); if (selected) { ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true }`
   const syncDialog = js<void>`${feedbackForm.refs.dialogOpen} ? window.feedback.open(el) : (el.open && el.close())`
   const closeDialog = js<void>`${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
+  const toggleIndex = js<void>`${feedbackForm.refs.indexCollapsed} = !${feedbackForm.refs.indexCollapsed}`
+  const indexExpanded = js<boolean>`!${feedbackForm.refs.indexCollapsed}`
+  const indexToggleIcon = js<string>`${feedbackForm.refs.indexCollapsed} ? "›" : "‹"`
 
   return (
     <main
       id="feedback-app"
       data-signals={mod(
-        { ...feedbackForm.defaults, annotationCount: props.session.annotations.length },
+        {
+          ...feedbackForm.defaults,
+          annotationCount: props.session.annotations.length,
+          indexCollapsed: props.session.rendered.headings.length === 0,
+        },
         { ifMissing: true }
       )}
     >
@@ -396,10 +404,22 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
         </div>
       </header>
 
-      <div id="shell">
+      <div id="shell" data-class:index-collapsed={feedbackForm.refs.indexCollapsed}>
         <aside id="sidebar-left" class="sidebar">
           <div class="sb-head">
             <span class="sb-label">Index</span>
+            <button
+              class="button icon-button sidebar-toggle"
+              type="button"
+              title="Toggle index sidebar"
+              aria-label="Toggle index sidebar"
+              data-attr:aria-expanded={indexExpanded}
+              data-on:click={toggleIndex}
+            >
+              <span aria-hidden="true" data-text={indexToggleIcon}>
+                ‹
+              </span>
+            </button>
           </div>
           <div class="sb-scroll">
             <TableOfContents headings={props.session.rendered.headings} />
