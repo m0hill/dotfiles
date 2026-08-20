@@ -4,17 +4,21 @@
 import { execFile } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer as createHttpsServer } from "node:https"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import type { TextContent } from "@earendil-works/pi-ai"
-import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent"
+import {
+  isToolCallEventType,
+  type ExtensionAPI,
+  type SessionEntry,
+} from "@earendil-works/pi-coding-agent"
 import {
   event,
   get,
@@ -38,7 +42,7 @@ import { ParseError, Value } from "typebox/value"
 
 const execFileAsync = promisify(execFile)
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false })
-markdown.renderer.rules.link_open = (tokens, index, options, environment, renderer) => {
+markdown.renderer.rules.link_open = (tokens, index, options, _environment, renderer) => {
   tokens[index]?.attrSet("target", "_blank")
   tokens[index]?.attrSet("rel", "noreferrer noopener")
   return renderer.renderToken(tokens, index, options)
@@ -46,7 +50,7 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
 
 const PORT = 43_117
 const HOST = "0.0.0.0"
-const TOKEN_TTL_MS = 30 * 60 * 1_000
+const TOKEN_TTL_MS = 4 * 60 * 60 * 1_000
 const TAILSCALE_DOMAIN = "mohil.tail47ab7d.ts.net"
 const TAILSCALE_DATA_DIR = `${process.env.HOME ?? ""}/Library/Containers/io.tailscale.ipn.macos/Data`
 const TAILSCALE_CERT = `${TAILSCALE_DATA_DIR}/${TAILSCALE_DOMAIN}.crt`
@@ -57,7 +61,7 @@ const STT_HELPER = `${process.env.HOME ?? ""}/Library/Application Support/Hammer
 const MAX_AUDIO_BYTES = 25 * 1_024 * 1_024
 const HELPER_MARKER = "__STT_JSON_B64__"
 const PHONE_MODE_EVENT = "phone:mode"
-const AUTH_COOKIE = "pi_phone"
+const AUTH_COOKIE = "__Host-pi_phone_v2"
 const DATASTAR_RUNTIME =
   "https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url))
@@ -65,6 +69,10 @@ const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url))
 const phoneSignals = state({
   prompt: "",
   status: "Connecting…",
+  contextUsage: "—",
+  contextPercent: 0,
+  sessionOperationActive: false,
+  sessionOperation: "",
 })
 
 const sendMessageSchema = Type.Object({ prompt: Type.String() })
@@ -95,6 +103,23 @@ type FeedItem = {
 type LatestContext = {
   readonly sessionManager: { getBranch(): SessionEntry[] }
   isIdle(): boolean
+  getContextUsage():
+    | {
+        readonly tokens: number | null
+        readonly contextWindow: number
+        readonly percent: number | null
+      }
+    | undefined
+}
+
+type ContextSignals = {
+  readonly contextUsage: string
+  readonly contextPercent: number
+}
+
+type SessionOperationSignals = {
+  readonly sessionOperationActive: boolean
+  readonly sessionOperation: string
 }
 
 type ParseResult<T> =
@@ -144,10 +169,49 @@ type ServerState = {
   readonly clients: Map<string, ClientEvents>
 }
 
-let runningServer: ServerState | undefined
-let startPromise: Promise<ServerState> | undefined
+type SessionAction = "compact" | "handoff" | "blank"
+
+type RuntimeBridge = {
+  isIdle(): boolean
+  contextSignals(): ContextSignals
+  renderPage(): Response
+  renderSnapshot(): string
+  sendUserMessage(prompt: string): void
+  requestSessionAction(action: SessionAction): "accepted" | "busy"
+}
+
+type SharedRuntime = {
+  server: ServerState | undefined
+  startPromise: Promise<ServerState> | undefined
+  bridge: RuntimeBridge | undefined
+  sessionActionPending: boolean
+  sessionOperation: string | undefined
+  handoffCaptureActive: boolean
+  handoffPath: string | undefined
+  handoffSourceSession: string | undefined
+}
+
+declare global {
+  var __piPhoneRuntime: SharedRuntime | undefined
+}
+
+const sharedRuntime = (globalThis.__piPhoneRuntime ??= {
+  server: undefined,
+  startPromise: undefined,
+  bridge: undefined,
+  sessionActionPending: false,
+  sessionOperation: undefined,
+  handoffCaptureActive: false,
+  handoffPath: undefined,
+  handoffSourceSession: undefined,
+})
+
+let runningServer = sharedRuntime.server
+let startPromise = sharedRuntime.startPromise
 let latestCtx: LatestContext | undefined
 let feedItems: FeedItem[] = []
+let streamingAssistantId: string | undefined
+let streamingAssistantVisible = false
 
 function parseSignals<const Schema extends TSchema>(
   schema: Schema,
@@ -188,6 +252,34 @@ function authorizeToken(token: string | undefined): boolean {
 
 function statusText(idle: boolean): string {
   return idle ? "Idle" : "Working…"
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens < 1_000) return String(tokens)
+  if (tokens < 10_000) return `${(tokens / 1_000).toFixed(1)}k`
+  if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`
+  return `${(tokens / 1_000_000).toFixed(1)}M`
+}
+
+function sessionOperationSignals(): SessionOperationSignals {
+  const operation = sharedRuntime.sessionOperation
+  return {
+    sessionOperationActive: operation !== undefined,
+    sessionOperation: operation ?? "",
+  }
+}
+
+function contextSignals(context = latestCtx): ContextSignals {
+  const usage = context?.getContextUsage()
+  if (usage === undefined) return { contextUsage: "—", contextPercent: 0 }
+
+  const percent = usage.percent
+  const percentText = percent === null ? "?" : `${percent.toFixed(1)}%`
+  const tokensText = usage.tokens === null ? "?" : formatTokens(usage.tokens)
+  return {
+    contextUsage: `${percentText} · ${tokensText}/${formatTokens(usage.contextWindow)}`,
+    contextPercent: percent === null ? 0 : Math.min(100, Math.max(0, percent)),
+  }
 }
 
 type ChatContent = Extract<AgentMessage, { role: "user" | "assistant" }>["content"]
@@ -237,14 +329,28 @@ function toolText(status: ToolActivityStatus, toolName: string, args: ToolSummar
   return `${icon} ${toolName} ${toolSummary(toolName, args)}`
 }
 
+function messageDomId(id: string): string {
+  return `feed-${Buffer.from(id).toString("base64url")}`
+}
+
+function MessageItem(props: { readonly item: FeedItem }) {
+  const { item } = props
+  return (
+    <article
+      id={messageDomId(item.id)}
+      class={`message ${item.role}${item.status ? ` ${item.status}` : ""}`}
+    >
+      <div class="role">{item.role}</div>
+      <div class="markdown">{unsafeHtml(markdown.render(item.text))}</div>
+    </article>
+  )
+}
+
 function MessageFeed(props: { readonly items: readonly FeedItem[] }) {
   return (
     <main id="messages" aria-live="polite">
       {props.items.map((item) => (
-        <article class={`message ${item.role}${item.status ? ` ${item.status}` : ""}`}>
-          <div class="role">{item.role}</div>
-          <div class="markdown">{unsafeHtml(markdown.render(item.text))}</div>
-        </article>
+        <MessageItem item={item} />
       ))}
     </main>
   )
@@ -266,7 +372,12 @@ function PhonePage(props: { readonly idle: boolean }) {
     <div
       id="phone-app"
       data-signals={mod(
-        { ...phoneSignals.defaults, status: statusText(props.idle) },
+        {
+          ...phoneSignals.defaults,
+          status: statusText(props.idle),
+          ...(sharedRuntime.bridge?.contextSignals() ?? contextSignals()),
+          ...sessionOperationSignals(),
+        },
         { ifMissing: true }
       )}
     >
@@ -282,11 +393,70 @@ function PhonePage(props: { readonly idle: boolean }) {
               <div class="app-status" data-text={phoneSignals.refs.status} />
             </div>
           </div>
-          <button class="button button-secondary" type="button" data-on:click={get("/api/state")}>
-            Refresh
-          </button>
+          <div class="app-header-actions">
+            <div class="app-context" title="Current model context usage">
+              <div class="app-context-row">
+                <span>Context</span>
+                <strong data-text={phoneSignals.refs.contextUsage} />
+              </div>
+              <progress
+                class="app-context-meter"
+                max={100}
+                data-attr:value={phoneSignals.refs.contextPercent}
+              />
+            </div>
+            <button
+              class="button button-secondary"
+              type="button"
+              data-on:click={js<void>`document.querySelector("#session-dialog").showModal()`}
+            >
+              New
+            </button>
+          </div>
         </div>
       </header>
+
+      <dialog id="session-dialog" class="session-dialog">
+        <div class="session-dialog-heading">
+          <div>
+            <div class="session-dialog-title">Manage context</div>
+            <div class="session-dialog-copy">Choose how you want to continue.</div>
+          </div>
+          <form method="dialog">
+            <button class="dialog-close" type="submit" aria-label="Close">
+              ×
+            </button>
+          </form>
+        </div>
+        <div class="session-options">
+          <button class="session-option" type="button" data-on:click={post("/api/session/compact")}>
+            <strong>Compact current session</strong>
+            <span>Summarize older context and continue here.</span>
+          </button>
+          <button class="session-option" type="button" data-on:click={post("/api/session/handoff")}>
+            <strong>Handoff to new session</strong>
+            <span>Generate a continuation prompt and carry it into a fresh session.</span>
+          </button>
+          <button class="session-option" type="button" data-on:click={post("/api/session/blank")}>
+            <strong>Blank new session</strong>
+            <span>Start over with an empty context.</span>
+          </button>
+        </div>
+      </dialog>
+
+      <div
+        class="session-operation"
+        hidden={sharedRuntime.sessionOperation === undefined}
+        data-attr:hidden={js<boolean>`!${phoneSignals.refs.sessionOperationActive}`}
+      >
+        <div class="session-operation-card" role="status" aria-live="assertive">
+          <span class="session-operation-spinner" aria-hidden="true" />
+          <div>
+            <strong data-text={phoneSignals.refs.sessionOperation} />
+            <span>Keep this page open. Pi will update it automatically.</span>
+          </div>
+        </div>
+      </div>
 
       <div id="shell">
         <MessageFeed items={feedItems} />
@@ -340,7 +510,7 @@ function PhonePage(props: { readonly idle: boolean }) {
 }
 
 function phonePage(): Response {
-  return reply.page(<PhonePage idle={latestCtx?.isIdle() ?? true} />, {
+  return reply.page(<PhonePage idle={sharedRuntime.bridge?.isIdle() ?? true} />, {
     title: "Pi Phone",
     head: [
       <meta name="viewport" content="width=device-width, initial-scale=1" />,
@@ -352,9 +522,20 @@ function phonePage(): Response {
   })
 }
 
+function contextualPhonePage(context: Context): Response {
+  const page = sharedRuntime.bridge?.renderPage() ?? phonePage()
+  return context.newResponse(page.body, page)
+}
+
 function renderSnapshot(): string {
   return [
-    event.signals(phoneSignals.patch({ status: statusText(latestCtx?.isIdle() ?? true) })),
+    event.signals(
+      phoneSignals.patch({
+        status: statusText(latestCtx?.isIdle() ?? true),
+        ...contextSignals(),
+        ...sessionOperationSignals(),
+      })
+    ),
     event.patch(<MessageFeed items={feedItems} />),
     event.script(
       'requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }))'
@@ -362,18 +543,34 @@ function renderSnapshot(): string {
   ].join("")
 }
 
-function broadcastSnapshot(): void {
-  const chunk = renderSnapshot()
+function broadcast(chunk: string): void {
   for (const client of runningServer?.clients.values() ?? []) client.push(chunk)
 }
 
+function broadcastSnapshot(): void {
+  broadcast(renderSnapshot())
+}
+
+function scrollToLatest(): string {
+  return event.script(
+    "requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight }))"
+  )
+}
+
+function broadcastStreamingAssistant(item: FeedItem, firstPatch: boolean): void {
+  const patch = firstPatch
+    ? event.patch(<MessageItem item={item} />, { selector: "#messages", mode: "append" })
+    : event.patch(<MessageItem item={item} />, { selector: `#${messageDomId(item.id)}` })
+  broadcast(patch + scrollToLatest())
+}
+
 function broadcastStatus(idle: boolean): void {
-  const chunk = event.signals(phoneSignals.patch({ status: statusText(idle) }))
+  const chunk = event.signals(phoneSignals.patch({ status: statusText(idle), ...contextSignals() }))
   for (const client of runningServer?.clients.values() ?? []) client.push(chunk)
 }
 
 function tailscaleUrl(port: number, token: string): string {
-  return `https://${TAILSCALE_DOMAIN}:${port}/?token=${encodeURIComponent(token)}`
+  return `https://${TAILSCALE_DOMAIN}:${port}/pair/${encodeURIComponent(token)}`
 }
 
 async function qrText(url: string): Promise<string> {
@@ -422,35 +619,53 @@ async function transcribeAudio(audio: Buffer): Promise<string> {
   }
 }
 
+function setAuthorizationCookie(context: Context, token: string): void {
+  setCookie(context, AUTH_COOKIE, token, {
+    httpOnly: true,
+    maxAge: TOKEN_TTL_MS / 1_000,
+    path: "/",
+    sameSite: "Strict",
+    secure: true,
+  })
+}
+
 async function requireAuthorization(context: Context, next: Next): Promise<Response | void> {
-  if (!authorizeToken(getCookie(context, AUTH_COOKIE))) {
+  const token = getCookie(context, AUTH_COOKIE)
+  if (token === undefined || !authorizeToken(token)) {
     return context.json({ error: "Unauthorized or expired token" }, 401)
   }
+  setAuthorizationCookie(context, token)
   await next()
 }
 
-function createPhoneApp(pi: ExtensionAPI) {
+function createPhoneApp() {
   const app = new Hono()
+
+  app.use("*", async (context, next) => {
+    await next()
+    context.header("Cache-Control", "private, no-store, no-cache, must-revalidate, max-age=0")
+    context.header("Pragma", "no-cache")
+    context.header("Expires", "0")
+  })
 
   app.get("/assets/style.css", serveStatic({ path: join(EXTENSION_DIR, "style.css") }))
   app.get("/assets/client.js", serveStatic({ path: join(EXTENSION_DIR, "client.js") }))
 
+  app.get("/pair/:token", (context) => {
+    const token = context.req.param("token")
+    if (!authorizeToken(token)) return context.text("Pairing link expired", 401)
+    setAuthorizationCookie(context, token)
+    context.header("Clear-Site-Data", '"cache"')
+    return contextualPhonePage(context)
+  })
+
   app.get("/", (context) => {
-    const token = context.req.query("token")
-    if (token !== undefined) {
-      if (!authorizeToken(token)) return context.text("Unauthorized or expired token", 401)
-      setCookie(context, AUTH_COOKIE, token, {
-        httpOnly: true,
-        maxAge: TOKEN_TTL_MS / 1_000,
-        path: "/",
-        sameSite: "Strict",
-        secure: true,
-      })
-      return context.redirect("/")
+    const token = getCookie(context, AUTH_COOKIE)
+    if (token === undefined || !authorizeToken(token)) {
+      return context.text("Phone session expired; scan the latest QR code", 401)
     }
-    return authorizeToken(getCookie(context, AUTH_COOKIE))
-      ? phonePage()
-      : context.text("Unauthorized or expired token", 401)
+    setAuthorizationCookie(context, token)
+    return contextualPhonePage(context)
   })
 
   app.use("/events", requireAuthorization)
@@ -479,7 +694,33 @@ function createPhoneApp(pi: ExtensionAPI) {
     return reply.stream(client, { heartbeat: { intervalMs: 15_000 } })
   })
 
-  app.get("/api/state", () => reply.stream(renderSnapshot()))
+  app.get("/api/state", () =>
+    reply.stream(sharedRuntime.bridge?.renderSnapshot() ?? renderSnapshot())
+  )
+
+  const requestSessionAction = (action: SessionAction): Response => {
+    const bridge = sharedRuntime.bridge
+    if (bridge === undefined) {
+      return reply.signals(phoneSignals.patch({ status: "Pi session unavailable" }))
+    }
+    const result = bridge.requestSessionAction(action)
+    if (result === "busy") {
+      return reply.signals(phoneSignals.patch({ status: "Wait for Pi to finish first" }))
+    }
+    return reply.stream([
+      event.signals(
+        phoneSignals.patch({
+          status: sharedRuntime.sessionOperation ?? "Starting…",
+          ...sessionOperationSignals(),
+        })
+      ),
+      event.script('document.querySelector("#session-dialog")?.close()'),
+    ])
+  }
+
+  app.post("/api/session/compact", () => requestSessionAction("compact"))
+  app.post("/api/session/handoff", () => requestSessionAction("handoff"))
+  app.post("/api/session/blank", () => requestSessionAction("blank"))
 
   app.post("/api/transcribe", async (context) => {
     try {
@@ -497,8 +738,11 @@ function createPhoneApp(pi: ExtensionAPI) {
     if (parsed._tag === "error") {
       return reply.signals(phoneSignals.patch({ status: parsed.message }))
     }
-    if (latestCtx?.isIdle() ?? true) pi.sendUserMessage(parsed.value.prompt)
-    else pi.sendUserMessage(parsed.value.prompt, { deliverAs: "followUp" })
+    const bridge = sharedRuntime.bridge
+    if (bridge === undefined) {
+      return reply.signals(phoneSignals.patch({ status: "Pi session unavailable" }))
+    }
+    bridge.sendUserMessage(parsed.value.prompt)
     broadcastStatus(false)
     return reply.signals(phoneSignals.patch({ prompt: "", status: "Sent" }))
   })
@@ -511,11 +755,11 @@ function createPhoneApp(pi: ExtensionAPI) {
   return app
 }
 
-function startServer(pi: ExtensionAPI): Promise<ServerState> {
+function startServer(): Promise<ServerState> {
   if (runningServer !== undefined) return Promise.resolve(runningServer)
   if (startPromise !== undefined) return startPromise
 
-  const app = createPhoneApp(pi)
+  const app = createPhoneApp()
   startPromise = new Promise((resolve, reject) => {
     const server = serve(
       {
@@ -537,11 +781,14 @@ function startServer(pi: ExtensionAPI): Promise<ServerState> {
           tokenExpiresAt: Date.now() + TOKEN_TTL_MS,
           clients: new Map(),
         }
+        sharedRuntime.server = runningServer
+        sharedRuntime.startPromise = startPromise
         resolve(runningServer)
       }
     )
     const fail = (error: Error) => {
       startPromise = undefined
+      sharedRuntime.startPromise = undefined
       reject(error)
     }
     server.once("error", fail)
@@ -553,9 +800,44 @@ function stopServer(): Promise<void> {
   const current = runningServer
   runningServer = undefined
   startPromise = undefined
+  sharedRuntime.server = undefined
+  sharedRuntime.startPromise = undefined
   for (const client of current?.clients.values() ?? []) client.close()
   if (current === undefined) return Promise.resolve()
   return new Promise((resolve) => current.server.close(() => resolve()))
+}
+
+function normalizeHandoffPath(candidate: string, cwd: string): string | undefined {
+  const normalizedCandidate = candidate.startsWith("@") ? candidate.slice(1) : candidate
+  const path = resolve(cwd, normalizedCandidate)
+  const temporaryRoot = resolve(tmpdir())
+  if (path !== temporaryRoot && !path.startsWith(`${temporaryRoot}${sep}`)) return undefined
+  return path.endsWith(".md") ? path : undefined
+}
+
+function handoffPathFromText(text: string, cwd: string): string | undefined {
+  for (const token of text.split(/\s+/)) {
+    const candidate = token.replace(/^[`'"([{]+|[`'"\])},.:;]+$/g, "")
+    const path = normalizeHandoffPath(candidate, cwd)
+    if (path !== undefined) return path
+  }
+  return undefined
+}
+
+function broadcastSessionOperation(
+  operation: string | undefined,
+  status = operation ?? "Idle"
+): void {
+  sharedRuntime.sessionOperation = operation
+  broadcast(
+    event.signals(phoneSignals.patch({ status, ...contextSignals(), ...sessionOperationSignals() }))
+  )
+}
+
+function sessionOperationText(action: SessionAction): string {
+  if (action === "compact") return "Compacting current session…"
+  if (action === "handoff") return "Generating handoff…"
+  return "Opening a blank session…"
 }
 
 /** Registers the server-driven phone handoff commands and session event projections. */
@@ -563,14 +845,99 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     latestCtx = ctx
     feedItems = ctx.sessionManager.getBranch().map(entryView).filter(isFeedItem)
+    streamingAssistantId = undefined
+    streamingAssistantVisible = false
+    sharedRuntime.sessionActionPending = false
+    sharedRuntime.sessionOperation = undefined
+    sharedRuntime.handoffCaptureActive = false
+    sharedRuntime.handoffPath = undefined
+    sharedRuntime.handoffSourceSession = undefined
+    sharedRuntime.bridge = {
+      isIdle: () => ctx.isIdle(),
+      contextSignals: () => contextSignals(ctx),
+      renderPage: phonePage,
+      renderSnapshot,
+      sendUserMessage(prompt) {
+        if (ctx.isIdle()) pi.sendUserMessage(prompt)
+        else pi.sendUserMessage(prompt, { deliverAs: "followUp" })
+      },
+      requestSessionAction(action) {
+        if (!ctx.isIdle() || sharedRuntime.sessionActionPending) return "busy"
+        sharedRuntime.sessionActionPending = true
+        sharedRuntime.sessionOperation = sessionOperationText(action)
+        pi.sendUserMessage(`/phone-session-action ${action}`, { expandPromptTemplates: true })
+        return "accepted"
+      },
+    }
+    if (runningServer !== undefined) {
+      pi.events.emit(PHONE_MODE_EVENT, { active: true })
+      broadcastSnapshot()
+    }
+  })
+
+  pi.on("message_start", (event, ctx) => {
+    latestCtx = ctx
+    if (event.message.role !== "assistant") return
+    streamingAssistantId = `assistant-${randomBytes(8).toString("hex")}`
+    streamingAssistantVisible = false
+  })
+
+  pi.on("message_update", (event, ctx) => {
+    latestCtx = ctx
+    if (event.message.role !== "assistant") return
+    const id = streamingAssistantId ?? `assistant-${randomBytes(8).toString("hex")}`
+    streamingAssistantId = id
+    const item = messageView(id, event.message)
+    if (item === undefined) return
+
+    const firstPatch = !streamingAssistantVisible
+    if (firstPatch) {
+      const feedWasFull = feedItems.length >= 160
+      feedItems = [...feedItems, item].slice(-160)
+      streamingAssistantVisible = true
+      if (feedWasFull) broadcastSnapshot()
+      else broadcastStreamingAssistant(item, true)
+      return
+    }
+
+    feedItems = feedItems.map((current) => (current.id === id ? item : current))
+    broadcastStreamingAssistant(item, false)
   })
 
   pi.on("message_end", (event, ctx) => {
     latestCtx = ctx
+    if (event.message.role === "assistant") {
+      if (sharedRuntime.handoffCaptureActive) {
+        sharedRuntime.handoffPath ??= handoffPathFromText(
+          textFromContent(event.message.content),
+          ctx.cwd
+        )
+      }
+      const id = streamingAssistantId ?? `assistant-${randomBytes(8).toString("hex")}`
+      const item = messageView(id, event.message)
+      if (item !== undefined) {
+        if (streamingAssistantVisible) {
+          feedItems = feedItems.map((current) => (current.id === id ? item : current))
+          broadcastStreamingAssistant(item, false)
+        } else {
+          feedItems = [...feedItems, item].slice(-160)
+          broadcastSnapshot()
+        }
+      }
+      streamingAssistantId = undefined
+      streamingAssistantVisible = false
+      return
+    }
+
     const item = messageView(`${event.message.role}-${Date.now()}`, event.message)
     if (item === undefined) return
     feedItems = [...feedItems, item].slice(-160)
     broadcastSnapshot()
+  })
+
+  pi.on("tool_call", (event, ctx) => {
+    if (!sharedRuntime.handoffCaptureActive || !isToolCallEventType("write", event)) return
+    sharedRuntime.handoffPath ??= normalizeHandoffPath(event.input.path, ctx.cwd)
   })
 
   pi.on("agent_start", (_event, ctx) => {
@@ -581,6 +948,29 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("agent_end", (_event, ctx) => {
     latestCtx = ctx
     broadcastSnapshot()
+  })
+
+  pi.on("agent_settled", async () => {
+    if (!sharedRuntime.handoffCaptureActive) return
+    sharedRuntime.handoffCaptureActive = false
+    const path = sharedRuntime.handoffPath
+    if (path === undefined) {
+      sharedRuntime.sessionActionPending = false
+      broadcastSessionOperation(undefined, "Handoff finished without a file path")
+      return
+    }
+
+    try {
+      await access(path)
+    } catch {
+      sharedRuntime.sessionActionPending = false
+      broadcastSessionOperation(undefined, "Handoff file was not created")
+      return
+    }
+
+    broadcastSessionOperation("Opening handoff session…")
+    const encodedPath = Buffer.from(path).toString("base64url")
+    pi.sendUserMessage(`/phone-finish-handoff ${encodedPath}`, { expandPromptTemplates: true })
   })
 
   pi.on("tool_execution_start", (toolEvent) => {
@@ -611,10 +1001,89 @@ export default function phone(pi: ExtensionAPI): void {
     broadcastSnapshot()
   })
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (event) => {
     latestCtx = undefined
+    sharedRuntime.bridge = undefined
+    if (event.reason === "new" || event.reason === "resume" || event.reason === "fork") return
     await stopServer()
     pi.events.emit(PHONE_MODE_EVENT, { active: false })
+  })
+
+  pi.registerCommand("phone-session-action", {
+    description: "Manage the active session from the phone interface",
+    handler: async (args, ctx) => {
+      const action = args.trim()
+      if (action === "compact") {
+        broadcastSessionOperation("Compacting current session…")
+        ctx.compact({
+          onComplete: () => {
+            sharedRuntime.sessionActionPending = false
+            broadcastSessionOperation(undefined, "Compacted")
+          },
+          onError: (error) => {
+            sharedRuntime.sessionActionPending = false
+            broadcastSessionOperation(undefined, `Compaction failed: ${error.message}`)
+          },
+        })
+        return
+      }
+
+      if (action === "blank") {
+        broadcastSessionOperation("Opening a blank session…")
+        const result = await ctx.newSession()
+        if (!result.cancelled) return
+        sharedRuntime.sessionActionPending = false
+        broadcastSessionOperation(undefined, "New session cancelled")
+        return
+      }
+
+      if (action === "handoff") {
+        sharedRuntime.handoffCaptureActive = true
+        sharedRuntime.handoffPath = undefined
+        sharedRuntime.handoffSourceSession = ctx.sessionManager.getSessionFile()
+        broadcastSessionOperation("Generating handoff…")
+        pi.sendUserMessage("/skill:handoff", { expandPromptTemplates: true })
+        return
+      }
+
+      sharedRuntime.sessionActionPending = false
+      broadcastSessionOperation(undefined, "Unknown session action")
+    },
+  })
+
+  pi.registerCommand("phone-finish-handoff", {
+    description: "Open the generated phone handoff in a new session",
+    handler: async (args, ctx) => {
+      const decodedPath = Buffer.from(args.trim(), "base64url").toString("utf8")
+      const path = normalizeHandoffPath(decodedPath, ctx.cwd)
+      if (path === undefined) {
+        sharedRuntime.sessionActionPending = false
+        broadcastSessionOperation(undefined, "Invalid handoff path")
+        return
+      }
+
+      const parentSession = sharedRuntime.handoffSourceSession
+      const result = await ctx.newSession({
+        parentSession,
+        async setup(sessionManager) {
+          sessionManager.appendMessage({
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Read the handoff at ${path} and continue from it.`,
+              },
+            ],
+            timestamp: Date.now(),
+          })
+        },
+      })
+      if (!result.cancelled) return
+      sharedRuntime.sessionActionPending = false
+      sharedRuntime.handoffPath = undefined
+      sharedRuntime.handoffSourceSession = undefined
+      broadcastSessionOperation(undefined, "Handoff cancelled")
+    },
   })
 
   pi.registerCommand("phone-start", {
@@ -622,7 +1091,7 @@ export default function phone(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       latestCtx = ctx
       try {
-        const server = await startServer(pi)
+        const server = await startServer()
         pi.events.emit(PHONE_MODE_EVENT, { active: true })
         refreshToken(server)
         const url = tailscaleUrl(server.port, server.token)

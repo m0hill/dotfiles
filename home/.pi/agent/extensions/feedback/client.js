@@ -1,5 +1,101 @@
 let selectionAnchor
 const dismissibleDialogs = new WeakSet()
+const MERMAID_RUNTIME = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+
+const diagramDefinition = (code) => {
+  const language = [...code.classList]
+    .find((className) => className.startsWith("language-"))
+    ?.slice("language-".length)
+    .toLowerCase()
+  const source = code.textContent ?? ""
+
+  if (language === "mermaid") return source
+  if (["sequence", "sequential", "sequence-diagram", "sequencediagram"].includes(language)) {
+    return /^\s*sequenceDiagram\b/.test(source) ? source : `sequenceDiagram\n${source}`
+  }
+  return undefined
+}
+
+const addDiagramExpandButton = (container) => {
+  const button = document.createElement("button")
+  button.className = "button icon-button diagram-expand-button"
+  button.type = "button"
+  button.textContent = "⛶"
+
+  const setExpanded = (expanded) => {
+    button.title = expanded ? "Close expanded diagram" : "Expand diagram"
+    button.setAttribute("aria-label", button.title)
+  }
+  const open = () => {
+    const placeholder = document.createComment("diagram position")
+    container.replaceWith(placeholder)
+
+    const dialog = document.createElement("dialog")
+    dialog.className = "diagram-dialog"
+    dialog.setAttribute("aria-label", "Expanded diagram")
+    dialog.append(container)
+    document.body.append(dialog)
+
+    setExpanded(true)
+    button.onclick = () => dialog.close()
+    const restore = () => {
+      placeholder.replaceWith(container)
+      setExpanded(false)
+      button.onclick = open
+      dialog.remove()
+    }
+    dialog.addEventListener("close", restore, { once: true })
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close()
+    })
+    dialog.showModal()
+  }
+
+  setExpanded(false)
+  button.onclick = open
+  container.append(button)
+}
+
+const renderDiagrams = async () => {
+  const diagrams = [...document.querySelectorAll("#doc pre > code[class*='language-']")]
+    .map((code) => ({ code, definition: diagramDefinition(code) }))
+    .filter(({ definition }) => definition !== undefined)
+  if (diagrams.length === 0) return
+
+  try {
+    const { default: mermaid } = await import(MERMAID_RUNTIME)
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "dark",
+      fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    })
+
+    for (const [index, { code, definition }] of diagrams.entries()) {
+      const container = document.createElement("div")
+      container.className = "diagram"
+      container.setAttribute("role", "img")
+      container.setAttribute("aria-label", "Mermaid diagram")
+      try {
+        await mermaid.parse(definition)
+        const { svg, bindFunctions } = await mermaid.render(`feedback-diagram-${index}`, definition)
+        container.innerHTML = svg
+        bindFunctions?.(container)
+        addDiagramExpandButton(container)
+        code.parentElement?.replaceWith(container)
+      } catch (error) {
+        code.parentElement?.classList.add("diagram-error")
+        code.parentElement?.setAttribute(
+          "title",
+          `Could not render diagram: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
+    }
+  } catch (error) {
+    console.error("Could not load Mermaid", error)
+    diagrams.forEach(({ code }) => code.parentElement?.classList.add("diagram-error"))
+  }
+}
 
 const locate = (root, offset) => {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -106,3 +202,5 @@ globalThis.feedback = {
     globalThis.getSelection()?.removeAllRanges()
   },
 }
+
+void renderDiagrams()

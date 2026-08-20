@@ -519,6 +519,84 @@ button:disabled {
   font-size: inherit;
 }
 
+.diagram {
+  position: relative;
+  width: 100%;
+  overflow: auto;
+  padding: 2.75rem 1rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.diagram svg {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.diagram-expand-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  font-size: 1rem;
+}
+
+.diagram-expand-button:hover {
+  border-color: var(--color-input);
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.diagram-dialog {
+  inset: 1rem;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  overflow: hidden;
+  border-color: var(--color-input);
+}
+
+.diagram-dialog::backdrop {
+  background: rgb(0 0 0 / 0.8);
+  backdrop-filter: blur(0.25rem);
+}
+
+.diagram-dialog .diagram {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.diagram-dialog .diagram svg {
+  width: 100%;
+  max-width: none;
+  max-height: calc(100vh - 5rem);
+}
+
+#doc pre.diagram-error {
+  border-color: var(--color-danger);
+}
+
+#doc pre.diagram-error::before {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--color-danger);
+  content: "Diagram could not be rendered — showing source";
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 #doc table {
   display: block;
   width: 100%;
