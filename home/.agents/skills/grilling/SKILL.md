@@ -15,7 +15,7 @@ Each question should be formatted like so:
 ➡️ <your recommended answer>
 ```
 
-Each round the user answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
+Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
 Finding _facts_ is your job, never the user's. When a frontier question needs a fact from the environment, use a background subagent if one is available; otherwise investigate directly. Don't ask the user for anything you can look up. A running exploration is an unsettled prerequisite, so only its downstream questions wait — ask the rest of the frontier now. The _decisions_ are the user's — put each to them and wait.
 
