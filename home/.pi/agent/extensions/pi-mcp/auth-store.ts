@@ -74,11 +74,10 @@ export class AuthStore {
 
   /** Replaces the auth entry for one MCP server. */
   set(mcpName: string, entry: AuthEntry, serverUrl?: string) {
-    return this.mutate((data) => {
-      const nextEntry = { ...entry }
-      if (serverUrl) Object.assign(nextEntry, { serverUrl })
-      return { ...data, [mcpName]: nextEntry }
-    })
+    return this.mutate((data) => ({
+      ...data,
+      [mcpName]: serverUrl ? { ...entry, serverUrl } : entry,
+    }))
   }
 
   /** Removes all stored auth state for one MCP server. */
@@ -92,20 +91,16 @@ export class AuthStore {
 
   /** Stores OAuth tokens for one MCP server. */
   updateTokens(mcpName: string, tokens: AuthTokens, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => {
-      const next = { ...entry, tokens }
-      if (serverUrl) Object.assign(next, { serverUrl })
-      return next
-    })
+    return this.updateEntry(mcpName, (entry) =>
+      serverUrl ? { ...entry, tokens, serverUrl } : { ...entry, tokens }
+    )
   }
 
   /** Stores OAuth client registration metadata for one MCP server. */
   updateClientInfo(mcpName: string, clientInfo: AuthClientInfo, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => {
-      const next = { ...entry, clientInfo }
-      if (serverUrl) Object.assign(next, { serverUrl })
-      return next
-    })
+    return this.updateEntry(mcpName, (entry) =>
+      serverUrl ? { ...entry, clientInfo, serverUrl } : { ...entry, clientInfo }
+    )
   }
 
   /** Stores a PKCE code verifier for an in-flight OAuth flow. */
@@ -135,11 +130,9 @@ export class AuthStore {
 
   /** Stores authorization-server discovery state across the OAuth redirect round trip. */
   updateDiscoveryState(mcpName: string, discoveryState: OAuthDiscoveryState, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => {
-      const next = { ...entry, discoveryState }
-      if (serverUrl) Object.assign(next, { serverUrl })
-      return next
-    })
+    return this.updateEntry(mcpName, (entry) =>
+      serverUrl ? { ...entry, discoveryState, serverUrl } : { ...entry, discoveryState }
+    )
   }
 
   /** Classifies the stored token state for one MCP server. */

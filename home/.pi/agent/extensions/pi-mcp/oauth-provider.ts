@@ -94,16 +94,17 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   /** Persists dynamically registered OAuth client information. */
   async saveClientInformation(info: StoredOAuthClientInformation): Promise<void> {
-    const clientInfo: AuthClientInfo = { clientId: info.client_id }
-    if (nonEmptyString(info.client_secret))
-      Object.assign(clientInfo, { clientSecret: info.client_secret })
+    let clientInfo: AuthClientInfo = { clientId: info.client_id }
+    if (nonEmptyString(info.client_secret)) {
+      clientInfo = { ...clientInfo, clientSecret: info.client_secret }
+    }
     if (info.client_id_issued_at !== undefined) {
-      Object.assign(clientInfo, { clientIdIssuedAt: info.client_id_issued_at })
+      clientInfo = { ...clientInfo, clientIdIssuedAt: info.client_id_issued_at }
     }
     if (info.client_secret_expires_at !== undefined) {
-      Object.assign(clientInfo, { clientSecretExpiresAt: info.client_secret_expires_at })
+      clientInfo = { ...clientInfo, clientSecretExpiresAt: info.client_secret_expires_at }
     }
-    if (nonEmptyString(info.issuer)) Object.assign(clientInfo, { issuer: info.issuer })
+    if (nonEmptyString(info.issuer)) clientInfo = { ...clientInfo, issuer: info.issuer }
     await this.auth.updateClientInfo(this.mcpName, clientInfo, this.serverUrl)
   }
 
@@ -126,15 +127,15 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   /** Persists OAuth tokens returned by the MCP SDK after grant or refresh flows. */
   async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
-    const authTokens: AuthTokens = { accessToken: tokens.access_token }
+    let authTokens: AuthTokens = { accessToken: tokens.access_token }
     if (nonEmptyString(tokens.refresh_token)) {
-      Object.assign(authTokens, { refreshToken: tokens.refresh_token })
+      authTokens = { ...authTokens, refreshToken: tokens.refresh_token }
     }
     if (tokens.expires_in !== undefined) {
-      Object.assign(authTokens, { expiresAt: Date.now() / 1000 + tokens.expires_in })
+      authTokens = { ...authTokens, expiresAt: Date.now() / 1000 + tokens.expires_in }
     }
-    if (nonEmptyString(tokens.scope)) Object.assign(authTokens, { scope: tokens.scope })
-    if (nonEmptyString(tokens.issuer)) Object.assign(authTokens, { issuer: tokens.issuer })
+    if (nonEmptyString(tokens.scope)) authTokens = { ...authTokens, scope: tokens.scope }
+    if (nonEmptyString(tokens.issuer)) authTokens = { ...authTokens, issuer: tokens.issuer }
     await this.auth.updateTokens(this.mcpName, authTokens, this.serverUrl)
   }
 

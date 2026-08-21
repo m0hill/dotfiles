@@ -218,6 +218,5 @@ function requestOptions(timeout: number | undefined, signal: CancellableOptions[
     timeout: timeout ?? DEFAULT_TIMEOUT,
     onprogress: () => {},
   }
-  if (signal) Object.assign(options, { signal })
-  return options
+  return signal ? { ...options, signal } : options
 }

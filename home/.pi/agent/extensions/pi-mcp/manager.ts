@@ -985,9 +985,8 @@ function oauthProviderConfig(
   redirectUri: string | undefined
 ): OAuthConfig | undefined {
   if (!config && !redirectUri) return undefined
-  const result: OAuthConfig = config ? structuredClone(config) : {}
-  if (redirectUri !== undefined) Object.assign(result, { redirectUri })
-  return result
+  const result: OAuthConfig = config ? { ...config } : {}
+  return redirectUri === undefined ? result : { ...result, redirectUri }
 }
 
 function cloneMcpConfig(config: McpConfig): McpConfig {
@@ -1058,9 +1057,7 @@ async function waitForConnectAttempt(
 }
 
 function sdkRequestOptions(timeout: number, signal: AbortSignal | undefined) {
-  const options = { timeout }
-  if (signal) Object.assign(options, { signal })
-  return options
+  return signal ? { timeout, signal } : { timeout }
 }
 
 async function collectPartial<T>(

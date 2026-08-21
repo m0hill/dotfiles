@@ -17,7 +17,7 @@ import { loadMcpConfig } from "./config.js"
 import { ConnectionStore } from "./connection-store.js"
 import { formatMcpServerTarget, redactSecrets } from "./display.js"
 import { handlePiElicitation } from "./elicitation.js"
-import { McpManager, type McpToolEntry } from "./manager.js"
+import { McpManager, type McpServerFailure, type McpToolEntry } from "./manager.js"
 import type { CancellableOptions, McpConfig, McpStatus } from "./types.js"
 import {
   optionalString,
@@ -38,7 +38,11 @@ type ProxyDetails = z.infer<typeof JSONObjectSchema>
 
 const BooleanValueSchema = z.boolean()
 const StringValueSchema = z.string()
-const ExternalJSONValueSchema = z.unknown().pipe(JSONValueSchema)
+
+interface FormattedResourceResponse {
+  readonly resources: ReturnType<typeof formatResourceList>
+  readonly failures?: readonly McpServerFailure[]
+}
 
 interface RenderTheme {
   fg: (name: "toolTitle" | "muted", text: string) => string
@@ -461,8 +465,8 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         `${b.client}\u0000${b.name}\u0000${b.uri}`
       )
     )
-    const response = { resources: formatResourceList(sorted) }
-    if (result.failures.length > 0) Object.assign(response, { failures: result.failures })
+    let response: FormattedResourceResponse = { resources: formatResourceList(sorted) }
+    if (result.failures.length > 0) response = { ...response, failures: result.failures }
     const details: ProxyDetails = {
       mode: "resources",
       count: sorted.length,
@@ -651,8 +655,8 @@ export default function piMcpExtension(pi: ExtensionAPI) {
             `${b.client}\u0000${b.name}\u0000${b.uri}`
           )
         )
-        const response = { resources: formatResourceList(sorted) }
-        if (result.failures.length > 0) Object.assign(response, { failures: result.failures })
+        let response: FormattedResourceResponse = { resources: formatResourceList(sorted) }
+        if (result.failures.length > 0) response = { ...response, failures: result.failures }
         return {
           content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
           details: resourceListDetails(
@@ -1104,7 +1108,7 @@ function formatMcpProxyCallTitle(args: ToolArguments) {
 
 function renderToolCall(
   name: string,
-  args: z.input<typeof ExternalJSONValueSchema>,
+  args: Parameters<typeof parseToolArguments>[0],
   theme: RenderTheme
 ) {
   const title = theme.fg("toolTitle", theme.bold(name))
@@ -1113,7 +1117,7 @@ function renderToolCall(
   return new Text(`${title}\n${theme.fg("muted", renderedArgs)}`, 0, 0)
 }
 
-function formatRenderedCallArgs(args: z.input<typeof ExternalJSONValueSchema>) {
+function formatRenderedCallArgs(args: Parameters<typeof parseToolArguments>[0]) {
   const parsed = JSONObjectSchema.safeParse(args)
   if (!parsed.success || Object.keys(parsed.data).length === 0) return ""
   return formatJsonish(parsed.data)

@@ -18,7 +18,9 @@ type PrimitiveSchema = z.infer<typeof PrimitiveSchemaDefinitionSchema>
 const StringSchema = z.string()
 const NumberSchema = z.number().finite()
 const StringArraySchema = z.array(z.string())
-const StringConstVariantsSchema = z.array(z.object({ const: z.string() }).loose())
+const StringConstVariantsSchema = z.array(
+  z.object({ const: z.string(), title: z.string().optional() })
+)
 
 const CANCEL = Symbol("cancel")
 

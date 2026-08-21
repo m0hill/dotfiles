@@ -21,13 +21,20 @@ interface LoadOptions {
 type ConfigObject = z.infer<typeof JSONObjectSchema>
 type JSONValue = z.infer<typeof JSONValueSchema>
 type ServerEntryMode = "strict" | "discover"
+type OAuthStringField =
+  | "clientId"
+  | "clientSecret"
+  | "scope"
+  | "redirectUri"
+  | "clientName"
+  | "clientUri"
 
 const PositiveIntegerSchema = z.int().positive()
 const ToolModeSchema = z.enum(["direct", "proxy"])
 const StartupModeSchema = z.enum(["eager", "lazy"])
 const StringRecordSchema = z.record(z.string(), z.string())
 const CommandSchema = z.array(z.string().min(1)).min(1)
-const OAuthSchema = z.looseObject({
+const OAuthSchema = z.object({
   clientId: z.string().optional(),
   client_id: z.string().optional(),
   clientSecret: z.string().optional(),
@@ -42,7 +49,7 @@ const OAuthSchema = z.looseObject({
   clientUri: z.string().optional(),
   client_uri: z.string().optional(),
 })
-const LocalServerSchema = z.looseObject({
+const LocalServerSchema = z.object({
   type: z.literal("local"),
   command: CommandSchema,
   cwd: z.string().min(1).optional(),
@@ -51,7 +58,7 @@ const LocalServerSchema = z.looseObject({
   disabled: z.boolean().optional(),
   timeout: PositiveIntegerSchema.optional(),
 })
-const RemoteServerSchema = z.looseObject({
+const RemoteServerSchema = z.object({
   type: z.literal("remote"),
   url: z.string().min(1),
   headers: StringRecordSchema.optional(),
@@ -175,43 +182,47 @@ function parseServer(
 
   const timeout = parsed.data.timeout ?? defaultTimeout
   if (parsed.data.type === "local") {
-    const server: McpServerConfig = {
+    let server: McpServerConfig = {
       type: "local",
       command: parsed.data.command.map((item) => expandEnv(item, `${source} ${pathLabel}.command`)),
     }
     if (parsed.data.cwd !== undefined) {
-      Object.assign(server, { cwd: expandEnv(parsed.data.cwd, `${source} ${pathLabel}.cwd`) })
+      server = {
+        ...server,
+        cwd: expandEnv(parsed.data.cwd, `${source} ${pathLabel}.cwd`),
+      }
     }
     if (parsed.data.environment !== undefined) {
-      Object.assign(server, {
+      server = {
+        ...server,
         environment: expandStringRecord(
           parsed.data.environment,
           source,
           `${pathLabel}.environment`
         ),
-      })
+      }
     }
-    assignServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
-    return server
+    return withServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
   }
 
-  const server: McpServerConfig = {
+  let server: McpServerConfig = {
     type: "remote",
     url: expandEnv(parsed.data.url, `${source} ${pathLabel}.url`),
   }
   if (parsed.data.headers !== undefined) {
-    Object.assign(server, {
+    server = {
+      ...server,
       headers: expandStringRecord(parsed.data.headers, source, `${pathLabel}.headers`),
-    })
+    }
   }
   if (parsed.data.oauth !== undefined) {
-    Object.assign(server, {
+    server = {
+      ...server,
       oauth:
         parsed.data.oauth === false ? false : makeOAuthConfig(parsed.data.oauth, source, pathLabel),
-    })
+    }
   }
-  assignServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
-  return server
+  return withServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
 }
 
 function expandStringRecord(values: Record<string, string>, source: string, pathLabel: string) {
@@ -224,57 +235,64 @@ function expandStringRecord(values: Record<string, string>, source: string, path
 }
 
 function makeOAuthConfig(value: z.infer<typeof OAuthSchema>, source: string, pathLabel: string) {
-  const oauth: OAuthConfig = {}
-  assignExpandedString(oauth, "clientId", value.clientId ?? value.client_id, source, pathLabel)
-  assignExpandedString(
-    oauth,
-    "clientSecret",
+  let oauth: OAuthConfig = {}
+  const clientId = expandOptional(value.clientId ?? value.client_id, "clientId", source, pathLabel)
+  if (clientId !== undefined) oauth = { ...oauth, clientId }
+  const clientSecret = expandOptional(
     value.clientSecret ?? value.client_secret,
+    "clientSecret",
     source,
     pathLabel
   )
-  assignExpandedString(oauth, "scope", value.scope, source, pathLabel)
+  if (clientSecret !== undefined) oauth = { ...oauth, clientSecret }
+  const scope = expandOptional(value.scope, "scope", source, pathLabel)
+  if (scope !== undefined) oauth = { ...oauth, scope }
   const callbackPort = value.callbackPort ?? value.callback_port
-  if (callbackPort !== undefined) Object.assign(oauth, { callbackPort })
-  assignExpandedString(
-    oauth,
-    "redirectUri",
+  if (callbackPort !== undefined) oauth = { ...oauth, callbackPort }
+  const redirectUri = expandOptional(
     value.redirectUri ?? value.redirect_uri,
+    "redirectUri",
     source,
     pathLabel
   )
-  assignExpandedString(
-    oauth,
-    "clientName",
+  if (redirectUri !== undefined) oauth = { ...oauth, redirectUri }
+  const clientName = expandOptional(
     value.clientName ?? value.client_name,
+    "clientName",
     source,
     pathLabel
   )
-  assignExpandedString(oauth, "clientUri", value.clientUri ?? value.client_uri, source, pathLabel)
+  if (clientName !== undefined) oauth = { ...oauth, clientName }
+  const clientUri = expandOptional(
+    value.clientUri ?? value.client_uri,
+    "clientUri",
+    source,
+    pathLabel
+  )
+  if (clientUri !== undefined) oauth = { ...oauth, clientUri }
   return oauth
 }
 
-function assignExpandedString(
-  target: OAuthConfig,
-  key: keyof OAuthConfig,
+function expandOptional(
   value: string | undefined,
+  key: OAuthStringField,
   source: string,
   pathLabel: string
 ) {
-  if (value !== undefined) {
-    Object.assign(target, { [key]: expandEnv(value, `${source} ${pathLabel}.${key}`) })
-  }
+  return value === undefined ? undefined : expandEnv(value, `${source} ${pathLabel}.${key}`)
 }
 
-function assignServerOptions(
+function withServerOptions(
   server: McpServerConfig,
   enabled: boolean | undefined,
   disabled: boolean | undefined,
   timeout: number | undefined
 ) {
-  if (enabled !== undefined) Object.assign(server, { enabled })
-  if (disabled !== undefined) Object.assign(server, { disabled })
-  if (timeout !== undefined) Object.assign(server, { timeout })
+  let configured = server
+  if (enabled !== undefined) configured = { ...configured, enabled }
+  if (disabled !== undefined) configured = { ...configured, disabled }
+  if (timeout !== undefined) configured = { ...configured, timeout }
+  return configured
 }
 
 function parseOptional<Schema extends z.ZodType>(
@@ -305,10 +323,10 @@ function makeConfig(
   toolMode: McpToolMode | undefined,
   startup: McpStartupMode | undefined
 ): McpConfig {
-  const config: McpConfig = { servers, source }
-  if (timeout !== undefined) Object.assign(config, { timeout })
-  if (toolMode !== undefined) Object.assign(config, { toolMode })
-  if (startup !== undefined) Object.assign(config, { startup })
+  let config: McpConfig = { servers, source }
+  if (timeout !== undefined) config = { ...config, timeout }
+  if (toolMode !== undefined) config = { ...config, toolMode }
+  if (startup !== undefined) config = { ...config, startup }
   return config
 }
 

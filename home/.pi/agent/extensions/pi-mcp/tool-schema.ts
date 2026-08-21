@@ -15,10 +15,9 @@ const DEFINITION_KEYS = ["$defs", "definitions"] as const
 
 /** Converts an MCP input schema into the conservative object schema Pi expects for tools. */
 export function normalizeToolSchema(inputSchema: Tool["inputSchema"]): JSONObject {
-  const schema = structuredClone(inputSchema)
-  const properties = JSONObjectSchema.safeParse(schema.properties)
+  const properties = JSONObjectSchema.safeParse(inputSchema.properties)
   return sanitizeJsonSchema({
-    ...schema,
+    ...inputSchema,
     type: "object",
     properties: properties.success ? properties.data : {},
     additionalProperties: false,
