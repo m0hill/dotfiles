@@ -1,15 +1,16 @@
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type {
-  OAuthClientInformationFull,
-  OAuthClientInformationMixed,
+  OAuthClientInformationContext,
   OAuthClientMetadata,
-  OAuthTokens,
-} from "@modelcontextprotocol/sdk/shared/auth.js"
+  OAuthClientProvider,
+  OAuthDiscoveryState,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
+} from "@modelcontextprotocol/client"
 import type { AuthClientInfo, AuthTokens, OAuthConfig } from "./types.js"
 import { AuthStore } from "./auth-store.js"
 import { randomHex } from "./random.js"
 
-type OAuthClientInformationWithAuthMethod = OAuthClientInformationMixed & {
+type OAuthClientInformationWithAuthMethod = StoredOAuthClientInformation & {
   token_endpoint_auth_method?: string
 }
 
@@ -55,10 +56,13 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   /** Returns saved static or dynamically registered OAuth client information. */
-  async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+  async clientInformation(
+    ctx?: OAuthClientInformationContext
+  ): Promise<StoredOAuthClientInformation | undefined> {
     if (this.config?.clientId) {
-      const info: OAuthClientInformationMixed = {
+      const info: StoredOAuthClientInformation = {
         client_id: this.config.clientId,
+        ...(ctx ? { issuer: ctx.issuer } : {}),
       }
       if (this.config.clientSecret !== undefined) info.client_secret = this.config.clientSecret
       return info
@@ -75,6 +79,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
     const info: OAuthClientInformationWithAuthMethod = {
       client_id: entry.clientInfo.clientId,
+      ...(entry.clientInfo.issuer ? { issuer: entry.clientInfo.issuer } : {}),
     }
     if (entry.clientInfo.clientSecret !== undefined)
       info.client_secret = entry.clientInfo.clientSecret
@@ -84,7 +89,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   /** Persists dynamically registered OAuth client information. */
-  async saveClientInformation(info: OAuthClientInformationFull): Promise<void> {
+  async saveClientInformation(info: StoredOAuthClientInformation): Promise<void> {
     const clientInfo: AuthClientInfo = {
       clientId: info.client_id,
       ...(nonEmptyString(info.client_secret) ? { clientSecret: info.client_secret } : {}),
@@ -94,19 +99,17 @@ export class McpOAuthProvider implements OAuthClientProvider {
       ...(info.client_secret_expires_at !== undefined
         ? { clientSecretExpiresAt: info.client_secret_expires_at }
         : {}),
-      ...(nonEmptyString(info.token_endpoint_auth_method)
-        ? { tokenEndpointAuthMethod: info.token_endpoint_auth_method }
-        : {}),
+      ...(nonEmptyString(info.issuer) ? { issuer: info.issuer } : {}),
     }
     await this.auth.updateClientInfo(this.mcpName, clientInfo, this.serverUrl)
   }
 
   /** Returns saved OAuth tokens in the shape expected by the MCP SDK. */
-  async tokens(): Promise<OAuthTokens | undefined> {
+  async tokens(): Promise<StoredOAuthTokens | undefined> {
     const entry = await this.auth.getForUrl(this.mcpName, this.serverUrl)
     if (!entry?.tokens) return undefined
 
-    const tokens: OAuthTokens = {
+    const tokens: StoredOAuthTokens = {
       access_token: entry.tokens.accessToken,
       token_type: "Bearer",
     }
@@ -114,11 +117,12 @@ export class McpOAuthProvider implements OAuthClientProvider {
     if (entry.tokens.expiresAt !== undefined)
       tokens.expires_in = Math.max(0, Math.floor(entry.tokens.expiresAt - Date.now() / 1000))
     if (entry.tokens.scope !== undefined) tokens.scope = entry.tokens.scope
+    if (entry.tokens.issuer !== undefined) tokens.issuer = entry.tokens.issuer
     return tokens
   }
 
   /** Persists OAuth tokens returned by the MCP SDK after grant or refresh flows. */
-  async saveTokens(tokens: OAuthTokens): Promise<void> {
+  async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
     const authTokens: AuthTokens = {
       accessToken: tokens.access_token,
       ...(nonEmptyString(tokens.refresh_token) ? { refreshToken: tokens.refresh_token } : {}),
@@ -126,6 +130,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
         ? { expiresAt: Date.now() / 1000 + tokens.expires_in }
         : {}),
       ...(nonEmptyString(tokens.scope) ? { scope: tokens.scope } : {}),
+      ...(nonEmptyString(tokens.issuer) ? { issuer: tokens.issuer } : {}),
     }
     await this.auth.updateTokens(this.mcpName, authTokens, this.serverUrl)
   }
@@ -153,6 +158,16 @@ export class McpOAuthProvider implements OAuthClientProvider {
     await this.auth.updateOAuthState(this.mcpName, state)
   }
 
+  /** Persists authorization-server discovery across the browser redirect. */
+  async saveDiscoveryState(state: OAuthDiscoveryState): Promise<void> {
+    await this.auth.updateDiscoveryState(this.mcpName, state, this.serverUrl)
+  }
+
+  /** Returns authorization-server discovery saved for this MCP endpoint. */
+  async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    return (await this.auth.getForUrl(this.mcpName, this.serverUrl))?.discoveryState
+  }
+
   /** Returns an existing OAuth state or creates one for the current OAuth flow. */
   async state(): Promise<string> {
     const entry = await this.auth.get(this.mcpName)
@@ -163,7 +178,9 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   /** Removes persisted client or token credentials after the SDK invalidates them. */
-  async invalidateCredentials(type: "all" | "client" | "tokens"): Promise<void> {
+  async invalidateCredentials(
+    type: "all" | "client" | "tokens" | "verifier" | "discovery"
+  ): Promise<void> {
     const entry = await this.auth.get(this.mcpName)
     if (!entry) return
 
@@ -174,8 +191,17 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
     const { clientInfo: _clientInfo, ...withoutClient } = entry
     const { tokens: _tokens, ...withoutTokens } = entry
-    const next = type === "client" ? withoutClient : withoutTokens
-    await this.auth.set(this.mcpName, next)
+    const { codeVerifier: _codeVerifier, ...withoutVerifier } = entry
+    const { discoveryState: _discoveryState, ...withoutDiscovery } = entry
+    const next =
+      type === "client"
+        ? withoutClient
+        : type === "tokens"
+          ? withoutTokens
+          : type === "verifier"
+            ? withoutVerifier
+            : withoutDiscovery
+    await this.auth.set(this.mcpName, next, this.serverUrl)
   }
 }
 

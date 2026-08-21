@@ -2,6 +2,11 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
+import type { OAuthDiscoveryState } from "@modelcontextprotocol/client"
+import {
+  OAuthMetadataSchema,
+  OAuthProtectedResourceMetadataSchema,
+} from "@modelcontextprotocol/core"
 import type { AuthClientInfo, AuthEntry, AuthStatus, AuthTokens } from "./types.js"
 
 type AuthData = Record<string, AuthEntry>
@@ -92,6 +97,15 @@ export class AuthStore {
   /** Removes the OAuth state value after OAuth completion or cancellation. */
   clearOAuthState(mcpName: string) {
     return this.clearField(mcpName, "oauthState")
+  }
+
+  /** Stores authorization-server discovery state across the OAuth redirect round trip. */
+  updateDiscoveryState(mcpName: string, discoveryState: OAuthDiscoveryState, serverUrl?: string) {
+    return this.updateEntry(mcpName, (entry) => ({
+      ...entry,
+      discoveryState,
+      ...(serverUrl ? { serverUrl } : {}),
+    }))
   }
 
   /** Classifies the stored token state for one MCP server. */
@@ -186,6 +200,10 @@ function clearAuthEntryField(entry: AuthEntry, field: keyof AuthEntry): AuthEntr
       const { oauthState: _oauthState, ...next } = entry
       return next
     }
+    case "discoveryState": {
+      const { discoveryState: _discoveryState, ...next } = entry
+      return next
+    }
     case "serverUrl": {
       const { serverUrl: _serverUrl, ...next } = entry
       return next
@@ -204,6 +222,8 @@ function parseAuthEntry(value: unknown): AuthEntry | undefined {
   if ("codeVerifier" in value && codeVerifier === undefined) return undefined
   const oauthState = optionalString(value.oauthState)
   if ("oauthState" in value && oauthState === undefined) return undefined
+  const discoveryState = parseOAuthDiscoveryState(value.discoveryState)
+  if ("discoveryState" in value && discoveryState === undefined) return undefined
   const serverUrl = optionalString(value.serverUrl)
   if ("serverUrl" in value && serverUrl === undefined) return undefined
 
@@ -212,6 +232,7 @@ function parseAuthEntry(value: unknown): AuthEntry | undefined {
     ...(clientInfo !== undefined ? { clientInfo } : {}),
     ...(codeVerifier !== undefined ? { codeVerifier } : {}),
     ...(oauthState !== undefined ? { oauthState } : {}),
+    ...(discoveryState !== undefined ? { discoveryState } : {}),
     ...(serverUrl !== undefined ? { serverUrl } : {}),
   }
 }
@@ -225,12 +246,15 @@ function parseAuthTokens(value: unknown): AuthTokens | undefined {
   if ("expiresAt" in value && expiresAt === undefined) return undefined
   const scope = optionalString(value.scope)
   if ("scope" in value && scope === undefined) return undefined
+  const issuer = optionalString(value.issuer)
+  if ("issuer" in value && issuer === undefined) return undefined
 
   return {
     accessToken: value.accessToken,
     ...(refreshToken !== undefined ? { refreshToken } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(scope !== undefined ? { scope } : {}),
+    ...(issuer !== undefined ? { issuer } : {}),
   }
 }
 
@@ -245,6 +269,8 @@ function parseAuthClientInfo(value: unknown): AuthClientInfo | undefined {
   if ("clientSecretExpiresAt" in value && clientSecretExpiresAt === undefined) return undefined
   const tokenEndpointAuthMethod = optionalString(value.tokenEndpointAuthMethod)
   if ("tokenEndpointAuthMethod" in value && tokenEndpointAuthMethod === undefined) return undefined
+  const issuer = optionalString(value.issuer)
+  if ("issuer" in value && issuer === undefined) return undefined
 
   return {
     clientId: value.clientId,
@@ -252,6 +278,31 @@ function parseAuthClientInfo(value: unknown): AuthClientInfo | undefined {
     ...(clientIdIssuedAt !== undefined ? { clientIdIssuedAt } : {}),
     ...(clientSecretExpiresAt !== undefined ? { clientSecretExpiresAt } : {}),
     ...(tokenEndpointAuthMethod !== undefined ? { tokenEndpointAuthMethod } : {}),
+    ...(issuer !== undefined ? { issuer } : {}),
+  }
+}
+
+function parseOAuthDiscoveryState(value: unknown): OAuthDiscoveryState | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainRecord(value) || typeof value.authorizationServerUrl !== "string") return undefined
+
+  const authorizationServerMetadata = OAuthMetadataSchema.safeParse(
+    value.authorizationServerMetadata
+  )
+  if ("authorizationServerMetadata" in value && !authorizationServerMetadata.success)
+    return undefined
+  const resourceMetadata = OAuthProtectedResourceMetadataSchema.safeParse(value.resourceMetadata)
+  if ("resourceMetadata" in value && !resourceMetadata.success) return undefined
+  const resourceMetadataUrl = optionalString(value.resourceMetadataUrl)
+  if ("resourceMetadataUrl" in value && resourceMetadataUrl === undefined) return undefined
+
+  return {
+    authorizationServerUrl: value.authorizationServerUrl,
+    ...(authorizationServerMetadata.success
+      ? { authorizationServerMetadata: authorizationServerMetadata.data }
+      : {}),
+    ...(resourceMetadata.success ? { resourceMetadata: resourceMetadata.data } : {}),
+    ...(resourceMetadataUrl !== undefined ? { resourceMetadataUrl } : {}),
   }
 }
 

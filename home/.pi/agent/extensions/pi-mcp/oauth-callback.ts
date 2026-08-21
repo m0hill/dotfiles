@@ -4,7 +4,7 @@ import { OAUTH_CALLBACK_PATH, OAUTH_CALLBACK_PORT, parseRedirectUri } from "./oa
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
 
 interface PendingAuth {
-  resolve: (code: string) => void
+  resolve: (params: URLSearchParams) => void
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }
@@ -37,10 +37,10 @@ export async function ensureCallbackServer(redirectUri?: string) {
   server = nextServer
 }
 
-/** Waits for a matching OAuth callback code for one state value. */
+/** Waits for verified callback parameters matching one OAuth state value. */
 export function waitForCallback(oauthState: string, mcpName?: string) {
   if (mcpName) mcpNameToState.set(mcpName, oauthState)
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<URLSearchParams>((resolve, reject) => {
     const timeout = setTimeout(() => {
       const pending = pendingAuths.get(oauthState)
       if (!pending) return
@@ -93,7 +93,6 @@ function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const code = url.searchParams.get("code")
   const state = url.searchParams.get("state")
   const error = url.searchParams.get("error")
-  const errorDescription = url.searchParams.get("error_description")
 
   if (!state) {
     sendHtml(res, 400, errorPage("Missing required state parameter"))
@@ -101,15 +100,14 @@ function handleRequest(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (error) {
-    const message = errorDescription || error
     const pending = pendingAuths.get(state)
     if (pending) {
       clearTimeout(pending.timeout)
       pendingAuths.delete(state)
       cleanupStateIndex(state)
-      pending.reject(new Error(message))
+      pending.resolve(new URLSearchParams(url.searchParams))
     }
-    sendHtml(res, 200, errorPage(message))
+    sendHtml(res, 200, errorPage("The authorization server returned an error."))
     stopIfIdle()
     return
   }
@@ -128,7 +126,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse) {
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
   cleanupStateIndex(state)
-  pending.resolve(code)
+  pending.resolve(new URLSearchParams(url.searchParams))
   sendHtml(res, 200, successPage())
   stopIfIdle()
 }

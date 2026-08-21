@@ -1,22 +1,21 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import {
-  ElicitRequestSchema,
-  ListRootsRequestSchema,
-  LoggingMessageNotificationSchema,
-  ToolListChangedNotificationSchema,
-  type ElicitRequest,
-  type ElicitResult,
-  type LoggingMessageNotification,
-  type Prompt,
-  type Resource,
-  type Tool,
-} from "@modelcontextprotocol/sdk/types.js"
+  Client,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+  UnauthorizedError,
+} from "@modelcontextprotocol/client"
+import type {
+  ClientOptions,
+  ElicitRequest,
+  ElicitResult,
+  LoggingMessageNotification,
+  Prompt,
+  Resource,
+  Tool,
+} from "@modelcontextprotocol/client"
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import open from "open"
 import type {
   AuthStatus,
@@ -33,7 +32,7 @@ import { AuthStore } from "./auth-store.js"
 import { resolveHome } from "./config-values.js"
 import { redactSecrets } from "./display.js"
 import { randomHex } from "./random.js"
-import { DEFAULT_TIMEOUT } from "./request-limits.js"
+import { DEFAULT_TIMEOUT, MAX_LIST_PAGES } from "./request-limits.js"
 import { mcpToolKey, sanitizeName } from "./tool-names.js"
 import { withTimeout } from "./timeout.js"
 import { listPrompts, listResources, listTools } from "./catalog.js"
@@ -53,6 +52,8 @@ const CLIENT_OPTIONS = {
     },
     roots: {},
   },
+  versionNegotiation: { mode: "auto" },
+  listMaxPages: MAX_LIST_PAGES,
 } satisfies ClientOptions
 
 type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
@@ -438,14 +439,14 @@ export class McpManager {
     const callbackPromise = waitForCallback(result.oauthState, name)
     await this.openAuthorizationUrl(result.authorizationUrl, onAuthorizationUrl)
 
-    const code = await callbackPromise
+    const callbackParams = await callbackPromise
     const storedState = await this.auth.getOAuthState(name)
     if (storedState !== result.oauthState) {
       await this.auth.clearOAuthState(name)
       throw new Error("OAuth state mismatch")
     }
     await this.auth.clearOAuthState(name)
-    return this.finishAuth(name, code)
+    return this.finishAuth(name, callbackParams)
   }
 
   /** Removes stored OAuth state and cancels any in-flight authorization for one MCP server. */
@@ -565,7 +566,7 @@ export class McpManager {
       config: serverConfig,
       tools,
     })
-    this.watch(name, result.client, serverConfig.timeout ?? this.config.timeout ?? DEFAULT_TIMEOUT)
+    this.watch(name, result.client)
     await this.options.onToolsChanged?.(name)
     await this.emitStatusChanged()
     return result.status
@@ -696,24 +697,47 @@ export class McpManager {
     options.signal?.throwIfAborted()
 
     const client = this.createClient(name)
-    await withTimeout(client.connect(asSdkTransport(transport)), timeout, "MCP connect", {
+    await withTimeout(client.connect(transport), timeout, "MCP connect", {
       signal: undefined,
     })
     return client
   }
 
   private createClient(server = "unknown") {
-    const client = new Client({ name: "pi", version: "0.1.0" }, CLIENT_OPTIONS)
-    client.setRequestHandler(ListRootsRequestSchema, () =>
+    let client: Client
+    client = new Client(
+      { name: "pi", version: "0.1.0" },
+      {
+        ...CLIENT_OPTIONS,
+        listChanged: {
+          tools: {
+            onChanged: (error, tools) => {
+              if (error || !tools) {
+                console.error(
+                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(error)}`
+                )
+                return
+              }
+              this.handleToolListChanged(server, client, tools).catch((refreshError) => {
+                console.error(
+                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(refreshError)}`
+                )
+              })
+            },
+          },
+        },
+      }
+    )
+    client.setRequestHandler("roots/list", () =>
       Promise.resolve({ roots: [{ uri: pathToFileURL(this.options.cwd).href }] })
     )
-    client.setRequestHandler(ElicitRequestSchema, (request) => {
+    client.setRequestHandler("elicitation/create", (request) => {
       return this.options.onElicitation?.(server, request) ?? { action: "decline" }
     })
     return client
   }
 
-  private watch(name: string, client: Client, timeout: number) {
+  private watch(name: string, client: Client) {
     client.onclose = () => {
       const closed = this.handleClientClosed(name, client)
       closed.catch((error) => {
@@ -721,24 +745,15 @@ export class McpManager {
       })
     }
 
-    client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
+    client.setNotificationHandler("notifications/message", (notification) => {
       logServerMessage(name, notification.params)
-    })
-
-    if (!client.getServerCapabilities()?.tools) return
-    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
-      const refreshed = this.handleToolListChanged(name, client, timeout)
-      refreshed.catch((error) => {
-        console.error(`[mcp:${name}] tool list refresh failed: ${safeErrorSummary(error)}`)
-      })
     })
   }
 
-  private async handleToolListChanged(name: string, client: Client, timeout: number) {
+  private async handleToolListChanged(name: string, client: Client, tools: Tool[]) {
     const managed = this.clients.get(name)
     if (!managed || managed.client !== client || this.statuses.get(name)?.status !== "connected")
       return
-    const tools = await listTools(client, timeout, undefined)
     const collision = findToolKeyCollision(new Map(this.clients).set(name, { ...managed, tools }))
     if (collision) {
       this.clients.delete(name)
@@ -787,7 +802,7 @@ export class McpManager {
 
     try {
       const client = this.createClient(name)
-      await client.connect(asSdkTransport(transport))
+      await client.connect(transport)
       return { authorizationUrl: "", oauthState, client, transport }
     } catch (error) {
       if (error instanceof UnauthorizedError && capturedUrl) {
@@ -799,12 +814,12 @@ export class McpManager {
     }
   }
 
-  private async finishAuth(name: string, authorizationCode: string) {
+  private async finishAuth(name: string, callbackParams: URLSearchParams) {
     const transport = this.pendingOAuthTransports.get(name)
     if (!transport) throw new Error(`No pending OAuth flow for MCP server: ${name}`)
 
     try {
-      await transport.finishAuth(authorizationCode)
+      await transport.finishAuth(callbackParams)
       const exchangedEntry = await this.auth.get(name)
       await this.auth.clearCodeVerifier(name)
       this.pendingOAuthTransports.delete(name)
@@ -849,7 +864,7 @@ export class McpManager {
     }
     this.statuses.set(name, { status: "connected" })
     this.clients.set(name, { client, transport, config, tools })
-    this.watch(name, client, config.timeout ?? this.config.timeout ?? DEFAULT_TIMEOUT)
+    this.watch(name, client)
     await this.options.onToolsChanged?.(name)
     await this.emitStatusChanged()
   }
@@ -1124,12 +1139,6 @@ async function collectPartial<T>(
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError"
-}
-
-function asSdkTransport(transport: Transport): Parameters<Client["connect"]>[0] {
-  // SAFETY: The MCP SDK transport classes implement the SDK Transport interface at runtime; exact optional
-  // property checking makes their declaration files structurally incompatible with that interface.
-  return transport as Parameters<Client["connect"]>[0]
 }
 
 async function safeCloseClient(client: Client, transport: Transport) {

@@ -1,18 +1,10 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import {
-  CallToolResultSchema,
-  ListToolsResultSchema,
-  ToolSchema,
-  type CallToolResult,
-  type Prompt,
-  type Resource,
-  type Tool,
-} from "@modelcontextprotocol/sdk/types.js"
+import { CallToolResultSchema } from "@modelcontextprotocol/core"
+import { Client } from "@modelcontextprotocol/client"
+import type { CallToolResult, Prompt, Resource, Tool } from "@modelcontextprotocol/client"
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai"
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent"
 import {
   DEFAULT_TIMEOUT,
-  MAX_LIST_PAGES,
   MAX_RESOURCE_BLOB_BYTES,
   SUPPORTED_RESOURCE_IMAGE_MIMES,
 } from "./request-limits.js"
@@ -20,59 +12,13 @@ import { base64Size, formatBytes } from "./resource-size.js"
 import { normalizeToolSchema } from "./tool-schema.js"
 import type { CancellableOptions } from "./types.js"
 
-const TolerantListToolsResultSchema = ListToolsResultSchema.extend({
-  tools: ToolSchema.omit({ outputSchema: true }).array(),
-})
-
-/**
- * Collects every page from an MCP list endpoint while rejecting cursor loops.
- *
- * @template T Item type accumulated from each page.
- * @template R Page result shape containing an optional cursor.
- */
-export async function paginate<T, R extends { nextCursor?: string | undefined }>(
-  list: (cursor?: string) => Promise<R>,
-  items: (result: R) => T[]
-): Promise<T[]> {
-  const result: T[] = []
-  const cursors = new Set<string>()
-  let cursor: string | undefined
-
-  for (let page = 0; page < MAX_LIST_PAGES; page++) {
-    const current = await list(cursor)
-    result.push(...items(current))
-    if (current.nextCursor === undefined) return result
-    if (cursors.has(current.nextCursor))
-      throw new Error(`MCP list returned duplicate cursor: ${current.nextCursor}`)
-    cursors.add(current.nextCursor)
-    cursor = current.nextCursor
-  }
-
-  throw new Error(`MCP list exceeded ${MAX_LIST_PAGES} pages`)
-}
-
-/** Lists tools from an MCP client, with a compatibility path for unsupported output-schema references. */
+/** Lists tools from an MCP client. */
 export async function listTools(
   client: Client,
   timeout = DEFAULT_TIMEOUT,
   signal: AbortSignal | undefined
 ): Promise<Tool[]> {
-  return paginate(
-    async (cursor) => {
-      const params = cursor === undefined ? undefined : { cursor }
-      try {
-        return await client.listTools(params, requestOptions(timeout, signal))
-      } catch (error) {
-        if (!(error instanceof Error) || !isOutputSchemaValidationError(error)) throw error
-        return client.request(
-          { method: "tools/list", params },
-          TolerantListToolsResultSchema,
-          requestOptions(timeout, signal)
-        )
-      }
-    },
-    (result) => result.tools
-  )
+  return (await client.listTools(undefined, requestOptions(timeout, signal))).tools
 }
 
 /** Lists prompts from an MCP client when the server advertises prompt support. */
@@ -82,14 +28,7 @@ export async function listPrompts(
   signal: AbortSignal | undefined
 ): Promise<Prompt[]> {
   if (!client.getServerCapabilities()?.prompts) return []
-  return paginate(
-    (cursor) =>
-      client.listPrompts(
-        cursor === undefined ? undefined : { cursor },
-        requestOptions(timeout, signal)
-      ),
-    (result) => result.prompts
-  )
+  return (await client.listPrompts(undefined, requestOptions(timeout, signal))).prompts
 }
 
 /** Lists resources from an MCP client when the server advertises resource support. */
@@ -99,14 +38,7 @@ export async function listResources(
   signal: AbortSignal | undefined
 ): Promise<Resource[]> {
   if (!client.getServerCapabilities()?.resources) return []
-  return paginate(
-    (cursor) =>
-      client.listResources(
-        cursor === undefined ? undefined : { cursor },
-        requestOptions(timeout, signal)
-      ),
-    (result) => result.resources
-  )
+  return (await client.listResources(undefined, requestOptions(timeout, signal))).resources
 }
 
 /** Returns Pi-compatible parameters for one MCP tool definition. */
@@ -127,7 +59,6 @@ export async function callMcpTool(input: {
       name: input.tool.name,
       arguments: input.args,
     },
-    CallToolResultSchema,
     requestOptions(input.timeout, input.signal)
   )
   const result = normalizeCallToolResult(rawResult)
@@ -269,12 +200,6 @@ function normalizeCallToolResult(value: Awaited<ReturnType<Client["callTool"]>>)
   const parsed = CallToolResultSchema.safeParse(value)
   if (parsed.success) return parsed.data
   return { content: [{ type: "text", text: "MCP tool returned no content." }] }
-}
-
-function isOutputSchemaValidationError(error: Error) {
-  return /can't resolve reference|resolves to more than one schema|outputSchema|schema.*reference|reference.*schema/i.test(
-    error.message
-  )
 }
 
 function requestOptions(timeout: number | undefined, signal: CancellableOptions["signal"]) {

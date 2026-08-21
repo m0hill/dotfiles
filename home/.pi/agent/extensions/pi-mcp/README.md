@@ -2,6 +2,13 @@
 
 Local, source-controlled MCP support for Pi, based on `dmmulroy/pi-mcp`.
 
+The client uses the stable MCP TypeScript SDK v2 and negotiates the current `2026-07-28`
+protocol automatically. The SDK falls back to the legacy initialization protocol for
+servers implementing `2025-11-25` or earlier. Remote servers that only support the
+deprecated HTTP+SSE transport remain available through the extension's explicit SDK SSE fallback.
+
+Node.js 20 or newer is required.
+
 ## Config
 
 The extension reads Pi MCP config from, in order:

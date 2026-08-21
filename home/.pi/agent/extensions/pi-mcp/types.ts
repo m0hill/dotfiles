@@ -1,3 +1,5 @@
+import type { OAuthDiscoveryState } from "@modelcontextprotocol/client"
+
 /** Runtime connection status for one configured MCP server. */
 export type McpStatus =
   | { readonly status: "connected" }
@@ -94,6 +96,7 @@ export interface AuthTokens {
   readonly refreshToken?: string
   readonly expiresAt?: number
   readonly scope?: string
+  readonly issuer?: string
 }
 
 /** OAuth dynamic-client registration metadata stored for one MCP server. */
@@ -103,6 +106,7 @@ export interface AuthClientInfo {
   readonly clientIdIssuedAt?: number
   readonly clientSecretExpiresAt?: number
   readonly tokenEndpointAuthMethod?: string
+  readonly issuer?: string
 }
 
 /** Persisted OAuth state for one MCP server. */
@@ -111,6 +115,7 @@ export interface AuthEntry {
   readonly clientInfo?: AuthClientInfo
   readonly codeVerifier?: string
   readonly oauthState?: string
+  readonly discoveryState?: OAuthDiscoveryState
   readonly serverUrl?: string
 }
 
