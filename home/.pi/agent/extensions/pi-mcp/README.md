@@ -36,18 +36,11 @@ Minimal project config:
 
 Proxy mode is the default. Use `toolMode: "direct"` only when you intentionally want MCP server tools registered as first-class Pi tools.
 
-Servers connected explicitly with `/mcp-connect`, `mcp({ connect: "name" })`, `/mcp-reload`, or a successful `/mcp-auth` are remembered in `~/.pi/agent/mcp-connections.json` and reconnect automatically in future sessions. In lazy mode, unscoped tool search and resource discovery stay limited to these remembered servers instead of connecting every configured server. `/mcp-disconnect <name>` removes that saved preference. This works independently of `startup`: `"eager"`, which still connects every enabled server.
+Servers connected explicitly through `/mcp` or `mcp({ connect: "name" })` are remembered in `~/.pi/agent/mcp-connections.json` and reconnect automatically in future sessions. In lazy mode, unscoped tool search and resource discovery stay limited to these remembered servers instead of connecting every configured server. Disconnecting a server through `/mcp` removes that saved preference. This works independently of `startup`: `"eager"`, which still connects every enabled server.
 
-## Commands
+## Command
 
-- `/mcp-list` shows configured servers and connection status.
-- `/mcp-reload` reloads config and reconnects servers.
-- `/mcp-connect <name>` connects or reconnects a configured server.
-- `/mcp-disconnect <name>` disables a server for the current runtime.
-- `/mcp-auth [name]` starts OAuth for a remote server.
-- `/mcp-logout <name>` removes stored OAuth credentials.
-- `/mcp-prompts` lists MCP prompts from connected servers.
-- `/mcp-prompt <server> <prompt> [json args]` fetches an MCP prompt and sends it as a user message.
+`/mcp` opens an interactive server manager in the TUI. Use `↑`/`↓` to select a server; `enter` or `c` to connect; `d` to disconnect; `a` to authenticate; `l` to log out; `p` to choose a prompt; and `r` to reload. In non-interactive modes it prints server statuses.
 
 ## Gateway examples
 
