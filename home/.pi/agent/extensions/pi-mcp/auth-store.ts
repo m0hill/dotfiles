@@ -1,15 +1,48 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
 import type { OAuthDiscoveryState } from "@modelcontextprotocol/client"
 import {
+  JSONValueSchema,
   OAuthMetadataSchema,
   OAuthProtectedResourceMetadataSchema,
 } from "@modelcontextprotocol/core"
+import { z } from "zod"
 import type { AuthClientInfo, AuthEntry, AuthStatus, AuthTokens } from "./types.js"
 
 type AuthData = Record<string, AuthEntry>
+
+const AuthTokensSchema = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string().optional(),
+  expiresAt: z.number().finite().optional(),
+  scope: z.string().optional(),
+  issuer: z.string().optional(),
+})
+const AuthClientInfoSchema = z.object({
+  clientId: z.string(),
+  clientSecret: z.string().optional(),
+  clientIdIssuedAt: z.number().finite().optional(),
+  clientSecretExpiresAt: z.number().finite().optional(),
+  tokenEndpointAuthMethod: z.string().optional(),
+  issuer: z.string().optional(),
+})
+const OAuthDiscoveryStateSchema = z.object({
+  authorizationServerUrl: z.string(),
+  authorizationServerMetadata: OAuthMetadataSchema.optional(),
+  resourceMetadata: OAuthProtectedResourceMetadataSchema.optional(),
+  resourceMetadataUrl: z.string().optional(),
+})
+const AuthEntrySchema = z.object({
+  tokens: AuthTokensSchema.optional(),
+  clientInfo: AuthClientInfoSchema.optional(),
+  codeVerifier: z.string().optional(),
+  oauthState: z.string().optional(),
+  discoveryState: OAuthDiscoveryStateSchema.optional(),
+  serverUrl: z.string().optional(),
+})
+const PersistedAuthDataSchema = z.record(z.string(), JSONValueSchema)
 
 /** Persists OAuth client metadata, tokens, and in-flight PKCE state for MCP servers. */
 export class AuthStore {
@@ -41,10 +74,11 @@ export class AuthStore {
 
   /** Replaces the auth entry for one MCP server. */
   set(mcpName: string, entry: AuthEntry, serverUrl?: string) {
-    return this.mutate((data) => ({
-      ...data,
-      [mcpName]: serverUrl ? { ...entry, serverUrl } : entry,
-    }))
+    return this.mutate((data) => {
+      const nextEntry = { ...entry }
+      if (serverUrl) Object.assign(nextEntry, { serverUrl })
+      return { ...data, [mcpName]: nextEntry }
+    })
   }
 
   /** Removes all stored auth state for one MCP server. */
@@ -58,20 +92,20 @@ export class AuthStore {
 
   /** Stores OAuth tokens for one MCP server. */
   updateTokens(mcpName: string, tokens: AuthTokens, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => ({
-      ...entry,
-      tokens,
-      ...(serverUrl ? { serverUrl } : {}),
-    }))
+    return this.updateEntry(mcpName, (entry) => {
+      const next = { ...entry, tokens }
+      if (serverUrl) Object.assign(next, { serverUrl })
+      return next
+    })
   }
 
   /** Stores OAuth client registration metadata for one MCP server. */
   updateClientInfo(mcpName: string, clientInfo: AuthClientInfo, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => ({
-      ...entry,
-      clientInfo,
-      ...(serverUrl ? { serverUrl } : {}),
-    }))
+    return this.updateEntry(mcpName, (entry) => {
+      const next = { ...entry, clientInfo }
+      if (serverUrl) Object.assign(next, { serverUrl })
+      return next
+    })
   }
 
   /** Stores a PKCE code verifier for an in-flight OAuth flow. */
@@ -101,11 +135,11 @@ export class AuthStore {
 
   /** Stores authorization-server discovery state across the OAuth redirect round trip. */
   updateDiscoveryState(mcpName: string, discoveryState: OAuthDiscoveryState, serverUrl?: string) {
-    return this.updateEntry(mcpName, (entry) => ({
-      ...entry,
-      discoveryState,
-      ...(serverUrl ? { serverUrl } : {}),
-    }))
+    return this.updateEntry(mcpName, (entry) => {
+      const next = { ...entry, discoveryState }
+      if (serverUrl) Object.assign(next, { serverUrl })
+      return next
+    })
   }
 
   /** Classifies the stored token state for one MCP server. */
@@ -117,9 +151,7 @@ export class AuthStore {
   }
 
   private async updateEntry(mcpName: string, update: (entry: AuthEntry) => AuthEntry) {
-    await this.mutate((data) => {
-      return { ...data, [mcpName]: update(data[mcpName] ?? {}) }
-    })
+    await this.mutate((data) => ({ ...data, [mcpName]: update(data[mcpName] ?? {}) }))
   }
 
   private async clearField(mcpName: string, field: keyof AuthEntry) {
@@ -148,8 +180,10 @@ export class AuthStore {
   private async read(): Promise<AuthData> {
     try {
       if (!existsSync(this.filepath)) return {}
-      const parsed = JSON.parse(await readFile(this.filepath, "utf8"))
-      const result = parseAuthData(parsed)
+      const decoded = PersistedAuthDataSchema.safeParse(
+        JSON.parse(await readFile(this.filepath, "utf8"))
+      )
+      const result = decoded.success ? parseAuthData(decoded.data) : { data: {}, rejected: 1 }
       if (result.rejected > 0) {
         warnAuthStore(
           `ignored ${result.rejected} malformed persisted auth ${result.rejected === 1 ? "entry" : "entries"}`
@@ -157,7 +191,8 @@ export class AuthStore {
       }
       return result.data
     } catch (error) {
-      warnAuthStore(`ignored unreadable persisted auth store: ${safeAuthStoreError(error)}`)
+      const summary = error instanceof Error ? `${error.name}: ${error.message}` : "non-Error value"
+      warnAuthStore(`ignored unreadable persisted auth store: ${summary}`)
       return {}
     }
   }
@@ -170,16 +205,15 @@ export class AuthStore {
   }
 }
 
-function parseAuthData(value: unknown): { data: AuthData; rejected: number } {
-  if (!isPlainRecord(value)) return { data: {}, rejected: 1 }
-  const result: AuthData = {}
+function parseAuthData(value: z.infer<typeof PersistedAuthDataSchema>) {
+  const data: AuthData = {}
   let rejected = 0
   for (const [name, entry] of Object.entries(value)) {
-    const parsed = parseAuthEntry(entry)
-    if (parsed) result[name] = parsed
+    const parsed = AuthEntrySchema.safeParse(entry)
+    if (parsed.success) data[name] = parsed.data
     else rejected++
   }
-  return { data: result, rejected }
+  return { data, rejected }
 }
 
 function clearAuthEntryField(entry: AuthEntry, field: keyof AuthEntry): AuthEntry {
@@ -211,117 +245,6 @@ function clearAuthEntryField(entry: AuthEntry, field: keyof AuthEntry): AuthEntr
   }
 }
 
-function parseAuthEntry(value: unknown): AuthEntry | undefined {
-  if (!isPlainRecord(value)) return undefined
-
-  const tokens = parseAuthTokens(value.tokens)
-  if ("tokens" in value && !tokens) return undefined
-  const clientInfo = parseAuthClientInfo(value.clientInfo)
-  if ("clientInfo" in value && !clientInfo) return undefined
-  const codeVerifier = optionalString(value.codeVerifier)
-  if ("codeVerifier" in value && codeVerifier === undefined) return undefined
-  const oauthState = optionalString(value.oauthState)
-  if ("oauthState" in value && oauthState === undefined) return undefined
-  const discoveryState = parseOAuthDiscoveryState(value.discoveryState)
-  if ("discoveryState" in value && discoveryState === undefined) return undefined
-  const serverUrl = optionalString(value.serverUrl)
-  if ("serverUrl" in value && serverUrl === undefined) return undefined
-
-  return {
-    ...(tokens !== undefined ? { tokens } : {}),
-    ...(clientInfo !== undefined ? { clientInfo } : {}),
-    ...(codeVerifier !== undefined ? { codeVerifier } : {}),
-    ...(oauthState !== undefined ? { oauthState } : {}),
-    ...(discoveryState !== undefined ? { discoveryState } : {}),
-    ...(serverUrl !== undefined ? { serverUrl } : {}),
-  }
-}
-
-function parseAuthTokens(value: unknown): AuthTokens | undefined {
-  if (value === undefined) return undefined
-  if (!isPlainRecord(value) || typeof value.accessToken !== "string") return undefined
-  const refreshToken = optionalString(value.refreshToken)
-  if ("refreshToken" in value && refreshToken === undefined) return undefined
-  const expiresAt = optionalNumber(value.expiresAt)
-  if ("expiresAt" in value && expiresAt === undefined) return undefined
-  const scope = optionalString(value.scope)
-  if ("scope" in value && scope === undefined) return undefined
-  const issuer = optionalString(value.issuer)
-  if ("issuer" in value && issuer === undefined) return undefined
-
-  return {
-    accessToken: value.accessToken,
-    ...(refreshToken !== undefined ? { refreshToken } : {}),
-    ...(expiresAt !== undefined ? { expiresAt } : {}),
-    ...(scope !== undefined ? { scope } : {}),
-    ...(issuer !== undefined ? { issuer } : {}),
-  }
-}
-
-function parseAuthClientInfo(value: unknown): AuthClientInfo | undefined {
-  if (value === undefined) return undefined
-  if (!isPlainRecord(value) || typeof value.clientId !== "string") return undefined
-  const clientSecret = optionalString(value.clientSecret)
-  if ("clientSecret" in value && clientSecret === undefined) return undefined
-  const clientIdIssuedAt = optionalNumber(value.clientIdIssuedAt)
-  if ("clientIdIssuedAt" in value && clientIdIssuedAt === undefined) return undefined
-  const clientSecretExpiresAt = optionalNumber(value.clientSecretExpiresAt)
-  if ("clientSecretExpiresAt" in value && clientSecretExpiresAt === undefined) return undefined
-  const tokenEndpointAuthMethod = optionalString(value.tokenEndpointAuthMethod)
-  if ("tokenEndpointAuthMethod" in value && tokenEndpointAuthMethod === undefined) return undefined
-  const issuer = optionalString(value.issuer)
-  if ("issuer" in value && issuer === undefined) return undefined
-
-  return {
-    clientId: value.clientId,
-    ...(clientSecret !== undefined ? { clientSecret } : {}),
-    ...(clientIdIssuedAt !== undefined ? { clientIdIssuedAt } : {}),
-    ...(clientSecretExpiresAt !== undefined ? { clientSecretExpiresAt } : {}),
-    ...(tokenEndpointAuthMethod !== undefined ? { tokenEndpointAuthMethod } : {}),
-    ...(issuer !== undefined ? { issuer } : {}),
-  }
-}
-
-function parseOAuthDiscoveryState(value: unknown): OAuthDiscoveryState | undefined {
-  if (value === undefined) return undefined
-  if (!isPlainRecord(value) || typeof value.authorizationServerUrl !== "string") return undefined
-
-  const authorizationServerMetadata = OAuthMetadataSchema.safeParse(
-    value.authorizationServerMetadata
-  )
-  if ("authorizationServerMetadata" in value && !authorizationServerMetadata.success)
-    return undefined
-  const resourceMetadata = OAuthProtectedResourceMetadataSchema.safeParse(value.resourceMetadata)
-  if ("resourceMetadata" in value && !resourceMetadata.success) return undefined
-  const resourceMetadataUrl = optionalString(value.resourceMetadataUrl)
-  if ("resourceMetadataUrl" in value && resourceMetadataUrl === undefined) return undefined
-
-  return {
-    authorizationServerUrl: value.authorizationServerUrl,
-    ...(authorizationServerMetadata.success
-      ? { authorizationServerMetadata: authorizationServerMetadata.data }
-      : {}),
-    ...(resourceMetadata.success ? { resourceMetadata: resourceMetadata.data } : {}),
-    ...(resourceMetadataUrl !== undefined ? { resourceMetadataUrl } : {}),
-  }
-}
-
-function optionalString(value: unknown) {
-  return typeof value === "string" ? value : undefined
-}
-
-function optionalNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 function warnAuthStore(message: string) {
   console.warn(`[mcp-auth] ${message}`)
-}
-
-function safeAuthStoreError(error: unknown) {
-  return error instanceof Error ? `${error.name}: ${error.message}` : `thrown ${typeof error}`
 }

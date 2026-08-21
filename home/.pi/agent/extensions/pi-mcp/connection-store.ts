@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
+import { z } from "zod"
 import type { McpConfig, McpServerConfig } from "./types.js"
 
 interface ConnectionData {
@@ -11,6 +12,10 @@ interface ConnectionData {
 }
 
 const EMPTY_CONNECTION_DATA: ConnectionData = { version: 1, connected: [] }
+const ConnectionDataSchema = z.object({
+  version: z.literal(1),
+  connected: z.array(z.string()),
+})
 
 /** Persists the configured MCP server identities that the user explicitly connected. */
 export class ConnectionStore {
@@ -45,7 +50,7 @@ export class ConnectionStore {
   private mutate(
     config: McpConfig,
     name: string,
-    update: (connected: Set<string>, identity: string) => unknown
+    update: (connected: Set<string>, identity: string) => void
   ): Promise<void> {
     const server = config.servers[name]
     if (!server) return Promise.resolve()
@@ -72,9 +77,8 @@ export class ConnectionStore {
       if (!existsSync(this.filepath)) return EMPTY_CONNECTION_DATA
       return parseConnectionData(JSON.parse(await readFile(this.filepath, "utf8")))
     } catch (error) {
-      console.warn(
-        `[mcp-connections] ignored unreadable connection store: ${safeStoreError(error)}`
-      )
+      const summary = error instanceof Error ? `${error.name}: ${error.message}` : "non-Error value"
+      console.warn(`[mcp-connections] ignored unreadable connection store: ${summary}`)
       return EMPTY_CONNECTION_DATA
     }
   }
@@ -96,20 +100,7 @@ function serverIdentity(config: McpConfig, name: string, server: McpServerConfig
   return createHash("sha256").update(JSON.stringify({ scope, name, target })).digest("hex")
 }
 
-function parseConnectionData(value: unknown): ConnectionData {
-  if (!isPlainRecord(value) || value.version !== 1 || !Array.isArray(value.connected)) {
-    throw new Error("invalid connection store format")
-  }
-  if (!value.connected.every((identity) => typeof identity === "string")) {
-    throw new Error("invalid connected server identity")
-  }
-  return { version: 1, connected: [...new Set(value.connected)] }
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function safeStoreError(error: unknown) {
-  return error instanceof Error ? `${error.name}: ${error.message}` : `thrown ${typeof error}`
+function parseConnectionData(value: z.input<typeof ConnectionDataSchema>): ConnectionData {
+  const parsed = ConnectionDataSchema.parse(value)
+  return { version: 1, connected: [...new Set(parsed.connected)] }
 }

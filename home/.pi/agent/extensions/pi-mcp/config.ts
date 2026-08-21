@@ -2,7 +2,10 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
+import { JSONObjectSchema, JSONValueSchema } from "@modelcontextprotocol/core"
 import { parse as parseJsonc, type ParseError } from "jsonc-parser"
+import { z } from "zod"
+import { expandEnv, resolveHome } from "./config-values.js"
 import type {
   McpConfig,
   McpServerConfig,
@@ -10,13 +13,54 @@ import type {
   McpToolMode,
   OAuthConfig,
 } from "./types.js"
-import { expandEnv, resolveHome } from "./config-values.js"
 
 interface LoadOptions {
   cwd: string
 }
 
+type ConfigObject = z.infer<typeof JSONObjectSchema>
+type JSONValue = z.infer<typeof JSONValueSchema>
 type ServerEntryMode = "strict" | "discover"
+
+const PositiveIntegerSchema = z.int().positive()
+const ToolModeSchema = z.enum(["direct", "proxy"])
+const StartupModeSchema = z.enum(["eager", "lazy"])
+const StringRecordSchema = z.record(z.string(), z.string())
+const CommandSchema = z.array(z.string().min(1)).min(1)
+const OAuthSchema = z.looseObject({
+  clientId: z.string().optional(),
+  client_id: z.string().optional(),
+  clientSecret: z.string().optional(),
+  client_secret: z.string().optional(),
+  scope: z.string().optional(),
+  callbackPort: PositiveIntegerSchema.optional(),
+  callback_port: PositiveIntegerSchema.optional(),
+  redirectUri: z.string().optional(),
+  redirect_uri: z.string().optional(),
+  clientName: z.string().optional(),
+  client_name: z.string().optional(),
+  clientUri: z.string().optional(),
+  client_uri: z.string().optional(),
+})
+const LocalServerSchema = z.looseObject({
+  type: z.literal("local"),
+  command: CommandSchema,
+  cwd: z.string().min(1).optional(),
+  environment: StringRecordSchema.optional(),
+  enabled: z.boolean().optional(),
+  disabled: z.boolean().optional(),
+  timeout: PositiveIntegerSchema.optional(),
+})
+const RemoteServerSchema = z.looseObject({
+  type: z.literal("remote"),
+  url: z.string().min(1),
+  headers: StringRecordSchema.optional(),
+  oauth: z.union([OAuthSchema, z.literal(false)]).optional(),
+  enabled: z.boolean().optional(),
+  disabled: z.boolean().optional(),
+  timeout: PositiveIntegerSchema.optional(),
+})
+const ServerSchema = z.discriminatedUnion("type", [LocalServerSchema, RemoteServerSchema])
 
 /** Loads the first Pi MCP configuration available for a Pi session. */
 export async function loadMcpConfig(options: LoadOptions): Promise<McpConfig> {
@@ -47,56 +91,56 @@ function candidateConfigFiles(cwd: string) {
 
 function parseConfig(text: string, source: string): McpConfig {
   const errors: ParseError[] = []
-  const parsed = parseJsonc(text, errors, { allowTrailingComma: true })
-  if (errors.length > 0) {
-    throw new Error(`Invalid MCP config JSONC in ${source}`)
-  }
-  if (!isPlainRecord(parsed)) return { servers: {}, source }
+  const decoded = parseJsonc(text, errors, { allowTrailingComma: true })
+  if (errors.length > 0) throw new Error(`Invalid MCP config JSONC in ${source}`)
 
-  if ("mcp" in parsed) {
-    if (!isPlainRecord(parsed.mcp)) {
+  const parsed = JSONObjectSchema.safeParse(decoded)
+  if (!parsed.success) return { servers: {}, source }
+
+  if ("mcp" in parsed.data) {
+    const section = JSONObjectSchema.safeParse(parsed.data.mcp)
+    if (!section.success) {
       throw new Error(`Invalid MCP config in ${source}: mcp must be an object`)
     }
-    return parseMcpSection(parsed.mcp, source, "mcp", "strict")
+    return parseMcpSection(section.data, source, "mcp", "strict")
   }
 
-  if (looksLikeFlatMcpSection(parsed)) {
-    return parseMcpSection(parsed, source, "mcp", "discover")
+  if (looksLikeFlatMcpSection(parsed.data)) {
+    return parseMcpSection(parsed.data, source, "mcp", "discover")
   }
 
   return { servers: {}, source }
 }
 
 function parseMcpSection(
-  section: Record<string, unknown>,
+  section: ConfigObject,
   source: string,
   pathLabel: string,
   entryMode: ServerEntryMode
 ): McpConfig {
   const servers: Record<string, McpServerConfig> = {}
-  const timeout = parseOptionalPositiveInt(section.timeout, `${pathLabel}.timeout`, source)
+  const timeout = parseOptional(
+    section.timeout,
+    PositiveIntegerSchema,
+    `${pathLabel}.timeout`,
+    source
+  )
   const toolMode = parseToolMode(section, pathLabel, source)
-  const startup = parseStartupMode(section, pathLabel, source)
+  const startup = parseOptional(section.startup, StartupModeSchema, `${pathLabel}.startup`, source)
 
   if ("servers" in section) {
-    if (!isPlainRecord(section.servers)) {
+    const serverEntries = JSONObjectSchema.safeParse(section.servers)
+    if (!serverEntries.success) {
       throw new Error(`Invalid MCP config in ${source}: ${pathLabel}.servers must be an object`)
     }
-    for (const [name, raw] of Object.entries(section.servers)) {
+    for (const [name, raw] of Object.entries(serverEntries.data)) {
       servers[name] = parseServer(raw, timeout, `${pathLabel}.servers.${name}`, source)
     }
     return makeConfig(source, servers, timeout, toolMode, startup)
   }
 
   for (const [name, raw] of Object.entries(section)) {
-    if (
-      name === "timeout" ||
-      name === "toolMode" ||
-      name === "mode" ||
-      name === "proxy" ||
-      name === "startup"
-    )
-      continue
+    if (["timeout", "toolMode", "mode", "proxy", "startup"].includes(name)) continue
     if (entryMode === "discover" && !looksLikeServerEntry(raw)) continue
     servers[name] = parseServer(raw, timeout, `${pathLabel}.${name}`, source)
   }
@@ -105,190 +149,153 @@ function parseMcpSection(
 }
 
 function parseToolMode(
-  section: Record<string, unknown>,
+  section: ConfigObject,
   pathLabel: string,
   source: string
 ): McpToolMode | undefined {
   const rawMode = section.toolMode ?? section.mode
   if (rawMode !== undefined) {
-    if (rawMode !== "direct" && rawMode !== "proxy") {
-      throw new Error(
-        `Invalid MCP config in ${source}: ${pathLabel}.toolMode must be "direct" or "proxy"`
-      )
-    }
-    return rawMode
+    return parseRequired(rawMode, ToolModeSchema, `${pathLabel}.toolMode`, source)
   }
-  if (section.proxy !== undefined) {
-    if (typeof section.proxy !== "boolean") {
-      throw new Error(`Invalid MCP config in ${source}: ${pathLabel}.proxy must be a boolean`)
-    }
-    return section.proxy ? "proxy" : "direct"
-  }
-  return undefined
-}
-
-function parseStartupMode(
-  section: Record<string, unknown>,
-  pathLabel: string,
-  source: string
-): McpStartupMode | undefined {
-  if (section.startup === undefined) return undefined
-  if (section.startup !== "eager" && section.startup !== "lazy") {
-    throw new Error(
-      `Invalid MCP config in ${source}: ${pathLabel}.startup must be "eager" or "lazy"`
-    )
-  }
-  return section.startup
+  if (section.proxy === undefined) return undefined
+  const proxy = parseRequired(section.proxy, z.boolean(), `${pathLabel}.proxy`, source)
+  return proxy ? "proxy" : "direct"
 }
 
 function parseServer(
-  value: unknown,
+  value: JSONValue,
   defaultTimeout: number | undefined,
   pathLabel: string,
   source: string
 ): McpServerConfig {
-  if (!isPlainRecord(value)) {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be an object`)
-  }
-  if (value.type !== "local" && value.type !== "remote") {
-    throw new Error(
-      `Invalid MCP config in ${source}: ${pathLabel}.type must be "local" or "remote"`
-    )
+  const parsed = ServerSchema.safeParse(value)
+  if (!parsed.success) {
+    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} is not a valid server entry`)
   }
 
-  const timeout =
-    parseOptionalPositiveInt(value.timeout, `${pathLabel}.timeout`, source) ?? defaultTimeout
-  const enabled = typeof value.enabled === "boolean" ? value.enabled : undefined
-  const disabled = typeof value.disabled === "boolean" ? value.disabled : undefined
-
-  if (value.type === "local") {
-    const command = parseCommand(value.command, `${pathLabel}.command`, source)
-    const cwd = parseOptionalExpandedString(value.cwd, `${pathLabel}.cwd`, source)
-    const environment = parseOptionalStringRecord(
-      value.environment,
-      `${pathLabel}.environment`,
-      source
-    )
-    return {
+  const timeout = parsed.data.timeout ?? defaultTimeout
+  if (parsed.data.type === "local") {
+    const server: McpServerConfig = {
       type: "local",
-      command,
-      ...(cwd !== undefined ? { cwd } : {}),
-      ...(environment !== undefined ? { environment } : {}),
-      ...(enabled !== undefined ? { enabled } : {}),
-      ...(disabled !== undefined ? { disabled } : {}),
-      ...(timeout !== undefined ? { timeout } : {}),
+      command: parsed.data.command.map((item) => expandEnv(item, `${source} ${pathLabel}.command`)),
     }
+    if (parsed.data.cwd !== undefined) {
+      Object.assign(server, { cwd: expandEnv(parsed.data.cwd, `${source} ${pathLabel}.cwd`) })
+    }
+    if (parsed.data.environment !== undefined) {
+      Object.assign(server, {
+        environment: expandStringRecord(
+          parsed.data.environment,
+          source,
+          `${pathLabel}.environment`
+        ),
+      })
+    }
+    assignServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
+    return server
   }
 
-  const headers = parseOptionalStringRecord(value.headers, `${pathLabel}.headers`, source)
-  const oauth = parseOAuth(value.oauth, `${pathLabel}.oauth`, source)
-  return {
+  const server: McpServerConfig = {
     type: "remote",
-    url: parseRequiredExpandedString(value.url, `${pathLabel}.url`, source),
-    ...(headers !== undefined ? { headers } : {}),
-    ...(oauth !== undefined ? { oauth } : {}),
-    ...(enabled !== undefined ? { enabled } : {}),
-    ...(disabled !== undefined ? { disabled } : {}),
-    ...(timeout !== undefined ? { timeout } : {}),
+    url: expandEnv(parsed.data.url, `${source} ${pathLabel}.url`),
+  }
+  if (parsed.data.headers !== undefined) {
+    Object.assign(server, {
+      headers: expandStringRecord(parsed.data.headers, source, `${pathLabel}.headers`),
+    })
+  }
+  if (parsed.data.oauth !== undefined) {
+    Object.assign(server, {
+      oauth:
+        parsed.data.oauth === false ? false : makeOAuthConfig(parsed.data.oauth, source, pathLabel),
+    })
+  }
+  assignServerOptions(server, parsed.data.enabled, parsed.data.disabled, timeout)
+  return server
+}
+
+function expandStringRecord(values: Record<string, string>, source: string, pathLabel: string) {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      key,
+      expandEnv(value, `${source} ${pathLabel}.${key}`),
+    ])
+  )
+}
+
+function makeOAuthConfig(value: z.infer<typeof OAuthSchema>, source: string, pathLabel: string) {
+  const oauth: OAuthConfig = {}
+  assignExpandedString(oauth, "clientId", value.clientId ?? value.client_id, source, pathLabel)
+  assignExpandedString(
+    oauth,
+    "clientSecret",
+    value.clientSecret ?? value.client_secret,
+    source,
+    pathLabel
+  )
+  assignExpandedString(oauth, "scope", value.scope, source, pathLabel)
+  const callbackPort = value.callbackPort ?? value.callback_port
+  if (callbackPort !== undefined) Object.assign(oauth, { callbackPort })
+  assignExpandedString(
+    oauth,
+    "redirectUri",
+    value.redirectUri ?? value.redirect_uri,
+    source,
+    pathLabel
+  )
+  assignExpandedString(
+    oauth,
+    "clientName",
+    value.clientName ?? value.client_name,
+    source,
+    pathLabel
+  )
+  assignExpandedString(oauth, "clientUri", value.clientUri ?? value.client_uri, source, pathLabel)
+  return oauth
+}
+
+function assignExpandedString(
+  target: OAuthConfig,
+  key: keyof OAuthConfig,
+  value: string | undefined,
+  source: string,
+  pathLabel: string
+) {
+  if (value !== undefined) {
+    Object.assign(target, { [key]: expandEnv(value, `${source} ${pathLabel}.${key}`) })
   }
 }
 
-function parseCommand(value: unknown, pathLabel: string, source: string) {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    !value.every((item) => typeof item === "string" && item.length > 0)
-  ) {
-    throw new Error(
-      `Invalid MCP config in ${source}: ${pathLabel} must be a non-empty string array`
-    )
-  }
-  return value.map((item) => expandEnv(item, `${source} ${pathLabel}`))
+function assignServerOptions(
+  server: McpServerConfig,
+  enabled: boolean | undefined,
+  disabled: boolean | undefined,
+  timeout: number | undefined
+) {
+  if (enabled !== undefined) Object.assign(server, { enabled })
+  if (disabled !== undefined) Object.assign(server, { disabled })
+  if (timeout !== undefined) Object.assign(server, { timeout })
 }
 
-function parseOptionalStringRecord(value: unknown, pathLabel: string, source: string) {
-  if (value === undefined) return undefined
-  if (!isPlainRecord(value)) {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be an object of strings`)
-  }
-  const result: Record<string, string> = {}
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item !== "string") {
-      throw new Error(`Invalid MCP config in ${source}: ${pathLabel}.${key} must be a string`)
-    }
-    result[key] = expandEnv(item, `${source} ${pathLabel}.${key}`)
-  }
-  return result
-}
-
-function parseOAuth(
-  value: unknown,
+function parseOptional<Schema extends z.ZodType>(
+  value: JSONValue | undefined,
+  schema: Schema,
   pathLabel: string,
   source: string
-): OAuthConfig | false | undefined {
+): z.output<Schema> | undefined {
   if (value === undefined) return undefined
-  if (value === false) return false
-  if (!isPlainRecord(value)) {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be an object or false`)
-  }
-
-  const clientId =
-    stringAt(value, "clientId", `${pathLabel}.clientId`, source) ??
-    stringAt(value, "client_id", `${pathLabel}.client_id`, source)
-  const clientSecret =
-    stringAt(value, "clientSecret", `${pathLabel}.clientSecret`, source) ??
-    stringAt(value, "client_secret", `${pathLabel}.client_secret`, source)
-  const scope = stringAt(value, "scope", `${pathLabel}.scope`, source)
-  const callbackPort =
-    parseOptionalPositiveInt(value.callbackPort, `${pathLabel}.callbackPort`, source) ??
-    parseOptionalPositiveInt(value.callback_port, `${pathLabel}.callback_port`, source)
-  const redirectUri =
-    stringAt(value, "redirectUri", `${pathLabel}.redirectUri`, source) ??
-    stringAt(value, "redirect_uri", `${pathLabel}.redirect_uri`, source)
-  const clientName =
-    stringAt(value, "clientName", `${pathLabel}.clientName`, source) ??
-    stringAt(value, "client_name", `${pathLabel}.client_name`, source)
-  const clientUri =
-    stringAt(value, "clientUri", `${pathLabel}.clientUri`, source) ??
-    stringAt(value, "client_uri", `${pathLabel}.client_uri`, source)
-  return {
-    ...(clientId !== undefined ? { clientId } : {}),
-    ...(clientSecret !== undefined ? { clientSecret } : {}),
-    ...(scope !== undefined ? { scope } : {}),
-    ...(callbackPort !== undefined ? { callbackPort } : {}),
-    ...(redirectUri !== undefined ? { redirectUri } : {}),
-    ...(clientName !== undefined ? { clientName } : {}),
-    ...(clientUri !== undefined ? { clientUri } : {}),
-  }
+  return parseRequired(value, schema, pathLabel, source)
 }
 
-function stringAt(record: Record<string, unknown>, key: string, pathLabel: string, source: string) {
-  const value = record[key]
-  if (value === undefined) return undefined
-  if (typeof value !== "string") {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be a string`)
-  }
-  return expandEnv(value, `${source} ${pathLabel}`)
-}
-
-function parseRequiredExpandedString(value: unknown, pathLabel: string, source: string) {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be a non-empty string`)
-  }
-  return expandEnv(value, `${source} ${pathLabel}`)
-}
-
-function parseOptionalExpandedString(value: unknown, pathLabel: string, source: string) {
-  if (value === undefined) return undefined
-  return parseRequiredExpandedString(value, pathLabel, source)
-}
-
-function parseOptionalPositiveInt(value: unknown, pathLabel: string, source: string) {
-  if (value === undefined) return undefined
-  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    throw new Error(`Invalid MCP config in ${source}: ${pathLabel} must be a positive integer`)
-  }
-  return value
+function parseRequired<Schema extends z.ZodType>(
+  value: JSONValue,
+  schema: Schema,
+  pathLabel: string,
+  source: string
+): z.output<Schema> {
+  const parsed = schema.safeParse(value)
+  if (!parsed.success) throw new Error(`Invalid MCP config in ${source}: ${pathLabel}`)
+  return parsed.data
 }
 
 function makeConfig(
@@ -298,13 +305,11 @@ function makeConfig(
   toolMode: McpToolMode | undefined,
   startup: McpStartupMode | undefined
 ): McpConfig {
-  return {
-    servers,
-    source,
-    ...(timeout !== undefined ? { timeout } : {}),
-    ...(toolMode !== undefined ? { toolMode } : {}),
-    ...(startup !== undefined ? { startup } : {}),
-  }
+  const config: McpConfig = { servers, source }
+  if (timeout !== undefined) Object.assign(config, { timeout })
+  if (toolMode !== undefined) Object.assign(config, { toolMode })
+  if (startup !== undefined) Object.assign(config, { startup })
+  return config
 }
 
 function hasConfigContent(config: McpConfig) {
@@ -316,15 +321,12 @@ function hasConfigContent(config: McpConfig) {
   )
 }
 
-function looksLikeFlatMcpSection(section: Record<string, unknown>) {
+function looksLikeFlatMcpSection(section: ConfigObject) {
   if ("timeout" in section || "servers" in section) return true
   return Object.values(section).some(looksLikeServerEntry)
 }
 
-function looksLikeServerEntry(value: unknown) {
-  return isPlainRecord(value) && "type" in value
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+function looksLikeServerEntry(value: JSONValue) {
+  const entry = JSONObjectSchema.safeParse(value)
+  return entry.success && "type" in entry.data
 }

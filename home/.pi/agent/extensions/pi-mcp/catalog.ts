@@ -1,6 +1,12 @@
 import { CallToolResultSchema } from "@modelcontextprotocol/core"
 import { Client } from "@modelcontextprotocol/client"
-import type { CallToolResult, Prompt, Resource, Tool } from "@modelcontextprotocol/client"
+import type {
+  CallToolResult,
+  Prompt,
+  ReadResourceResult,
+  Resource,
+  Tool,
+} from "@modelcontextprotocol/client"
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai"
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent"
 import {
@@ -10,7 +16,14 @@ import {
 } from "./request-limits.js"
 import { base64Size, formatBytes } from "./resource-size.js"
 import { normalizeToolSchema } from "./tool-schema.js"
+import type { ToolArguments } from "./tool-args.js"
 import type { CancellableOptions } from "./types.js"
+
+interface McpToolResultDetails {
+  readonly structuredContent?: CallToolResult["structuredContent"]
+  readonly omitted?: readonly string[]
+  readonly rawContent: CallToolResult["content"]
+}
 
 /** Lists tools from an MCP client. */
 export async function listTools(
@@ -50,10 +63,10 @@ export function toolParameters(tool: Tool) {
 export async function callMcpTool(input: {
   readonly client: Client
   readonly tool: Tool
-  readonly args: Record<string, unknown>
+  readonly args: ToolArguments
   readonly timeout?: number
   readonly signal: AbortSignal | undefined
-}): Promise<AgentToolResult<Record<string, unknown>>> {
+}): Promise<AgentToolResult<McpToolResultDetails>> {
   const rawResult = await input.client.callTool(
     {
       name: input.tool.name,
@@ -96,22 +109,19 @@ export function formatResourceList(resources: Array<Resource & { client: string 
 }
 
 /** Converts MCP resource contents into text and supported image attachments for Pi. */
-export function formatResourceContent(server: string, uri: string, content: { contents: unknown }) {
-  const items = (Array.isArray(content.contents) ? content.contents : [content.contents]).filter(
-    (item): item is Record<string, unknown> =>
-      typeof item === "object" && item !== null && !Array.isArray(item)
-  )
+export function formatResourceContent(server: string, uri: string, content: ReadResourceResult) {
+  const items = content.contents
   const text: string[] = []
   const images: ImageContent[] = []
 
   for (const item of items) {
-    const itemUri = typeof item.uri === "string" ? item.uri : uri
-    const mime = typeof item.mimeType === "string" ? item.mimeType : "application/octet-stream"
-    if (typeof item.text === "string") {
+    const itemUri = item.uri || uri
+    const mime = item.mimeType ?? "application/octet-stream"
+    if ("text" in item) {
       text.push(`Resource: ${itemUri}\nMIME: ${mime}\n${item.text}`)
       continue
     }
-    if (typeof item.blob === "string") {
+    if ("blob" in item) {
       const size = base64Size(item.blob)
       if (!SUPPORTED_RESOURCE_IMAGE_MIMES.has(mime)) {
         text.push(
@@ -156,11 +166,11 @@ function convertMcpContent(content: CallToolResult["content"]) {
 
     if (item.type === "resource") {
       const resource = item.resource
-      if ("text" in resource && typeof resource.text === "string") {
+      if ("text" in resource) {
         output.push({ type: "text", text: resource.text })
         continue
       }
-      if ("blob" in resource && typeof resource.blob === "string") {
+      if ("blob" in resource) {
         const mime = resource.mimeType ?? "application/octet-stream"
         const size = base64Size(resource.blob)
         if (SUPPORTED_RESOURCE_IMAGE_MIMES.has(mime) && size <= MAX_RESOURCE_BLOB_BYTES) {
@@ -203,10 +213,11 @@ function normalizeCallToolResult(value: Awaited<ReturnType<Client["callTool"]>>)
 }
 
 function requestOptions(timeout: number | undefined, signal: CancellableOptions["signal"]) {
-  return {
+  const options = {
     resetTimeoutOnProgress: true,
     timeout: timeout ?? DEFAULT_TIMEOUT,
     onprogress: () => {},
-    ...(signal ? { signal } : {}),
   }
+  if (signal) Object.assign(options, { signal })
+  return options
 }

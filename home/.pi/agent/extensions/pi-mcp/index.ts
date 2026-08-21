@@ -2,8 +2,10 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import type { Tool } from "@modelcontextprotocol/client"
+import { JSONObjectSchema, JSONValueSchema } from "@modelcontextprotocol/core"
 import type { TSchema } from "typebox"
 import { Type } from "typebox"
+import { z } from "zod"
 import { automaticConnectionServerNames } from "./automatic-connections.js"
 import {
   callMcpTool,
@@ -17,13 +19,26 @@ import { formatMcpServerTarget, redactSecrets } from "./display.js"
 import { handlePiElicitation } from "./elicitation.js"
 import { McpManager, type McpToolEntry } from "./manager.js"
 import type { CancellableOptions, McpConfig, McpStatus } from "./types.js"
-import { optionalString, requiredString } from "./tool-args.js"
+import {
+  optionalString,
+  parseToolArguments,
+  requiredString,
+  type ToolArguments,
+} from "./tool-args.js"
+import { formatThrownValue, parseThrownValue } from "./thrown-value.js"
 
 const MCP_PROXY_TOOL = "mcp"
 const LIST_MCP_RESOURCES_TOOL = "list_mcp_resources"
 const READ_MCP_RESOURCE_TOOL = "read_mcp_resource"
 const MAX_RENDERED_CALL_ARGS_CHARS = 1500
 const MAX_PROXY_SEARCH_RESULTS = 30
+
+type JSONValue = z.infer<typeof JSONValueSchema>
+type ProxyDetails = z.infer<typeof JSONObjectSchema>
+
+const BooleanValueSchema = z.boolean()
+const StringValueSchema = z.string()
+const ExternalJSONValueSchema = z.unknown().pipe(JSONValueSchema)
 
 interface RenderTheme {
   fg: (name: "toolTitle" | "muted", text: string) => string
@@ -151,9 +166,11 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       await connectConfiguredServers(activeManager, generation)
       if (manager !== activeManager || configGeneration !== generation) return
       updateMcpStatus(ctx)
-    })().catch((error: unknown) => {
+    })().catch((error) => {
       if (manager !== activeManager || configGeneration !== generation) return
-      console.error(`[mcp] background connection refresh failed: ${safeErrorSummary(error)}`)
+      console.error(
+        `[mcp] background connection refresh failed: ${safeErrorSummary(parseThrownValue(error))}`
+      )
       updateMcpStatus(ctx)
     })
   }
@@ -193,7 +210,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
           const toolInput = {
             client: latest.client,
             tool: latest.tool,
-            args: isPlainRecord(params) ? params : {},
+            args: parseToolArguments(params),
             timeout: latest.timeout,
             signal,
           }
@@ -237,8 +254,11 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     })
   }
 
-  async function executeMcpProxy(params: unknown, signal: AbortSignal | undefined) {
-    const args = isPlainRecord(params) ? params : {}
+  async function executeMcpProxy(
+    params: Parameters<typeof parseToolArguments>[0],
+    signal: AbortSignal | undefined
+  ) {
+    const args = parseToolArguments(params)
     const action = optionalString(args, "action")
     const server = optionalString(args, "server")
     const parsedArgs = parseProxyJsonArgs(optionalString(args, "args"))
@@ -270,7 +290,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     if (search)
       return proxySearch(
         search,
-        typeof args.regex === "boolean" ? args.regex : false,
+        BooleanValueSchema.safeParse(args.regex).data ?? false,
         server,
         signal
       )
@@ -281,7 +301,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
 
   async function proxyCall(
     toolName: string,
-    args: Record<string, unknown>,
+    args: ToolArguments,
     server: string | undefined,
     signal: AbortSignal | undefined
   ) {
@@ -350,12 +370,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         server
           ? `No MCP tools matching "${query}" on server "${server}".`
           : `No MCP tools matching "${query}".`,
-        {
-          mode: "search",
-          query,
-          server,
-          count: 0,
-        }
+        searchDetails(query, server, 0, [], false)
       )
     }
 
@@ -374,14 +389,16 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       lines.push(`Showing first ${shown.length}. Narrow the search or use mcp({ server: "name" }).`)
     lines.push('Use mcp({ describe: "tool_name" }) for parameters before calling unfamiliar tools.')
 
-    return proxyText(lines.join("\n").trim(), {
-      mode: "search",
-      query,
-      server,
-      count: matches.length,
-      matches: shown.map((entry) => ({ server: entry.server, tool: entry.key, name: entry.name })),
-      truncated: shown.length < matches.length,
-    })
+    return proxyText(
+      lines.join("\n").trim(),
+      searchDetails(
+        query,
+        server,
+        matches.length,
+        shown.map((entry) => ({ server: entry.server, tool: entry.key, name: entry.name })),
+        shown.length < matches.length
+      )
+    )
   }
 
   async function proxyList(server: string, signal: AbortSignal | undefined) {
@@ -444,17 +461,16 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         `${b.client}\u0000${b.name}\u0000${b.uri}`
       )
     )
-    const response = {
-      resources: formatResourceList(sorted),
-      ...(result.failures.length > 0 ? { failures: result.failures } : {}),
-    }
-    return proxyText(JSON.stringify(response, null, 2), {
+    const response = { resources: formatResourceList(sorted) }
+    if (result.failures.length > 0) Object.assign(response, { failures: result.failures })
+    const details: ProxyDetails = {
       mode: "resources",
       count: sorted.length,
       servers: resourceServers,
       failures: result.failures.length,
-      ...(server ? { server } : {}),
-    })
+    }
+    if (server) details.server = server
+    return proxyText(JSON.stringify(response, null, 2), details)
   }
 
   async function proxyReadResource(
@@ -575,7 +591,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   function findProxyTool(
     toolName: string,
     server: string | undefined
-  ): { entry: McpToolEntry } | { error: string; details: Record<string, unknown> } {
+  ): { entry: McpToolEntry } | { error: string; details: ProxyDetails } {
     const candidates = proxyToolEntries().filter((entry) => !server || entry.server === server)
     const matches = candidates.filter((entry) => entry.key === toolName || entry.name === toolName)
     const match = matches[0]
@@ -591,11 +607,17 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         },
       }
     }
+    const details: ProxyDetails = {
+      mode: "error",
+      error: "tool_not_found",
+      requestedTool: toolName,
+    }
+    if (server) details.server = server
     return {
       error: server
         ? `MCP tool "${toolName}" not found on server "${server}". Use mcp({ server: "${server}" }) to list tools.`
         : `MCP tool "${toolName}" not found. Use mcp({ search: "..." }) to search tools.`,
-      details: { mode: "error", error: "tool_not_found", requestedTool: toolName, server },
+      details,
     }
   }
 
@@ -629,18 +651,16 @@ export default function piMcpExtension(pi: ExtensionAPI) {
             `${b.client}\u0000${b.name}\u0000${b.uri}`
           )
         )
-        const response = {
-          resources: formatResourceList(sorted),
-          ...(result.failures.length > 0 ? { failures: result.failures } : {}),
-        }
+        const response = { resources: formatResourceList(sorted) }
+        if (result.failures.length > 0) Object.assign(response, { failures: result.failures })
         return {
           content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
-          details: {
-            count: sorted.length,
-            servers: resourceServers,
-            failures: result.failures.length,
-            ...(parsed.server ? { server: parsed.server } : {}),
-          },
+          details: resourceListDetails(
+            sorted.length,
+            resourceServers,
+            result.failures.length,
+            parsed.server
+          ),
         }
       },
     })
@@ -881,12 +901,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
         prompt.messages
           ?.map((message) => {
             const content = message.content
-            return typeof content === "object" &&
-              content &&
-              "type" in content &&
-              content.type === "text"
-              ? content.text
-              : ""
+            return content.type === "text" ? content.text : ""
           })
           .filter((text) => text.length > 0)
           .join("\n") ?? ""
@@ -916,21 +931,23 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   }
 }
 
-function parseProxyJsonArgs(value: string | undefined) {
+function parseProxyJsonArgs(value: string | undefined): ToolArguments {
   if (!value) return {}
-  let parsed: unknown
+  let decoded: z.input<typeof JSONObjectSchema>
   try {
-    parsed = JSON.parse(value)
+    decoded = JSON.parse(value)
   } catch (error) {
-    if (error instanceof SyntaxError)
+    if (error instanceof SyntaxError) {
       throw new Error(`Invalid MCP proxy args JSON: ${error.message}`)
+    }
     throw error
   }
-  if (!isPlainRecord(parsed)) throw new Error("MCP proxy args must be a JSON object string")
-  return parsed
+  const parsed = JSONObjectSchema.safeParse(decoded)
+  if (!parsed.success) throw new Error("MCP proxy args must be a JSON object string")
+  return parsed.data
 }
 
-function proxyText(text: string, details: Record<string, unknown>) {
+function proxyText(text: string, details: ProxyDetails) {
   return { content: [{ type: "text" as const, text }], details }
 }
 
@@ -944,7 +961,7 @@ function useProxyTool(config: McpConfig) {
 function buildSearchPattern(
   query: string,
   regex: boolean
-): { pattern: RegExp } | { error: string; details: Record<string, unknown> } {
+): { pattern: RegExp } | { error: string; details: ProxyDetails } {
   if (!query.trim())
     return {
       error: "MCP search query cannot be empty.",
@@ -974,13 +991,13 @@ function formatProxyToolDescription(entry: McpToolEntry) {
   return lines.join("\n")
 }
 
-function parseListResourcesArgs(value: unknown) {
-  const args = isPlainRecord(value) ? value : {}
+function parseListResourcesArgs(value: Parameters<typeof parseToolArguments>[0]) {
+  const args = parseToolArguments(value)
   return { server: optionalString(args, "server") }
 }
 
-function parseReadResourceArgs(value: unknown) {
-  const args = isPlainRecord(value) ? value : {}
+function parseReadResourceArgs(value: Parameters<typeof parseToolArguments>[0]) {
+  const args = parseToolArguments(value)
   return { server: requiredString(args, "server"), uri: requiredString(args, "uri") }
 }
 
@@ -989,12 +1006,14 @@ function parsePromptCommand(input: string) {
   if (!server || !prompt) return undefined
   const json = rest.join(" ").trim()
   if (!json) return { server, prompt }
-  const parsed = JSON.parse(json)
-  if (!isPlainRecord(parsed)) throw new Error("Prompt args must be a JSON object")
+  const parsed = JSONObjectSchema.safeParse(JSON.parse(json))
+  if (!parsed.success) throw new Error("Prompt args must be a JSON object")
   return {
     server,
     prompt,
-    args: Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)])),
+    args: Object.fromEntries(
+      Object.entries(parsed.data).map(([key, value]) => [key, String(value)])
+    ),
   }
 }
 
@@ -1035,10 +1054,9 @@ function formatStatus(
   return `${name}: ${status.status}${target ? `\n  ${target}` : ""}${detail}`
 }
 
-function safeErrorSummary(error: unknown) {
-  return error instanceof Error
-    ? `${error.name}: ${redactSecrets(error.message)}`
-    : `thrown ${typeof error}`
+function safeErrorSummary(error: ReturnType<typeof parseThrownValue>) {
+  const summary = formatThrownValue(error)
+  return error.kind === "error" ? redactSecrets(summary) : summary
 }
 
 function showCommandMessage(pi: ExtensionAPI, title: string, content: string) {
@@ -1060,55 +1078,59 @@ function typeboxToolParameters(tool: Tool): TSchema {
   return parameters as TSchema
 }
 
-function renderMcpProxyCall(args: unknown, theme: RenderTheme) {
-  if (!isPlainRecord(args)) return renderToolCall(MCP_PROXY_TOOL, args, theme)
-  const title = theme.fg("toolTitle", theme.bold(formatMcpProxyCallTitle(args)))
-  const rawArgs = typeof args.args === "string" ? args.args : undefined
+function renderMcpProxyCall(args: Parameters<typeof parseToolArguments>[0], theme: RenderTheme) {
+  const parsedArgs = JSONObjectSchema.safeParse(args)
+  if (!parsedArgs.success) return renderToolCall(MCP_PROXY_TOOL, args, theme)
+  const title = theme.fg("toolTitle", theme.bold(formatMcpProxyCallTitle(parsedArgs.data)))
+  const rawArgs = StringValueSchema.safeParse(parsedArgs.data.args).data
   if (!rawArgs) return new Text(title, 0, 0)
   return new Text(`${title}\n${theme.fg("muted", formatJsonish(rawArgs))}`, 0, 0)
 }
 
-function formatMcpProxyCallTitle(args: Record<string, unknown>) {
-  if (typeof args.tool === "string")
-    return args.server ? `mcp call ${args.tool} @ ${args.server}` : `mcp call ${args.tool}`
-  if (typeof args.connect === "string") return `mcp connect ${args.connect}`
-  if (typeof args.describe === "string")
-    return args.server
-      ? `mcp describe ${args.describe} @ ${args.server}`
-      : `mcp describe ${args.describe}`
-  if (typeof args.search === "string")
-    return args.server ? `mcp search ${args.search} @ ${args.server}` : `mcp search ${args.search}`
-  if (typeof args.server === "string") return `mcp list ${args.server}`
-  if (typeof args.action === "string") return `mcp ${args.action}`
-  return "mcp status"
+function formatMcpProxyCallTitle(args: ToolArguments) {
+  const tool = optionalString(args, "tool")
+  const server = optionalString(args, "server")
+  if (tool) return server ? `mcp call ${tool} @ ${server}` : `mcp call ${tool}`
+  const connect = optionalString(args, "connect")
+  if (connect) return `mcp connect ${connect}`
+  const describe = optionalString(args, "describe")
+  if (describe) return server ? `mcp describe ${describe} @ ${server}` : `mcp describe ${describe}`
+  const search = optionalString(args, "search")
+  if (search) return server ? `mcp search ${search} @ ${server}` : `mcp search ${search}`
+  if (server) return `mcp list ${server}`
+  const action = optionalString(args, "action")
+  return action ? `mcp ${action}` : "mcp status"
 }
 
-function renderToolCall(name: string, args: unknown, theme: RenderTheme) {
+function renderToolCall(
+  name: string,
+  args: z.input<typeof ExternalJSONValueSchema>,
+  theme: RenderTheme
+) {
   const title = theme.fg("toolTitle", theme.bold(name))
   const renderedArgs = formatRenderedCallArgs(args)
   if (!renderedArgs) return new Text(title, 0, 0)
   return new Text(`${title}\n${theme.fg("muted", renderedArgs)}`, 0, 0)
 }
 
-function formatRenderedCallArgs(args: unknown) {
-  if (!hasUsefulObjectContent(args)) return ""
-  return formatJsonish(args)
+function formatRenderedCallArgs(args: z.input<typeof ExternalJSONValueSchema>) {
+  const parsed = JSONObjectSchema.safeParse(args)
+  if (!parsed.success || Object.keys(parsed.data).length === 0) return ""
+  return formatJsonish(parsed.data)
 }
 
-function formatJsonish(value: unknown) {
+function formatJsonish(value: JSONValue) {
+  const stringValue = StringValueSchema.safeParse(value)
   let text: string
-  if (typeof value === "string") {
+  if (stringValue.success) {
     try {
-      text = JSON.stringify(JSON.parse(value), null, 2)
+      const parsed = JSONValueSchema.safeParse(JSON.parse(stringValue.data))
+      text = parsed.success ? JSON.stringify(parsed.data, null, 2) : stringValue.data
     } catch {
-      text = value
+      text = stringValue.data
     }
   } else {
-    try {
-      text = JSON.stringify(value, null, 2)
-    } catch {
-      text = String(value)
-    }
+    text = JSON.stringify(value, null, 2)
   }
   return truncateText(text, MAX_RENDERED_CALL_ARGS_CHARS)
 }
@@ -1118,15 +1140,25 @@ function truncateText(value: string, maxChars: number) {
   return `${value.slice(0, Math.max(0, maxChars - 1))}…`
 }
 
-function hasUsefulObjectContent(value: unknown) {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.keys(value).length > 0
-  )
+function searchDetails(
+  query: string,
+  server: string | undefined,
+  count: number,
+  matches: Array<{ server: string; tool: string; name: string }>,
+  truncated: boolean
+): ProxyDetails {
+  const details: ProxyDetails = { mode: "search", query, count, matches, truncated }
+  if (server) details.server = server
+  return details
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+function resourceListDetails(
+  count: number,
+  servers: string[],
+  failures: number,
+  server: string | undefined
+): ProxyDetails {
+  const details: ProxyDetails = { count, servers, failures }
+  if (server) details.server = server
+  return details
 }

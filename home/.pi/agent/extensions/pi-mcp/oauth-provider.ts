@@ -14,6 +14,11 @@ type OAuthClientInformationWithAuthMethod = StoredOAuthClientInformation & {
   token_endpoint_auth_method?: string
 }
 
+interface OAuthCallbackTarget {
+  readonly port: number
+  readonly path: string
+}
+
 /** Default local port used by the OAuth browser callback listener. */
 export const OAUTH_CALLBACK_PORT = 19876
 /** Default local path used by the OAuth browser callback listener. */
@@ -44,15 +49,16 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   /** OAuth client metadata advertised during dynamic client registration. */
   get clientMetadata(): OAuthClientMetadata {
-    return {
+    const metadata: OAuthClientMetadata = {
       redirect_uris: [this.redirectUrl],
       client_name: this.config?.clientName ?? "Pi MCP",
-      ...(this.config?.clientUri ? { client_uri: this.config.clientUri } : {}),
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: this.config?.clientSecret ? "client_secret_post" : "none",
-      ...(this.config?.scope ? { scope: this.config.scope } : {}),
     }
+    if (this.config?.clientUri) metadata.client_uri = this.config.clientUri
+    if (this.config?.scope) metadata.scope = this.config.scope
+    return metadata
   }
 
   /** Returns saved static or dynamically registered OAuth client information. */
@@ -60,10 +66,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
     ctx?: OAuthClientInformationContext
   ): Promise<StoredOAuthClientInformation | undefined> {
     if (this.config?.clientId) {
-      const info: StoredOAuthClientInformation = {
-        client_id: this.config.clientId,
-        ...(ctx ? { issuer: ctx.issuer } : {}),
-      }
+      const info: StoredOAuthClientInformation = { client_id: this.config.clientId }
+      if (ctx) info.issuer = ctx.issuer
       if (this.config.clientSecret !== undefined) info.client_secret = this.config.clientSecret
       return info
     }
@@ -79,8 +83,8 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
     const info: OAuthClientInformationWithAuthMethod = {
       client_id: entry.clientInfo.clientId,
-      ...(entry.clientInfo.issuer ? { issuer: entry.clientInfo.issuer } : {}),
     }
+    if (entry.clientInfo.issuer) info.issuer = entry.clientInfo.issuer
     if (entry.clientInfo.clientSecret !== undefined)
       info.client_secret = entry.clientInfo.clientSecret
     if (entry.clientInfo.tokenEndpointAuthMethod !== undefined)
@@ -90,17 +94,16 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   /** Persists dynamically registered OAuth client information. */
   async saveClientInformation(info: StoredOAuthClientInformation): Promise<void> {
-    const clientInfo: AuthClientInfo = {
-      clientId: info.client_id,
-      ...(nonEmptyString(info.client_secret) ? { clientSecret: info.client_secret } : {}),
-      ...(info.client_id_issued_at !== undefined
-        ? { clientIdIssuedAt: info.client_id_issued_at }
-        : {}),
-      ...(info.client_secret_expires_at !== undefined
-        ? { clientSecretExpiresAt: info.client_secret_expires_at }
-        : {}),
-      ...(nonEmptyString(info.issuer) ? { issuer: info.issuer } : {}),
+    const clientInfo: AuthClientInfo = { clientId: info.client_id }
+    if (nonEmptyString(info.client_secret))
+      Object.assign(clientInfo, { clientSecret: info.client_secret })
+    if (info.client_id_issued_at !== undefined) {
+      Object.assign(clientInfo, { clientIdIssuedAt: info.client_id_issued_at })
     }
+    if (info.client_secret_expires_at !== undefined) {
+      Object.assign(clientInfo, { clientSecretExpiresAt: info.client_secret_expires_at })
+    }
+    if (nonEmptyString(info.issuer)) Object.assign(clientInfo, { issuer: info.issuer })
     await this.auth.updateClientInfo(this.mcpName, clientInfo, this.serverUrl)
   }
 
@@ -123,15 +126,15 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   /** Persists OAuth tokens returned by the MCP SDK after grant or refresh flows. */
   async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
-    const authTokens: AuthTokens = {
-      accessToken: tokens.access_token,
-      ...(nonEmptyString(tokens.refresh_token) ? { refreshToken: tokens.refresh_token } : {}),
-      ...(tokens.expires_in !== undefined
-        ? { expiresAt: Date.now() / 1000 + tokens.expires_in }
-        : {}),
-      ...(nonEmptyString(tokens.scope) ? { scope: tokens.scope } : {}),
-      ...(nonEmptyString(tokens.issuer) ? { issuer: tokens.issuer } : {}),
+    const authTokens: AuthTokens = { accessToken: tokens.access_token }
+    if (nonEmptyString(tokens.refresh_token)) {
+      Object.assign(authTokens, { refreshToken: tokens.refresh_token })
     }
+    if (tokens.expires_in !== undefined) {
+      Object.assign(authTokens, { expiresAt: Date.now() / 1000 + tokens.expires_in })
+    }
+    if (nonEmptyString(tokens.scope)) Object.assign(authTokens, { scope: tokens.scope })
+    if (nonEmptyString(tokens.issuer)) Object.assign(authTokens, { issuer: tokens.issuer })
     await this.auth.updateTokens(this.mcpName, authTokens, this.serverUrl)
   }
 
@@ -205,12 +208,12 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 }
 
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0
+function nonEmptyString(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0
 }
 
 /** Parses a configured redirect URI into the callback listener port and path. */
-export function parseRedirectUri(redirectUri?: string): { port: number; path: string } {
+export function parseRedirectUri(redirectUri?: string): OAuthCallbackTarget {
   if (!redirectUri) return { port: OAUTH_CALLBACK_PORT, path: OAUTH_CALLBACK_PATH }
 
   try {

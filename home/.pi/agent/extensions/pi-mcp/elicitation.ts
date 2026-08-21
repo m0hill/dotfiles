@@ -1,10 +1,24 @@
 import type { ElicitRequest, ElicitResult } from "@modelcontextprotocol/client"
-import { ElicitResultSchema } from "@modelcontextprotocol/core"
+import {
+  ElicitRequestFormParamsSchema,
+  ElicitResultSchema,
+  JSONObjectSchema,
+  JSONValueSchema,
+  PrimitiveSchemaDefinitionSchema,
+} from "@modelcontextprotocol/core"
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 import open from "open"
+import { z } from "zod"
 
 type PiElicitationContext = Pick<ExtensionContext, "hasUI" | "ui">
 type ElicitationContent = NonNullable<ElicitResult["content"]>
+type FormElicitationParams = z.infer<typeof ElicitRequestFormParamsSchema>
+type PrimitiveSchema = z.infer<typeof PrimitiveSchemaDefinitionSchema>
+
+const StringSchema = z.string()
+const NumberSchema = z.number().finite()
+const StringArraySchema = z.array(z.string())
+const StringConstVariantsSchema = z.array(z.object({ const: z.string() }).loose())
 
 const CANCEL = Symbol("cancel")
 
@@ -46,7 +60,7 @@ async function handleUrlElicitation(
 
 async function handleFormElicitation(
   server: string,
-  params: Extract<ElicitRequest["params"], { requestedSchema: unknown }>,
+  params: FormElicitationParams,
   ctx: PiElicitationContext | undefined
 ): Promise<ElicitResult> {
   if (!ctx?.hasUI) return { action: "decline" }
@@ -67,7 +81,7 @@ async function handleFormElicitation(
 async function askForField(
   ctx: PiElicitationContext,
   name: string,
-  schema: Record<string, unknown>,
+  schema: PrimitiveSchema,
   required: boolean
 ): Promise<ElicitationContent[string] | typeof CANCEL | undefined> {
   const title = fieldTitle(name, schema, required)
@@ -87,11 +101,12 @@ async function askForField(
   if (schema.type === "number" || schema.type === "integer") {
     const input = await ctx.ui.input(
       title,
-      typeof defaultValue === "number" ? String(defaultValue) : description
+      NumberSchema.safeParse(defaultValue).success ? String(defaultValue) : description
     )
     if (input === undefined) return CANCEL
     if (!input.trim()) {
-      if (typeof defaultValue === "number") return defaultValue
+      const parsedDefault = NumberSchema.safeParse(defaultValue)
+      if (parsedDefault.success) return parsedDefault.data
       return required ? CANCEL : undefined
     }
     const value = Number(input)
@@ -109,8 +124,8 @@ async function askForField(
     )
     if (input === undefined) return CANCEL
     if (!input.trim()) {
-      if (Array.isArray(defaultValue) && defaultValue.every((item) => typeof item === "string"))
-        return defaultValue
+      const parsedDefault = StringArraySchema.safeParse(defaultValue)
+      if (parsedDefault.success) return parsedDefault.data
       return required ? CANCEL : undefined
     }
     return input
@@ -121,10 +136,11 @@ async function askForField(
 
   const input = await ctx.ui.input(
     title,
-    typeof defaultValue === "string" ? defaultValue : description
+    StringSchema.safeParse(defaultValue).success ? String(defaultValue) : description
   )
   if (input === undefined) return CANCEL
-  if (!input && typeof defaultValue === "string") return defaultValue
+  const parsedDefault = StringSchema.safeParse(defaultValue)
+  if (!input && parsedDefault.success) return parsedDefault.data
   if (!input && !required) return undefined
   return input
 }
@@ -134,11 +150,10 @@ function responseFromEnv(): ElicitResult | undefined {
   if (!raw) return undefined
   if (raw === "accept" || raw === "decline" || raw === "cancel") return { action: raw }
 
-  const parsed: unknown = JSON.parse(raw)
-  const result =
-    isPlainRecord(parsed) && typeof parsed.action === "string"
-      ? parsed
-      : { action: "accept", content: parsed }
+  const parsed = JSONValueSchema.parse(JSON.parse(raw))
+  const parsedObject = JSONObjectSchema.safeParse(parsed)
+  const hasAction = parsedObject.success && StringSchema.safeParse(parsedObject.data.action).success
+  const result = hasAction ? parsedObject.data : { action: "accept", content: parsed }
   const elicitation = ElicitResultSchema.safeParse(result)
   if (elicitation.success) return elicitation.data
   throw new Error(
@@ -152,44 +167,32 @@ function isUrlElicitation(
   return params.mode === "url"
 }
 
-function isFormElicitation(
-  params: ElicitRequest["params"]
-): params is Extract<ElicitRequest["params"], { requestedSchema: unknown }> {
+function isFormElicitation(params: ElicitRequest["params"]): params is FormElicitationParams {
   return "requestedSchema" in params
 }
 
-function fieldTitle(name: string, schema: Record<string, unknown>, required: boolean) {
+function fieldTitle(name: string, schema: PrimitiveSchema, required: boolean) {
   const title = stringProperty(schema, "title") ?? name
   return required ? `${title} (required)` : title
 }
 
-function stringProperty(schema: Record<string, unknown>, key: string) {
-  const value = schema[key]
-  return typeof value === "string" ? value : undefined
+function stringProperty(schema: PrimitiveSchema, key: string) {
+  const value = JSONObjectSchema.parse(schema)[key]
+  const parsed = StringSchema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
 }
 
-function stringEnumValues(schema: Record<string, unknown>) {
-  if (Array.isArray(schema.enum) && schema.enum.every((value) => typeof value === "string"))
-    return schema.enum
-  if (Array.isArray(schema.oneOf)) {
-    const values = schema.oneOf
-      .filter(
-        (item): item is Record<string, unknown> & { const: string } =>
-          isPlainRecord(item) && typeof item.const === "string"
-      )
-      .map((item) => item.const)
-    if (values.length > 0) return values
-  }
-  return []
+function stringEnumValues(schema: PrimitiveSchema) {
+  const properties = JSONObjectSchema.parse(schema)
+  const enumValues = StringArraySchema.safeParse(properties.enum)
+  if (enumValues.success) return enumValues.data
+  const variants = StringConstVariantsSchema.safeParse(properties.oneOf)
+  return variants.success ? variants.data.map((item) => item.const) : []
 }
 
-function arrayPlaceholder(schema: Record<string, unknown>, fallback: string) {
-  const items = schema.items
-  if (!isPlainRecord(items)) return fallback
-  const values = stringEnumValues(items)
+function arrayPlaceholder(schema: PrimitiveSchema, fallback: string) {
+  const items = PrimitiveSchemaDefinitionSchema.safeParse(JSONObjectSchema.parse(schema).items)
+  if (!items.success) return fallback
+  const values = stringEnumValues(items.data)
   return values.length > 0 ? `Comma-separated: ${values.join(", ")}` : fallback
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

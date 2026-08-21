@@ -16,6 +16,7 @@ import type {
   Tool,
 } from "@modelcontextprotocol/client"
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
+import { JSONObjectSchema, JSONValueSchema } from "@modelcontextprotocol/core"
 import open from "open"
 import type {
   AuthStatus,
@@ -35,6 +36,7 @@ import { randomHex } from "./random.js"
 import { DEFAULT_TIMEOUT, MAX_LIST_PAGES } from "./request-limits.js"
 import { mcpToolKey, sanitizeName } from "./tool-names.js"
 import { withTimeout } from "./timeout.js"
+import { formatThrownValue, parseThrownValue } from "./thrown-value.js"
 import { listPrompts, listResources, listTools } from "./catalog.js"
 import { McpOAuthProvider } from "./oauth-provider.js"
 import {
@@ -58,6 +60,11 @@ const CLIENT_OPTIONS = {
 
 type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
+
+interface TransportOptions {
+  authProvider?: McpOAuthProvider
+  requestInit?: { headers: Record<string, string> }
+}
 
 interface ManagedClient {
   client: Client
@@ -185,13 +192,13 @@ export class McpManager {
       if (!result || !target) continue
       if (result.status === "fulfilled") continue
 
-      if (isAbortError(result.reason)) {
+      if (isAbortError(parseThrownValue(result.reason))) {
         throw result.reason
       }
 
       this.statuses.set(target[0], {
         status: "failed",
-        error: errorMessage(result.reason),
+        error: errorMessage(parseThrownValue(result.reason)),
       })
 
       hasUnhandledFailure = true
@@ -604,8 +611,9 @@ export class McpManager {
       return { client, transport, status: { status: "connected" as const } }
     } catch (error: unknown) {
       await safeCloseTransport(transport)
-      if (isAbortError(error)) throw error
-      return { status: { status: "failed" as const, error: errorMessage(error) } }
+      const parsedError = parseThrownValue(error)
+      if (isAbortError(parsedError)) throw error
+      return { status: { status: "failed" as const, error: errorMessage(parsedError) } }
     }
   }
 
@@ -624,7 +632,7 @@ export class McpManager {
       : new McpOAuthProvider(
           name,
           serverConfig.url,
-          typeof serverConfig.oauth === "object" ? serverConfig.oauth : undefined,
+          serverConfig.oauth || undefined,
           { onRedirect: async () => undefined },
           this.auth
         )
@@ -657,12 +665,13 @@ export class McpManager {
         )
         return { client, transport: candidate.transport, status: { status: "connected" as const } }
       } catch (error: unknown) {
-        if (isAbortError(error)) {
+        const parsedError = parseThrownValue(error)
+        if (isAbortError(parsedError)) {
           await safeCloseTransport(candidate.transport)
           throw error
         }
 
-        const message = errorMessage(error)
+        const message = errorMessage(parsedError)
         const isAuthError =
           error instanceof UnauthorizedError ||
           (!!authProvider && /oauth|authorization|unauthorized/i.test(message))
@@ -714,13 +723,13 @@ export class McpManager {
             onChanged: (error, tools) => {
               if (error || !tools) {
                 console.error(
-                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(error)}`
+                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(parseThrownValue(error))}`
                 )
                 return
               }
               this.handleToolListChanged(server, client, tools).catch((refreshError) => {
                 console.error(
-                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(refreshError)}`
+                  `[mcp:${server}] tool list refresh failed: ${safeErrorSummary(parseThrownValue(refreshError))}`
                 )
               })
             },
@@ -741,7 +750,9 @@ export class McpManager {
     client.onclose = () => {
       const closed = this.handleClientClosed(name, client)
       closed.catch((error) => {
-        console.error(`[mcp:${name}] close handler failed: ${safeErrorSummary(error)}`)
+        console.error(
+          `[mcp:${name}] close handler failed: ${safeErrorSummary(parseThrownValue(error))}`
+        )
       })
     }
 
@@ -771,7 +782,7 @@ export class McpManager {
     const serverConfig = this.requireRemote(name)
     if (serverConfig.oauth === false) throw new Error(`MCP server ${name} has OAuth disabled`)
 
-    const oauthConfig = typeof serverConfig.oauth === "object" ? serverConfig.oauth : undefined
+    const oauthConfig = serverConfig.oauth || undefined
     const redirectUri =
       oauthConfig?.redirectUri ??
       (oauthConfig?.callbackPort
@@ -833,7 +844,10 @@ export class McpManager {
       }
       return status
     } catch (error) {
-      return { status: "failed", error: errorMessage(error) } satisfies McpStatus
+      return {
+        status: "failed",
+        error: errorMessage(parseThrownValue(error)),
+      } satisfies McpStatus
     }
   }
 
@@ -960,10 +974,10 @@ function transportOptions(
   authProvider: McpOAuthProvider | undefined,
   headers: Record<string, string> | undefined
 ) {
-  return {
-    ...(authProvider ? { authProvider } : {}),
-    ...(headers ? { requestInit: { headers } } : {}),
-  }
+  const options: TransportOptions = {}
+  if (authProvider) options.authProvider = authProvider
+  if (headers) options.requestInit = { headers }
+  return options
 }
 
 function oauthProviderConfig(
@@ -971,72 +985,13 @@ function oauthProviderConfig(
   redirectUri: string | undefined
 ): OAuthConfig | undefined {
   if (!config && !redirectUri) return undefined
-  return {
-    ...(config?.clientId !== undefined ? { clientId: config.clientId } : {}),
-    ...(config?.clientSecret !== undefined ? { clientSecret: config.clientSecret } : {}),
-    ...(config?.scope !== undefined ? { scope: config.scope } : {}),
-    ...(config?.callbackPort !== undefined ? { callbackPort: config.callbackPort } : {}),
-    ...(redirectUri !== undefined ? { redirectUri } : {}),
-    ...(config?.clientName !== undefined ? { clientName: config.clientName } : {}),
-    ...(config?.clientUri !== undefined ? { clientUri: config.clientUri } : {}),
-  }
+  const result: OAuthConfig = config ? structuredClone(config) : {}
+  if (redirectUri !== undefined) Object.assign(result, { redirectUri })
+  return result
 }
 
 function cloneMcpConfig(config: McpConfig): McpConfig {
-  const servers: Record<string, McpServerConfig> = {}
-  for (const [name, server] of Object.entries(config.servers)) {
-    servers[name] = cloneServerConfig(server)
-  }
-  return {
-    servers,
-    ...(config.timeout !== undefined ? { timeout: config.timeout } : {}),
-    ...(config.source !== undefined ? { source: config.source } : {}),
-    ...(config.toolMode !== undefined ? { toolMode: config.toolMode } : {}),
-    ...(config.startup !== undefined ? { startup: config.startup } : {}),
-  }
-}
-
-function cloneServerConfig(config: McpServerConfig): McpServerConfig {
-  if (config.type === "local") {
-    return {
-      type: "local",
-      command: [...config.command],
-      ...(config.cwd !== undefined ? { cwd: config.cwd } : {}),
-      ...(config.environment !== undefined
-        ? { environment: cloneStringRecord(config.environment) }
-        : {}),
-      ...(config.enabled !== undefined ? { enabled: config.enabled } : {}),
-      ...(config.disabled !== undefined ? { disabled: config.disabled } : {}),
-      ...(config.timeout !== undefined ? { timeout: config.timeout } : {}),
-    }
-  }
-
-  return {
-    type: "remote",
-    url: config.url,
-    ...(config.headers !== undefined ? { headers: cloneStringRecord(config.headers) } : {}),
-    ...(config.oauth !== undefined ? { oauth: cloneOAuthConfig(config.oauth) } : {}),
-    ...(config.enabled !== undefined ? { enabled: config.enabled } : {}),
-    ...(config.disabled !== undefined ? { disabled: config.disabled } : {}),
-    ...(config.timeout !== undefined ? { timeout: config.timeout } : {}),
-  }
-}
-
-function cloneOAuthConfig(config: OAuthConfig | false): OAuthConfig | false {
-  if (config === false) return false
-  return {
-    ...(config.clientId !== undefined ? { clientId: config.clientId } : {}),
-    ...(config.clientSecret !== undefined ? { clientSecret: config.clientSecret } : {}),
-    ...(config.scope !== undefined ? { scope: config.scope } : {}),
-    ...(config.callbackPort !== undefined ? { callbackPort: config.callbackPort } : {}),
-    ...(config.redirectUri !== undefined ? { redirectUri: config.redirectUri } : {}),
-    ...(config.clientName !== undefined ? { clientName: config.clientName } : {}),
-    ...(config.clientUri !== undefined ? { clientUri: config.clientUri } : {}),
-  }
-}
-
-function cloneStringRecord(value: Readonly<Record<string, string>>) {
-  return Object.fromEntries(Object.entries(value))
+  return structuredClone(config)
 }
 
 function cloneStatus(status: McpStatus): McpStatus {
@@ -1103,10 +1058,9 @@ async function waitForConnectAttempt(
 }
 
 function sdkRequestOptions(timeout: number, signal: AbortSignal | undefined) {
-  return {
-    timeout,
-    ...(signal ? { signal } : {}),
-  }
+  const options = { timeout }
+  if (signal) Object.assign(options, { signal })
+  return options
 }
 
 async function collectPartial<T>(
@@ -1131,14 +1085,15 @@ async function collectPartial<T>(
       items.push(...result.value.items)
       continue
     }
-    if (isAbortError(result.reason)) throw result.reason
-    failures.push({ server: target[0], error: safeErrorSummary(result.reason) })
+    const parsedError = parseThrownValue(result.reason)
+    if (isAbortError(parsedError)) throw result.reason
+    failures.push({ server: target[0], error: safeErrorSummary(parsedError) })
   }
   return { items, failures }
 }
 
-function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError"
+function isAbortError(error: ReturnType<typeof parseThrownValue>) {
+  return error.kind === "error" && error.name === "AbortError"
 }
 
 async function safeCloseClient(client: Client, transport: Transport) {
@@ -1155,27 +1110,31 @@ async function safeCloseTransport(transport: Transport) {
   } catch {}
 }
 
-function errorMessage(error: unknown) {
-  return redactSecrets(error instanceof Error ? error.message : String(error))
+function errorMessage(error: ReturnType<typeof parseThrownValue>) {
+  return redactSecrets(error.kind === "error" ? error.message : "non-Error value")
 }
 
 function logServerMessage(name: string, params: LoggingMessageNotification["params"]) {
   const prefix = `[mcp:${name}]`
-  const message = `${prefix} ${params.logger ? `${params.logger}: ` : ""}${safeLogDataSummary(params.data)}`
+  const message = `${prefix} ${params.logger ? `${params.logger}: ` : ""}${safeLogDataSummary(params)}`
   if (["error", "critical", "alert", "emergency"].includes(params.level)) console.error(message)
   else if (params.level === "warning") console.warn(message)
   else console.info(message)
 }
 
-function safeLogDataSummary(data: unknown) {
-  if (data === null) return "data=null"
-  if (Array.isArray(data)) return `data=array(length=${data.length})`
-  if (typeof data === "object") return `data=object(keys=${Object.keys(data).length})`
-  return `data=${typeof data}`
+function safeLogDataSummary(params: LoggingMessageNotification["params"]) {
+  const data = JSONValueSchema.safeParse(params.data)
+  if (!data.success) return "data=non-JSON value"
+  if (data.data === null) return "data=null"
+  if (Array.isArray(data.data)) return `data=array(length=${data.data.length})`
+  const object = JSONObjectSchema.safeParse(data.data)
+  if (object.success) return `data=object(keys=${Object.keys(object.data).length})`
+  if (data.data === true || data.data === false) return "data=boolean"
+  if (Number.isFinite(data.data)) return "data=number"
+  return "data=string"
 }
 
-function safeErrorSummary(error: unknown) {
-  return error instanceof Error
-    ? `${error.name}: ${redactSecrets(error.message)}`
-    : `thrown ${typeof error}`
+function safeErrorSummary(error: ReturnType<typeof parseThrownValue>) {
+  const summary = formatThrownValue(error)
+  return error.kind === "error" ? redactSecrets(summary) : summary
 }
