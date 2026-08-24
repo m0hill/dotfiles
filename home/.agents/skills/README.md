@@ -18,6 +18,7 @@ The skills below are adapted from external sources. Each source link is pinned t
 | `herdr` | [Dillon Mulroy's `herdr`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/herdr/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/herdr/SKILL.md) | Matches the pinned source; local OpenAI metadata keeps model invocation enabled. |
 | `improve-codebase-architecture` | [`engineering/improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/improve-codebase-architecture/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md) | Matches upstream, including the visual HTML report workflow. |
 | `implement` | [`engineering/implement`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/implement/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/implement/SKILL.md) | Invokes the local `tdd` and `code-review` skills without filesystem coupling. |
+| `install-anti-slop` | [Dillon Mulroy's `anti-slop`](https://github.com/dmmulroy/anti-slop/blob/6d538555cb151d4121ed51a27db81890eacf8ae9/skills/install-anti-slop/SKILL.md) | [`main`](https://github.com/dmmulroy/anti-slop/blob/main/skills/install-anti-slop/SKILL.md) | Matches upstream, including bundled plugin assets. |
 | `prototype` | [`engineering/prototype`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/prototype/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/prototype/SKILL.md) | Integrates outcomes with implementation issues and Feature Contracts. |
 | `quality-code` | [Dillon Mulroy's `coding-standards`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/coding-standards/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/coding-standards/SKILL.md) | Omits the `better-result` preference and retains local TypeScript edge-case guidance. |
 | `research` | [`engineering/research`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/research/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/research/SKILL.md) | Uses background delegation when available and direct research otherwise. |
@@ -47,6 +48,7 @@ Model-invoked skills may be selected autonomously and may be composed by other s
 | `domain-modeling` | `diverge` |
 | `grilling` | `handoff` |
 | `herdr` | `implement` |
+| `install-anti-slop` |  |
 | `opensrc-skill` | `improve-codebase-architecture` |
 | `prototype` | `setup-matt-pocock-skills` |
 | `quality-code` | `teach` |
@@ -133,6 +135,7 @@ Here, **independent** means the skill does not invoke, require, or hand off to a
 - `grilling`
 - `handoff`
 - `herdr`
+- `install-anti-slop`
 - `opensrc-skill`
 - `prototype`
 - `quality-code`
