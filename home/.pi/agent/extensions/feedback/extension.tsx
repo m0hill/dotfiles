@@ -41,6 +41,7 @@ const feedbackForm = state({
   quote: "",
   comment: "",
   globalComment: "",
+  title: "",
   selectionStart: 0,
   selectionEnd: 0,
   dialogOpen: false,
@@ -49,6 +50,7 @@ const feedbackForm = state({
   editingComment: "",
   annotationCount: 0,
   indexCollapsed: false,
+  annotationMode: true,
   error: "",
 })
 
@@ -73,7 +75,7 @@ type RenderedMarkdown = {
 
 type FeedbackSession = {
   readonly id: string
-  readonly title: string
+  title: string
   readonly source: string
   readonly rendered: RenderedMarkdown
   annotations: Annotation[]
@@ -88,10 +90,12 @@ const newAnnotationSchema = Type.Object({
 
 const annotationCommentSchema = Type.Object({ editingComment: Type.String() })
 const submitFeedbackSchema = Type.Object({ globalComment: Type.String() })
+const feedbackTitleSchema = Type.Object({ title: Type.String({ maxLength: 60 }) })
 
 type NewAnnotation = Static<typeof newAnnotationSchema>
 type AnnotationComment = Static<typeof annotationCommentSchema>
 type SubmitFeedback = Static<typeof submitFeedbackSchema>
+type FeedbackTitle = Static<typeof feedbackTitleSchema>
 
 type ParseResult<T> =
   | { readonly _tag: "ok"; readonly value: T }
@@ -174,6 +178,21 @@ function parseSubmitFeedback(input: SignalState): ParseResult<SubmitFeedback> {
   return parsed._tag === "error"
     ? parsed
     : { _tag: "ok", value: { globalComment: parsed.value.globalComment.trim() } }
+}
+
+function parseFeedbackTitle(input: SignalState): ParseResult<FeedbackTitle> {
+  const parsed = parseSignals(feedbackTitleSchema, input)
+  if (parsed._tag === "error") return parsed
+
+  const title = parsed.value.title.trim()
+  return title ? { _tag: "ok", value: { title } } : { _tag: "error", message: "Add a title." }
+}
+
+function defaultFeedbackTitle(folder: string, now = new Date()): string {
+  const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":")
+  return `${folder || "feedback"} · ${time}`
 }
 
 function slugifyHeading(label: string, seen: Map<string, number>): string {
@@ -352,9 +371,12 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
   const submitLabel = js<string>`${submitting} ? "Sending…" : "Send Feedback"`
   const clearLabel = js<string>`${clearing} ? "Sending…" : "Send & Clear"`
   const addLabel = js<string>`${adding} ? "Adding…" : "Add"`
-  const captureSelection = js<void>`const selected = window.feedback.capture(el); if (selected) { ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true }`
+  const captureSelection = js<void>`if (${feedbackForm.refs.annotationMode}) { const selected = window.feedback.capture(el); if (selected) { ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true } }`
   const syncDialog = js<void>`${feedbackForm.refs.dialogOpen} ? window.feedback.open(el) : (el.open && el.close())`
   const closeDialog = js<void>`${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
+  const useSelectMode = js<void>`${feedbackForm.refs.annotationMode} = false; ${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
+  const useAnnotationMode = js<void>`${feedbackForm.refs.annotationMode} = true`
+  const selectingText = js<boolean>`!${feedbackForm.refs.annotationMode}`
   const toggleIndex = js<void>`${feedbackForm.refs.indexCollapsed} = !${feedbackForm.refs.indexCollapsed}`
   const indexExpanded = js<boolean>`!${feedbackForm.refs.indexCollapsed}`
   const indexToggleIcon = js<string>`${feedbackForm.refs.indexCollapsed} ? "›" : "‹"`
@@ -365,6 +387,7 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
       data-signals={mod(
         {
           ...feedbackForm.defaults,
+          title: props.session.title,
           annotationCount: props.session.annotations.length,
           indexCollapsed: props.session.rendered.headings.length === 0,
         },
@@ -377,7 +400,42 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
             <span class="app-mark" aria-hidden="true">
               ›
             </span>
-            <h1 class="app-title">{props.session.title}</h1>
+            <form class="title-form" data-on:submit={post(`/sessions/${props.session.id}/title`)}>
+              <input
+                class="app-title"
+                type="text"
+                aria-label="Feedback title"
+                title="Rename this feedback tab"
+                maxlength="60"
+                required
+                data-bind={feedbackForm.refs.title}
+              />
+              <button class="button title-save" type="submit">
+                Save
+              </button>
+            </form>
+            <div class="selection-mode" role="group" aria-label="Text selection behavior">
+              <button
+                class="selection-mode-option"
+                type="button"
+                title="Select and copy text without opening feedback"
+                data-class:active={selectingText}
+                data-attr:aria-pressed={selectingText}
+                data-on:click={useSelectMode}
+              >
+                Select
+              </button>
+              <button
+                class="selection-mode-option"
+                type="button"
+                title="Select text to add an annotation"
+                data-class:active={feedbackForm.refs.annotationMode}
+                data-attr:aria-pressed={feedbackForm.refs.annotationMode}
+                data-on:click={useAnnotationMode}
+              >
+                Annotate
+              </button>
+            </div>
           </div>
           <div class="app-actions">
             <button
@@ -431,7 +489,11 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
             <span class="doc-bar-label">Document</span>
             <span id="source">{props.session.source}</span>
           </div>
-          <article id="doc" data-on:mouseup={captureSelection}>
+          <article
+            id="doc"
+            data-class:annotation-mode={feedbackForm.refs.annotationMode}
+            data-on:mouseup={captureSelection}
+          >
             {unsafeHtml(props.session.rendered.html)}
           </article>
         </div>
@@ -524,7 +586,7 @@ function SentPage() {
 
 function page(session: FeedbackSession): Response {
   return reply.page(<FeedbackPage session={session} />, {
-    title: `Feedback · ${session.title}`,
+    title: `${session.title} · Feedback`,
     head: [
       <meta name="viewport" content="width=device-width, initial-scale=1" />,
       <meta name="color-scheme" content="dark" />,
@@ -564,6 +626,21 @@ function createFeedbackApp(pi: ExtensionAPI) {
     const id = context.req.query("id")
     const session = id === undefined ? undefined : sessions.get(id)
     return session === undefined ? context.text("Not Found", 404) : page(session)
+  })
+
+  app.post("/sessions/:sessionId/title", async (context) => {
+    const session = sessions.get(context.req.param("sessionId"))
+    if (session === undefined) return context.text("Not Found", 404)
+
+    const parsed = parseFeedbackTitle(await read.signals(context.req.raw))
+    if (parsed._tag === "error") {
+      return reply.signals(feedbackForm.patch({ title: session.title, error: parsed.message }))
+    }
+    session.title = parsed.value.title
+    return reply.stream([
+      event.signals(feedbackForm.patch({ title: session.title, error: "" })),
+      event.patch(<title>{`${session.title} · Feedback`}</title>, { selector: "title" }),
+    ])
   })
 
   app.post("/sessions/:sessionId/annotations/add", async (context) => {
@@ -761,7 +838,13 @@ async function openLastFeedback(pi: ExtensionAPI, ctx: ExtensionContext): Promis
     ctx.ui.notify("No assistant text message found.", "warning")
     return
   }
-  await openFeedback(pi, ctx, "Last response", "the previous assistant response", document)
+  await openFeedback(
+    pi,
+    ctx,
+    defaultFeedbackTitle(basename(ctx.cwd)),
+    "the previous assistant response",
+    document
+  )
 }
 
 async function reportOpenFailure(ctx: ExtensionContext, open: () => Promise<void>): Promise<void> {
@@ -798,7 +881,13 @@ export default function feedback(pi: ExtensionAPI): void {
       }
       await reportOpenFailure(ctx, async () => {
         const path = resolve(ctx.cwd, input)
-        await openFeedback(pi, ctx, basename(path), `file ${path}`, readFileSync(path, "utf8"))
+        await openFeedback(
+          pi,
+          ctx,
+          defaultFeedbackTitle(basename(dirname(path))),
+          `file ${path}`,
+          readFileSync(path, "utf8")
+        )
       })
     },
   })
