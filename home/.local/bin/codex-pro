@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Launch Codex with an access-only mirror of Pi's OpenAI Codex credential."""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
+
+CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+TOKEN_URL = "https://auth.openai.com/oauth/token"
+DEFAULT_REFRESH_MARGIN_SECONDS = 24 * 60 * 60
+
+
+class AuthError(Exception):
+    pass
+
+
+def decode_jwt(token: str) -> dict[str, Any]:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise AuthError("OpenAI access token is not a JWT")
+    try:
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        value = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError) as error:
+        raise AuthError("OpenAI access token has an invalid JWT payload") from error
+    if not isinstance(value, dict):
+        raise AuthError("OpenAI access token has an invalid JWT payload")
+    return value
+
+
+def account_metadata(token: str) -> tuple[str, str | None]:
+    claims = decode_jwt(token)
+    auth = claims.get("https://api.openai.com/auth")
+    if not isinstance(auth, dict):
+        raise AuthError("OpenAI access token has no ChatGPT account metadata")
+    account_id = auth.get("chatgpt_account_id")
+    plan = auth.get("chatgpt_plan_type")
+    if not isinstance(account_id, str) or not account_id:
+        raise AuthError("OpenAI access token has no ChatGPT account ID")
+    return account_id, plan if isinstance(plan, str) else None
+
+
+def expires_at(token: str) -> int:
+    expiration = decode_jwt(token).get("exp")
+    if not isinstance(expiration, int):
+        raise AuthError("OpenAI access token has no expiration")
+    return expiration
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text())
+    except FileNotFoundError as error:
+        raise AuthError(f"Credential file does not exist: {path}") from error
+    except (OSError, json.JSONDecodeError) as error:
+        raise AuthError(f"Could not read credential file: {path}") from error
+    if not isinstance(value, dict):
+        raise AuthError(f"Credential file is not a JSON object: {path}")
+    return value
+
+
+def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor, temporary_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(value, output, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+class PiAuthLock:
+    """A short-lived lock compatible with proper-lockfile's `<path>.lock` directory."""
+
+    def __init__(self, auth_path: Path) -> None:
+        self.path = Path(f"{auth_path}.lock")
+        self._stop = threading.Event()
+        self._heartbeat: threading.Thread | None = None
+        self._error: OSError | None = None
+
+    def __enter__(self) -> PiAuthLock:
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                self.path.mkdir()
+                break
+            except FileExistsError:
+                if time.monotonic() >= deadline:
+                    raise AuthError("Timed out waiting for Pi's auth-file lock")
+                time.sleep(0.1)
+        self._heartbeat = threading.Thread(target=self._keep_fresh, daemon=True)
+        self._heartbeat.start()
+        return self
+
+    def _keep_fresh(self) -> None:
+        while not self._stop.wait(2):
+            try:
+                self.path.touch()
+            except OSError as error:
+                self._error = error
+                return
+
+    def assert_healthy(self) -> None:
+        if self._error is not None or not self.path.is_dir():
+            raise AuthError("Pi's auth-file lock was compromised")
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        if self._heartbeat is not None:
+            self._heartbeat.join()
+        try:
+            self.path.rmdir()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            raise AuthError("Could not release Pi's auth-file lock") from error
+
+
+def refresh_credential(credential: dict[str, Any]) -> dict[str, Any]:
+    refresh = credential.get("refresh")
+    expected_account_id = credential.get("accountId")
+    if not isinstance(refresh, str) or not refresh:
+        raise AuthError("Pi's OpenAI Codex credential has no refresh token")
+
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh,
+        "client_id": CLIENT_ID,
+    }).encode()
+    request = urllib.request.Request(
+        TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        raise AuthError(f"OpenAI rejected token refresh with HTTP {error.code}") from error
+    except (OSError, json.JSONDecodeError) as error:
+        raise AuthError("Could not refresh the OpenAI credential") from error
+
+    access = result.get("access_token") if isinstance(result, dict) else None
+    next_refresh = result.get("refresh_token") if isinstance(result, dict) else None
+    lifetime = result.get("expires_in") if isinstance(result, dict) else None
+    if not isinstance(access, str) or not access or not isinstance(lifetime, (int, float)):
+        raise AuthError("OpenAI returned an incomplete token refresh response")
+    account_id, _ = account_metadata(access)
+    if account_id != expected_account_id:
+        raise AuthError("Refreshed credential belongs to a different ChatGPT account")
+
+    return {
+        "type": "oauth",
+        "access": access,
+        "refresh": next_refresh if isinstance(next_refresh, str) and next_refresh else refresh,
+        "expires": int(time.time() * 1000 + lifetime * 1000),
+        "accountId": account_id,
+    }
+
+
+def codex_account_id(document: dict[str, Any]) -> str | None:
+    tokens = document.get("tokens")
+    if not isinstance(tokens, dict):
+        return None
+    account_id = tokens.get("account_id")
+    return account_id if isinstance(account_id, str) else None
+
+
+def backup_other_codex_account(path: Path, expected_account_id: str) -> Path | None:
+    if not path.exists():
+        return None
+    current = read_json(path)
+    if codex_account_id(current) == expected_account_id:
+        return None
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = path.with_name(f"{path.name}.backup-{timestamp}")
+    shutil.copy2(path, backup)
+    backup.chmod(0o600)
+    return backup
+
+
+def sync() -> tuple[str | None, int, Path | None]:
+    pi_path = Path(os.environ.get("PI_AUTH_PATH", "~/.pi/agent/auth.json")).expanduser()
+    codex_path = Path(os.environ.get("CODEX_AUTH_PATH", "~/.codex/auth.json")).expanduser()
+    margin = int(os.environ.get("CODEX_PRO_REFRESH_MARGIN_SECONDS", DEFAULT_REFRESH_MARGIN_SECONDS))
+
+    with PiAuthLock(pi_path) as lock:
+        document = read_json(pi_path)
+        credential = document.get("openai-codex")
+        if not isinstance(credential, dict) or credential.get("type") != "oauth":
+            raise AuthError("Pi has no OpenAI Codex OAuth credential")
+        access = credential.get("access")
+        if not isinstance(access, str) or not access:
+            raise AuthError("Pi's OpenAI Codex credential has no access token")
+
+        expiration = expires_at(access)
+        if expiration <= int(time.time()) + margin:
+            credential = refresh_credential(credential)
+            document["openai-codex"] = credential
+            lock.assert_healthy()
+            atomic_write_json(pi_path, document)
+            access = credential["access"]
+            expiration = expires_at(access)
+
+        account_id, plan = account_metadata(access)
+        if credential.get("accountId") != account_id:
+            raise AuthError("Pi credential account ID does not match its access token")
+
+        backup = backup_other_codex_account(codex_path, account_id)
+        lock.assert_healthy()
+        atomic_write_json(codex_path, {
+            "auth_mode": "chatgpt",
+            "OPENAI_API_KEY": None,
+            "tokens": {
+                "id_token": access,
+                "access_token": access,
+                # Codex must never receive Pi's rotating refresh token.
+                "refresh_token": "",
+                "account_id": account_id,
+            },
+            "last_refresh": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+
+    return plan, expiration, backup
+
+
+def usage() -> None:
+    print("Usage: codex-pro [sync | app | -- <codex arguments>]", file=sys.stderr)
+
+
+def main() -> int:
+    command = sys.argv[1] if len(sys.argv) > 1 else None
+    if command in {"-h", "--help", "help"}:
+        usage()
+        return 0
+
+    plan, expiration, backup = sync()
+    expires_text = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(expiration))
+    print(
+        f"Prepared Codex with Pi's {plan or 'ChatGPT'} account (access expires {expires_text}).",
+        flush=True,
+    )
+    if backup is not None:
+        print(f"Backed up the previous Codex credential to {backup}.", flush=True)
+
+    if command == "sync":
+        return 0
+    if command == "app":
+        app = os.environ.get("CODEX_PRO_APP", "ChatGPT")
+        subprocess.run(["open", "-a", app], check=True)
+        return 0
+
+    arguments = sys.argv[2:] if command == "--" else sys.argv[1:]
+    binary = os.environ.get("CODEX_PRO_BIN", "codex")
+    os.execvp(binary, [binary, *arguments])
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AuthError as error:
+        print(f"codex-pro: {error}", file=sys.stderr)
+        raise SystemExit(1)
+    except KeyboardInterrupt:
+        raise SystemExit(130)
