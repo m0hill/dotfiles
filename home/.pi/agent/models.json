@@ -1,5 +1,45 @@
 {
   "providers": {
+    "abliteration": {
+      "baseUrl": "https://api.abliteration.ai/v1",
+      "api": "openai-completions",
+      "apiKey": "$ABLITERATION_API_KEY",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": true,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "abliterated-model-large-v2",
+          "name": "Abliterated Model Large v2",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": null,
+            "high": "high",
+            "xhigh": null,
+            "max": "max"
+          },
+          "input": ["text"],
+          "contextWindow": 1000000,
+          "maxTokens": 32768,
+          "samplingParams": {
+            "temperature": 1,
+            "top_p": 1,
+            "include_reasoning": true
+          },
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
+    },
     "MARA": {
       "baseUrl": "https://api.cloud.mara.com/v1",
       "api": "openai-completions",
