@@ -132,13 +132,11 @@ Apply this before writing Python and while polishing Python. Target production P
 
 ## Documentation and comments
 
-- Follow PEP 257 unless the project has a stronger docstring convention.
-- Public modules, classes, functions, methods, and exception types should have docstrings when their purpose, contract, side effects, or raised exceptions are not obvious from the name/signature.
-- Prefer one-line docstrings for obvious APIs. For complex APIs, include summary, use case when helpful, important args, return semantics, raised domain exceptions, and side effects.
-- Use action words in docstrings: “Return ...”, “Create ...”, “Parse ...”. Document `__init__` parameters in the class docstring when that is the local convention.
-- Keep comments accurate when code changes. Comments should explain invariants, domain rules, trade-offs, surprising constraints, and safety assumptions. Avoid comments that merely narrate obvious code.
-- Prefer extracting a well-named helper or predicate over writing a comment to explain a tangled condition.
-- Update nearby docs or examples when adding user-visible behavior or changing public contracts.
+- Prefer expressive names and types over comments and docstrings.
+- Add documentation only when callers need information the code cannot express, such as a non-obvious invariant, side effect, failure contract, compatibility constraint, or safety assumption. Public visibility alone is not a reason to add it.
+- Omit comments and docstrings from self-explanatory modules, classes, functions, methods, and fields.
+- Prefer extracting a well-named helper or predicate over explaining tangled code in prose.
+- Update nearby documentation when user-visible behavior or public contracts change.
 
 ## Tooling
 
