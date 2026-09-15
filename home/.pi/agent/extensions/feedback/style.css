@@ -85,6 +85,18 @@ button:disabled {
   display: none !important;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
 /* Controls */
 
 .button {
@@ -142,7 +154,9 @@ button:disabled {
   color: var(--color-muted);
 }
 
-.icon-button:not(.edit-btn):not(.close-btn):not(.dialog-close):hover:not(:disabled) {
+.icon-button:not(.edit-btn):not(.close-btn):not(.dialog-close):not(.copy-document-button):not(
+    .code-copy-button
+  ):hover:not(:disabled) {
   background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
@@ -260,6 +274,21 @@ button:disabled {
   flex: 0 0 auto;
   align-items: center;
   gap: 0.5rem;
+}
+
+.copy-document-button {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.copy-document-button:hover:not(:disabled),
+.copy-document-button.copied {
+  background: transparent;
+  color: var(--color-foreground);
 }
 
 /* Workspace and sidebars */
@@ -416,28 +445,38 @@ button:disabled {
 }
 
 .selection-mode {
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 0.1875rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
 }
 
 .selection-mode-option {
-  min-height: 1.75rem;
-  padding-inline: 0.625rem;
+  display: inline-flex;
+  width: 1.625rem;
+  min-width: 1.625rem;
+  min-height: 1.625rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   cursor: pointer;
   border: 0;
-  border-radius: calc(var(--radius-control) - 0.1875rem);
+  border-radius: 0.25rem;
   background: transparent;
   color: var(--color-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
   line-height: 1;
   transition:
     background-color 120ms ease,
     color 120ms ease;
+}
+
+.selection-mode-option svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .selection-mode-option:hover:not(.active) {
@@ -446,8 +485,24 @@ button:disabled {
 }
 
 .selection-mode-option.active {
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.doc-bar-tools,
+.doc-bar-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.doc-bar-tools {
+  gap: 0.5rem;
+}
+
+.doc-bar-context {
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 #source {
@@ -580,6 +635,60 @@ button:disabled {
   font-family: var(--font-mono);
   font-size: 0.875rem;
   line-height: 1.65;
+}
+
+.code-block {
+  position: relative;
+}
+
+#doc .code-block > pre {
+  padding-top: 2.75rem;
+}
+
+.code-copy-button {
+  position: absolute;
+  top: 0.625rem;
+  right: 0.625rem;
+  z-index: 1;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.copy-document-button svg,
+.code-copy-button svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.copy-document-button .check-icon,
+.code-copy-button .check-icon {
+  display: none;
+}
+
+.copy-document-button.copied .copy-icon,
+.code-copy-button.copied .copy-icon {
+  display: none;
+}
+
+.copy-document-button.copied .check-icon,
+.code-copy-button.copied .check-icon {
+  display: block;
+}
+
+.code-copy-button:hover:not(:disabled),
+.code-copy-button.copied {
+  background: transparent;
+  color: var(--color-foreground);
 }
 
 #doc pre code {

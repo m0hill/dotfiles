@@ -77,6 +77,7 @@ type FeedbackSession = {
   readonly id: string
   title: string
   readonly source: string
+  readonly document: string
   readonly rendered: RenderedMarkdown
   annotations: Annotation[]
 }
@@ -236,6 +237,7 @@ function createFeedbackSession(title: string, source: string, document: string):
     id: randomUUID(),
     title,
     source,
+    document,
     rendered: renderMarkdown(document),
     annotations: [],
   }
@@ -414,28 +416,6 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
                 Save
               </button>
             </form>
-            <div class="selection-mode" role="group" aria-label="Text selection behavior">
-              <button
-                class="selection-mode-option"
-                type="button"
-                title="Select and copy text without opening feedback"
-                data-class:active={selectingText}
-                data-attr:aria-pressed={selectingText}
-                data-on:click={useSelectMode}
-              >
-                Select
-              </button>
-              <button
-                class="selection-mode-option"
-                type="button"
-                title="Select text to add an annotation"
-                data-class:active={feedbackForm.refs.annotationMode}
-                data-attr:aria-pressed={feedbackForm.refs.annotationMode}
-                data-on:click={useAnnotationMode}
-              >
-                Annotate
-              </button>
-            </div>
           </div>
           <div class="app-actions">
             <button
@@ -462,6 +442,10 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
         </div>
       </header>
 
+      <textarea id="document-source" hidden readonly aria-hidden="true">
+        {props.session.document}
+      </textarea>
+
       <div id="shell" data-class:index-collapsed={feedbackForm.refs.indexCollapsed}>
         <aside id="sidebar-left" class="sidebar">
           <div class="sb-head">
@@ -486,8 +470,60 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
 
         <div id="doc-wrap">
           <div id="doc-bar">
-            <span class="doc-bar-label">Document</span>
-            <span id="source">{props.session.source}</span>
+            <div class="doc-bar-tools">
+              <span class="doc-bar-label">Document</span>
+              <div class="selection-mode" role="group" aria-label="Text selection behavior">
+                <button
+                  class="selection-mode-option"
+                  type="button"
+                  title="Select and copy text without opening feedback"
+                  data-class:active={selectingText}
+                  data-attr:aria-pressed={selectingText}
+                  data-on:click={useSelectMode}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m4 4 7.07 17 2.51-7.39L21 11.07z" />
+                  </svg>
+                  <span class="visually-hidden">Select text</span>
+                </button>
+                <button
+                  class="selection-mode-option"
+                  type="button"
+                  title="Select text to add an annotation"
+                  data-class:active={feedbackForm.refs.annotationMode}
+                  data-attr:aria-pressed={feedbackForm.refs.annotationMode}
+                  data-on:click={useAnnotationMode}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                    <path d="M8 10h6M11 7v6" />
+                  </svg>
+                  <span class="visually-hidden">Annotate text</span>
+                </button>
+              </div>
+            </div>
+            <div class="doc-bar-context">
+              <span id="source">{props.session.source}</span>
+              <button
+                id="copy-document"
+                class="button icon-button copy-document-button"
+                type="button"
+                title="Copy full response"
+                aria-label="Copy full response"
+                data-copy-document
+              >
+                <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+                </svg>
+                <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m5 12 4 4L19 6" />
+                </svg>
+                <span class="visually-hidden copy-document-label" aria-live="polite">
+                  Copy full response
+                </span>
+              </button>
+            </div>
           </div>
           <article
             id="doc"

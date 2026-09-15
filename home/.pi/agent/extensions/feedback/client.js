@@ -1,6 +1,15 @@
 let selectionAnchor
 const dismissibleDialogs = new WeakSet()
 const MERMAID_RUNTIME = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+const COPY_BUTTON_ICONS = `
+  <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+    <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
+  </svg>
+  <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m5 12 4 4L19 6"></path>
+  </svg>
+`
 
 const diagramDefinition = (code) => {
   const language = [...code.classList]
@@ -95,6 +104,105 @@ const renderDiagrams = async () => {
     console.error("Could not load Mermaid", error)
     diagrams.forEach(({ code }) => code.parentElement?.classList.add("diagram-error"))
   }
+}
+
+const copyTimers = new WeakMap()
+
+const updateCopyLabel = (button, label) => {
+  button.dataset.label = label
+  button.title = label
+  button.setAttribute("aria-label", label)
+  const visibleLabel = button.querySelector(".copy-document-label")
+  if (visibleLabel) visibleLabel.textContent = label
+}
+
+const setCopyState = (button, label, resetAfter = 1600) => {
+  const originalLabel = button.dataset.copyLabel ?? "Copy"
+  button.dataset.copyLabel = originalLabel
+  updateCopyLabel(button, label)
+  button.classList.toggle("copied", label === "Copied")
+
+  const currentTimer = copyTimers.get(button)
+  if (currentTimer !== undefined) clearTimeout(currentTimer)
+  copyTimers.set(
+    button,
+    setTimeout(() => {
+      updateCopyLabel(button, originalLabel)
+      button.classList.remove("copied")
+      copyTimers.delete(button)
+    }, resetAfter)
+  )
+}
+
+const writeClipboard = async (text) => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch (error) {
+      console.warn("Clipboard API unavailable; trying fallback", error)
+    }
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  document.body.append(textarea)
+  textarea.select()
+  const copied = document.execCommand("copy")
+  textarea.remove()
+  if (!copied) throw new Error("Browser rejected the copy command")
+}
+
+const copyText = async (text, button) => {
+  button.disabled = true
+  try {
+    await writeClipboard(text)
+    setCopyState(button, "Copied")
+  } catch (error) {
+    console.error("Could not copy feedback content", error)
+    setCopyState(button, "Copy failed", 2400)
+  } finally {
+    button.disabled = false
+  }
+}
+
+const addCodeCopyButtons = () => {
+  document.querySelectorAll("#doc pre > code").forEach((code) => {
+    const pre = code.parentElement
+    if (!pre || pre.parentElement?.classList.contains("code-block")) return
+
+    const wrapper = document.createElement("div")
+    wrapper.className = "code-block"
+    pre.replaceWith(wrapper)
+    wrapper.append(pre)
+
+    const button = document.createElement("button")
+    button.className = "button icon-button code-copy-button"
+    button.type = "button"
+    button.innerHTML = COPY_BUTTON_ICONS
+    button.dataset.copyLabel = "Copy code block"
+    button.dataset.label = "Copy code block"
+    button.title = "Copy code block"
+    button.setAttribute("aria-label", "Copy code block")
+    button.addEventListener("mouseup", (event) => event.stopPropagation())
+    button.addEventListener("click", (event) => {
+      event.stopPropagation()
+      void copyText(code.textContent ?? "", button)
+    })
+    wrapper.append(button)
+  })
+}
+
+const initializeCopyControls = () => {
+  const button = document.querySelector("[data-copy-document]")
+  const source = document.getElementById("document-source")
+  if (!(button instanceof HTMLButtonElement) || !(source instanceof HTMLTextAreaElement)) return
+
+  button.dataset.copyLabel = "Copy full response"
+  button.addEventListener("click", () => void copyText(source.value, button))
 }
 
 const locate = (root, offset) => {
@@ -203,4 +311,10 @@ globalThis.feedback = {
   },
 }
 
-void renderDiagrams()
+const initializeDocument = async () => {
+  initializeCopyControls()
+  await renderDiagrams()
+  addCodeCopyButtons()
+}
+
+void initializeDocument()
