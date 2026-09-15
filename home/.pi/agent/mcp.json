@@ -34,6 +34,17 @@
           "clientName": "Pi MCP"
         },
         "enabled": true
+      },
+      "azure": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@azure/mcp@latest",
+          "server",
+          "start"
+        ],
+        "enabled": true
       }
     }
   }
