@@ -4,21 +4,17 @@
 import { execFile } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { readFileSync } from "node:fs"
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer as createHttpsServer } from "node:https"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve, sep } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import type { TextContent } from "@earendil-works/pi-ai"
-import {
-  isToolCallEventType,
-  type ExtensionAPI,
-  type SessionEntry,
-} from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent"
 import {
   event,
   get,
@@ -71,8 +67,6 @@ const phoneSignals = state({
   status: "Connecting…",
   contextUsage: "—",
   contextPercent: 0,
-  sessionOperationActive: false,
-  sessionOperation: "",
 })
 
 const sendMessageSchema = Type.Object({ prompt: Type.String() })
@@ -115,11 +109,6 @@ type LatestContext = {
 type ContextSignals = {
   readonly contextUsage: string
   readonly contextPercent: number
-}
-
-type SessionOperationSignals = {
-  readonly sessionOperationActive: boolean
-  readonly sessionOperation: string
 }
 
 type ParseResult<T> =
@@ -169,26 +158,18 @@ type ServerState = {
   readonly clients: Map<string, ClientEvents>
 }
 
-type SessionAction = "compact" | "handoff" | "blank"
-
 type RuntimeBridge = {
   isIdle(): boolean
   contextSignals(): ContextSignals
   renderPage(): Response
   renderSnapshot(): string
   sendUserMessage(prompt: string): void
-  requestSessionAction(action: SessionAction): "accepted" | "busy"
 }
 
 type SharedRuntime = {
   server: ServerState | undefined
   startPromise: Promise<ServerState> | undefined
   bridge: RuntimeBridge | undefined
-  sessionActionPending: boolean
-  sessionOperation: string | undefined
-  handoffCaptureActive: boolean
-  handoffPath: string | undefined
-  handoffSourceSession: string | undefined
 }
 
 declare global {
@@ -199,11 +180,6 @@ const sharedRuntime = (globalThis.__piPhoneRuntime ??= {
   server: undefined,
   startPromise: undefined,
   bridge: undefined,
-  sessionActionPending: false,
-  sessionOperation: undefined,
-  handoffCaptureActive: false,
-  handoffPath: undefined,
-  handoffSourceSession: undefined,
 })
 
 let runningServer = sharedRuntime.server
@@ -259,14 +235,6 @@ function formatTokens(tokens: number): string {
   if (tokens < 10_000) return `${(tokens / 1_000).toFixed(1)}k`
   if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}k`
   return `${(tokens / 1_000_000).toFixed(1)}M`
-}
-
-function sessionOperationSignals(): SessionOperationSignals {
-  const operation = sharedRuntime.sessionOperation
-  return {
-    sessionOperationActive: operation !== undefined,
-    sessionOperation: operation ?? "",
-  }
 }
 
 function contextSignals(context = latestCtx): ContextSignals {
@@ -376,7 +344,6 @@ function PhonePage(props: { readonly idle: boolean }) {
           ...phoneSignals.defaults,
           status: statusText(props.idle),
           ...(sharedRuntime.bridge?.contextSignals() ?? contextSignals()),
-          ...sessionOperationSignals(),
         },
         { ifMissing: true }
       )}
@@ -389,74 +356,23 @@ function PhonePage(props: { readonly idle: boolean }) {
               π
             </span>
             <div>
-              <div class="app-title">Phone handoff</div>
+              <div class="app-title">Pi Phone</div>
               <div class="app-status" data-text={phoneSignals.refs.status} />
             </div>
           </div>
-          <div class="app-header-actions">
-            <div class="app-context" title="Current model context usage">
-              <div class="app-context-row">
-                <span>Context</span>
-                <strong data-text={phoneSignals.refs.contextUsage} />
-              </div>
-              <progress
-                class="app-context-meter"
-                max={100}
-                data-attr:value={phoneSignals.refs.contextPercent}
-              />
+          <div class="app-context" title="Current model context usage">
+            <div class="app-context-row">
+              <span>Context</span>
+              <strong data-text={phoneSignals.refs.contextUsage} />
             </div>
-            <button
-              class="button button-secondary"
-              type="button"
-              data-on:click={js<void>`document.querySelector("#session-dialog").showModal()`}
-            >
-              New
-            </button>
+            <progress
+              class="app-context-meter"
+              max={100}
+              data-attr:value={phoneSignals.refs.contextPercent}
+            />
           </div>
         </div>
       </header>
-
-      <dialog id="session-dialog" class="session-dialog">
-        <div class="session-dialog-heading">
-          <div>
-            <div class="session-dialog-title">Manage context</div>
-            <div class="session-dialog-copy">Choose how you want to continue.</div>
-          </div>
-          <form method="dialog">
-            <button class="dialog-close" type="submit" aria-label="Close">
-              ×
-            </button>
-          </form>
-        </div>
-        <div class="session-options">
-          <button class="session-option" type="button" data-on:click={post("/api/session/compact")}>
-            <strong>Compact current session</strong>
-            <span>Summarize older context and continue here.</span>
-          </button>
-          <button class="session-option" type="button" data-on:click={post("/api/session/handoff")}>
-            <strong>Handoff to new session</strong>
-            <span>Generate a continuation prompt and carry it into a fresh session.</span>
-          </button>
-          <button class="session-option" type="button" data-on:click={post("/api/session/blank")}>
-            <strong>Blank new session</strong>
-            <span>Start over with an empty context.</span>
-          </button>
-        </div>
-      </dialog>
-
-      <div
-        class="session-operation"
-        hidden={sharedRuntime.sessionOperation === undefined}
-        data-attr:hidden={js<boolean>`!${phoneSignals.refs.sessionOperationActive}`}
-      >
-        <div class="session-operation-card" role="status" aria-live="assertive">
-          <span class="session-operation-spinner" aria-hidden="true" />
-          <div>
-            <strong data-text={phoneSignals.refs.sessionOperation} />
-            <span>Keep this page open. Pi will update it automatically.</span>
-          </div>
-        </div>
-      </div>
 
       <div id="shell">
         <MessageFeed items={feedItems} />
@@ -533,7 +449,6 @@ function renderSnapshot(): string {
       phoneSignals.patch({
         status: statusText(latestCtx?.isIdle() ?? true),
         ...contextSignals(),
-        ...sessionOperationSignals(),
       })
     ),
     event.patch(<MessageFeed items={feedItems} />),
@@ -698,30 +613,6 @@ function createPhoneApp() {
     reply.stream(sharedRuntime.bridge?.renderSnapshot() ?? renderSnapshot())
   )
 
-  const requestSessionAction = (action: SessionAction): Response => {
-    const bridge = sharedRuntime.bridge
-    if (bridge === undefined) {
-      return reply.signals(phoneSignals.patch({ status: "Pi session unavailable" }))
-    }
-    const result = bridge.requestSessionAction(action)
-    if (result === "busy") {
-      return reply.signals(phoneSignals.patch({ status: "Wait for Pi to finish first" }))
-    }
-    return reply.stream([
-      event.signals(
-        phoneSignals.patch({
-          status: sharedRuntime.sessionOperation ?? "Starting…",
-          ...sessionOperationSignals(),
-        })
-      ),
-      event.script('document.querySelector("#session-dialog")?.close()'),
-    ])
-  }
-
-  app.post("/api/session/compact", () => requestSessionAction("compact"))
-  app.post("/api/session/handoff", () => requestSessionAction("handoff"))
-  app.post("/api/session/blank", () => requestSessionAction("blank"))
-
   app.post("/api/transcribe", async (context) => {
     try {
       const audio = Buffer.from(await context.req.arrayBuffer())
@@ -807,51 +698,13 @@ function stopServer(): Promise<void> {
   return new Promise((resolve) => current.server.close(() => resolve()))
 }
 
-function normalizeHandoffPath(candidate: string, cwd: string): string | undefined {
-  const normalizedCandidate = candidate.startsWith("@") ? candidate.slice(1) : candidate
-  const path = resolve(cwd, normalizedCandidate)
-  const temporaryRoot = resolve(tmpdir())
-  if (path !== temporaryRoot && !path.startsWith(`${temporaryRoot}${sep}`)) return undefined
-  return path.endsWith(".md") ? path : undefined
-}
-
-function handoffPathFromText(text: string, cwd: string): string | undefined {
-  for (const token of text.split(/\s+/)) {
-    const candidate = token.replace(/^[`'"([{]+|[`'"\])},.:;]+$/g, "")
-    const path = normalizeHandoffPath(candidate, cwd)
-    if (path !== undefined) return path
-  }
-  return undefined
-}
-
-function broadcastSessionOperation(
-  operation: string | undefined,
-  status = operation ?? "Idle"
-): void {
-  sharedRuntime.sessionOperation = operation
-  broadcast(
-    event.signals(phoneSignals.patch({ status, ...contextSignals(), ...sessionOperationSignals() }))
-  )
-}
-
-function sessionOperationText(action: SessionAction): string {
-  if (action === "compact") return "Compacting current session…"
-  if (action === "handoff") return "Generating handoff…"
-  return "Opening a blank session…"
-}
-
-/** Registers the server-driven phone handoff commands and session event projections. */
+/** Registers the phone server commands and session event projections. */
 export default function phone(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     latestCtx = ctx
     feedItems = ctx.sessionManager.getBranch().map(entryView).filter(isFeedItem)
     streamingAssistantId = undefined
     streamingAssistantVisible = false
-    sharedRuntime.sessionActionPending = false
-    sharedRuntime.sessionOperation = undefined
-    sharedRuntime.handoffCaptureActive = false
-    sharedRuntime.handoffPath = undefined
-    sharedRuntime.handoffSourceSession = undefined
     sharedRuntime.bridge = {
       isIdle: () => ctx.isIdle(),
       contextSignals: () => contextSignals(ctx),
@@ -860,13 +713,6 @@ export default function phone(pi: ExtensionAPI): void {
       sendUserMessage(prompt) {
         if (ctx.isIdle()) pi.sendUserMessage(prompt)
         else pi.sendUserMessage(prompt, { deliverAs: "followUp" })
-      },
-      requestSessionAction(action) {
-        if (!ctx.isIdle() || sharedRuntime.sessionActionPending) return "busy"
-        sharedRuntime.sessionActionPending = true
-        sharedRuntime.sessionOperation = sessionOperationText(action)
-        pi.sendUserMessage(`/phone-session-action ${action}`, { expandPromptTemplates: true })
-        return "accepted"
       },
     }
     if (runningServer !== undefined) {
@@ -907,12 +753,6 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("message_end", (event, ctx) => {
     latestCtx = ctx
     if (event.message.role === "assistant") {
-      if (sharedRuntime.handoffCaptureActive) {
-        sharedRuntime.handoffPath ??= handoffPathFromText(
-          textFromContent(event.message.content),
-          ctx.cwd
-        )
-      }
       const id = streamingAssistantId ?? `assistant-${randomBytes(8).toString("hex")}`
       const item = messageView(id, event.message)
       if (item !== undefined) {
@@ -935,11 +775,6 @@ export default function phone(pi: ExtensionAPI): void {
     broadcastSnapshot()
   })
 
-  pi.on("tool_call", (event, ctx) => {
-    if (!sharedRuntime.handoffCaptureActive || !isToolCallEventType("write", event)) return
-    sharedRuntime.handoffPath ??= normalizeHandoffPath(event.input.path, ctx.cwd)
-  })
-
   pi.on("agent_start", (_event, ctx) => {
     latestCtx = ctx
     broadcastStatus(false)
@@ -948,29 +783,6 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("agent_end", (_event, ctx) => {
     latestCtx = ctx
     broadcastSnapshot()
-  })
-
-  pi.on("agent_settled", async () => {
-    if (!sharedRuntime.handoffCaptureActive) return
-    sharedRuntime.handoffCaptureActive = false
-    const path = sharedRuntime.handoffPath
-    if (path === undefined) {
-      sharedRuntime.sessionActionPending = false
-      broadcastSessionOperation(undefined, "Handoff finished without a file path")
-      return
-    }
-
-    try {
-      await access(path)
-    } catch {
-      sharedRuntime.sessionActionPending = false
-      broadcastSessionOperation(undefined, "Handoff file was not created")
-      return
-    }
-
-    broadcastSessionOperation("Opening handoff session…")
-    const encodedPath = Buffer.from(path).toString("base64url")
-    pi.sendUserMessage(`/phone-finish-handoff ${encodedPath}`, { expandPromptTemplates: true })
   })
 
   pi.on("tool_execution_start", (toolEvent) => {
@@ -1009,85 +821,8 @@ export default function phone(pi: ExtensionAPI): void {
     pi.events.emit(PHONE_MODE_EVENT, { active: false })
   })
 
-  pi.registerCommand("phone-session-action", {
-    description: "Manage the active session from the phone interface",
-    handler: async (args, ctx) => {
-      const action = args.trim()
-      if (action === "compact") {
-        broadcastSessionOperation("Compacting current session…")
-        ctx.compact({
-          onComplete: () => {
-            sharedRuntime.sessionActionPending = false
-            broadcastSessionOperation(undefined, "Compacted")
-          },
-          onError: (error) => {
-            sharedRuntime.sessionActionPending = false
-            broadcastSessionOperation(undefined, `Compaction failed: ${error.message}`)
-          },
-        })
-        return
-      }
-
-      if (action === "blank") {
-        broadcastSessionOperation("Opening a blank session…")
-        const result = await ctx.newSession()
-        if (!result.cancelled) return
-        sharedRuntime.sessionActionPending = false
-        broadcastSessionOperation(undefined, "New session cancelled")
-        return
-      }
-
-      if (action === "handoff") {
-        sharedRuntime.handoffCaptureActive = true
-        sharedRuntime.handoffPath = undefined
-        sharedRuntime.handoffSourceSession = ctx.sessionManager.getSessionFile()
-        broadcastSessionOperation("Generating handoff…")
-        pi.sendUserMessage("/skill:handoff", { expandPromptTemplates: true })
-        return
-      }
-
-      sharedRuntime.sessionActionPending = false
-      broadcastSessionOperation(undefined, "Unknown session action")
-    },
-  })
-
-  pi.registerCommand("phone-finish-handoff", {
-    description: "Open the generated phone handoff in a new session",
-    handler: async (args, ctx) => {
-      const decodedPath = Buffer.from(args.trim(), "base64url").toString("utf8")
-      const path = normalizeHandoffPath(decodedPath, ctx.cwd)
-      if (path === undefined) {
-        sharedRuntime.sessionActionPending = false
-        broadcastSessionOperation(undefined, "Invalid handoff path")
-        return
-      }
-
-      const parentSession = sharedRuntime.handoffSourceSession
-      const result = await ctx.newSession({
-        parentSession,
-        async setup(sessionManager) {
-          sessionManager.appendMessage({
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Read the handoff at ${path} and continue from it.`,
-              },
-            ],
-            timestamp: Date.now(),
-          })
-        },
-      })
-      if (!result.cancelled) return
-      sharedRuntime.sessionActionPending = false
-      sharedRuntime.handoffPath = undefined
-      sharedRuntime.handoffSourceSession = undefined
-      broadcastSessionOperation(undefined, "Handoff cancelled")
-    },
-  })
-
   pi.registerCommand("phone-start", {
-    description: "Start/show the phone handoff QR over Tailscale",
+    description: "Start/show the Pi Phone QR over Tailscale",
     handler: async (_args, ctx) => {
       latestCtx = ctx
       try {
@@ -1098,7 +833,7 @@ export default function phone(pi: ExtensionAPI): void {
         const qr = await qrText(url)
         ctx.ui.notify(
           [
-            "Pi phone handoff is ready over Tailscale.",
+            "Pi Phone is ready over Tailscale.",
             `URL: ${url}`,
             `Token expires in ${Math.round(TOKEN_TTL_MS / 60_000)} minutes.`,
             "Use /phone-stop to shut it down.",
@@ -1109,17 +844,17 @@ export default function phone(pi: ExtensionAPI): void {
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        ctx.ui.notify(`Could not start phone handoff: ${message}`, "error")
+        ctx.ui.notify(`Could not start Pi Phone: ${message}`, "error")
       }
     },
   })
 
   pi.registerCommand("phone-stop", {
-    description: "Stop the phone handoff server",
+    description: "Stop the Pi Phone server",
     handler: async (_args, ctx) => {
       await stopServer()
       pi.events.emit(PHONE_MODE_EVENT, { active: false })
-      ctx.ui.notify("Phone handoff server stopped", "info")
+      ctx.ui.notify("Pi Phone server stopped", "info")
     },
   })
 }
