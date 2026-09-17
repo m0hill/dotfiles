@@ -23,11 +23,13 @@ import {
   mod,
   post,
   read,
+  renderToString,
   reply,
   state,
   unsafeHtml,
   type SignalState,
 } from "datastar-kit"
+import { render as renderMermaid } from "grok-mermaid"
 import { bodyLimit } from "hono/body-limit"
 import { Hono } from "hono/tiny"
 import { Type, type Static, type TSchema } from "typebox"
@@ -36,6 +38,21 @@ import { ParseError, Value } from "typebox/value"
 const DATASTAR_RUNTIME =
   "https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url))
+const DIAGRAM_LANGUAGES = new Set([
+  "mermaid",
+  "sequence",
+  "sequential",
+  "sequence-diagram",
+  "sequencediagram",
+])
+const COPY_BUTTON_ICONS = `
+  <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+    <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
+  </svg>
+  <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="m5 12 4 4L19 6"></path>
+  </svg>`
 
 const feedbackForm = state({
   quote: "",
@@ -209,8 +226,123 @@ function slugifyHeading(label: string, seen: Map<string, number>): string {
   return count === 0 ? base : `${base}-${count}`
 }
 
+function DiagramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </svg>
+  )
+}
+
+function DiagramSvg(props: {
+  readonly art: NonNullable<ReturnType<typeof renderMermaid>>
+  readonly description: string
+}) {
+  const characterWidth = 8.4
+  const lineHeight = 18
+  const padding = 12
+  const width = Math.max(1, props.art.width * characterWidth + padding * 2)
+  const height = Math.max(lineHeight, props.art.styled.length * lineHeight + padding * 2)
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="Mermaid diagram"
+      preserveAspectRatio="xMinYMin meet"
+    >
+      <title>Mermaid diagram</title>
+      <desc>{props.description}</desc>
+      {props.art.styled.map((row, index) => (
+        <text x={padding} y={padding + (index + 1) * lineHeight}>
+          {row.map((span) => (
+            <tspan class={`diagram-${span.cls}`}>{span.text}</tspan>
+          ))}
+        </text>
+      ))}
+    </svg>
+  )
+}
+
+function MermaidDiagram(props: { readonly source: string; readonly dialogId: string }) {
+  const art = renderMermaid(props.source)
+  if (art === null) return undefined
+  const description = art.warnings.length === 0 ? props.source : art.warnings.join(". ")
+  const open = js<void>`evt.stopPropagation(); document.getElementById(${props.dialogId})?.showModal()`
+  const close = js<void>`evt.stopPropagation(); el.closest("dialog")?.close()`
+  const closeOnBackdrop = js<void>`if (evt.target === el) el.close()`
+
+  return (
+    <div class="diagram-shell">
+      <div class="diagram">
+        <DiagramSvg art={art} description={description} />
+        <button
+          class="button icon-button diagram-expand-button"
+          type="button"
+          title="Expand diagram"
+          aria-label="Expand diagram"
+          data-on:mouseup={js<void>`evt.stopPropagation()`}
+          data-on:click={open}
+        >
+          <DiagramIcon />
+        </button>
+      </div>
+      <dialog
+        id={props.dialogId}
+        class="diagram-dialog"
+        aria-label="Expanded Mermaid diagram"
+        data-on:click={closeOnBackdrop}
+      >
+        <div class="diagram">
+          <DiagramSvg art={art} description={description} />
+          <button
+            class="button icon-button diagram-expand-button"
+            type="button"
+            title="Close expanded diagram"
+            aria-label="Close expanded diagram"
+            data-on:click={close}
+          >
+            <DiagramIcon />
+          </button>
+        </div>
+      </dialog>
+    </div>
+  )
+}
+
 function renderMarkdown(document: string): RenderedMarkdown {
   const markdown = new MarkdownIt({ html: false, linkify: true, typographer: false })
+  const copyCode = `evt.stopPropagation(); const code = el.parentElement.querySelector("code"); if (code) navigator.clipboard.writeText(code.textContent ?? "").then(() => { el.classList.add("copied"); el.dataset.label = "Copied"; el.title = "Copied"; el.setAttribute("aria-label", "Copied"); setTimeout(() => { el.classList.remove("copied"); el.dataset.label = "Copy code block"; el.title = "Copy code block"; el.setAttribute("aria-label", "Copy code block") }, 1600) }).catch(() => { el.dataset.label = "Copy failed"; el.title = "Copy failed"; el.setAttribute("aria-label", "Copy failed") })`
+  const copyButton = `<button class="button icon-button code-copy-button" type="button" title="Copy code block" aria-label="Copy code block" data-label="Copy code block" data-on:mouseup="evt.stopPropagation()" data-on:click="${markdown.utils.escapeHtml(copyCode)}">${COPY_BUTTON_ICONS}</button>`
+  let diagramIndex = 0
+  const renderCodeBlock = (source: string, language = ""): string => {
+    const normalizedLanguage = language.toLowerCase()
+    const definition = DIAGRAM_LANGUAGES.has(normalizedLanguage)
+      ? normalizedLanguage === "mermaid" || /^\s*sequenceDiagram\b/.test(source)
+        ? source
+        : `sequenceDiagram\n${source}`
+      : undefined
+    const languageClass = language ? ` class="language-${markdown.utils.escapeHtml(language)}"` : ""
+    const code = `<pre><code${languageClass}>${markdown.utils.escapeHtml(definition ?? source)}</code></pre>`
+    if (definition !== undefined) {
+      const diagram = renderToString(
+        <MermaidDiagram source={definition} dialogId={`mermaid-diagram-${diagramIndex}`} />
+      )
+      diagramIndex += 1
+      if (diagram) return diagram
+    }
+    return `<div class="code-block">${code}${copyButton}</div>`
+  }
+  markdown.renderer.rules.fence = (tokens, index) => {
+    const token = tokens[index]
+    if (token === undefined) return ""
+    const language = token.info.trim().split(/\s+/)[0] ?? ""
+    return renderCodeBlock(token.content, language)
+  }
+  markdown.renderer.rules.code_block = (tokens, index) => {
+    const token = tokens[index]
+    return token === undefined ? "" : renderCodeBlock(token.content)
+  }
+
   const environment = {}
   const tokens = markdown.parse(document, environment)
   const headings: Heading[] = []
@@ -253,7 +385,7 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
       class="rsec rsec-annotations"
       aria-label="Annotations"
       data-init={js<void>(
-        `window.feedback.sync(${JSON.stringify(highlights)}, ${feedbackForm.refs.selectedAnnotationId})`
+        `document.getElementById("doc")?.sync(${JSON.stringify(highlights)}, ${feedbackForm.refs.selectedAnnotationId})`
       )}
     >
       <div class="rsec-head">
@@ -269,7 +401,7 @@ function AnnotationList(props: { readonly session: FeedbackSession }) {
             const isSelected = js<boolean>`${feedbackForm.refs.selectedAnnotationId} === ${annotation.id}`
             const isEditing = js<boolean>`${feedbackForm.refs.editingAnnotationId} === ${annotation.id}`
             const isNotEditing = js<boolean>`${feedbackForm.refs.editingAnnotationId} !== ${annotation.id}`
-            const selectAnnotation = js<void>`if (!evt.target.closest?.("button, textarea")) { ${feedbackForm.refs.selectedAnnotationId} = ${annotation.id}; window.feedback.activate(${annotation.start}, ${annotation.end}) }`
+            const selectAnnotation = js<void>`if (!evt.target.closest?.("button, textarea")) { ${feedbackForm.refs.selectedAnnotationId} = ${annotation.id}; document.getElementById("doc")?.activate(${annotation.start}, ${annotation.end}) }`
             const startEditing = js<void>`${feedbackForm.refs.editingAnnotationId} = ${annotation.id}; ${feedbackForm.refs.editingComment} = ${annotation.comment}; ${feedbackForm.refs.error} = ""`
             const cancelEditing = js<void>`${feedbackForm.refs.editingAnnotationId} = ""; ${feedbackForm.refs.editingComment} = ""; ${feedbackForm.refs.error} = ""`
             const editDisabled = js<boolean>`${feedbackForm.refs.editingComment}.trim() === "" || ${updating}`
@@ -368,13 +500,16 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
   const submitting = local<boolean>("submittingFeedback")
   const clearing = local<boolean>("submittingAndClearing")
   const adding = local<boolean>("addingAnnotation")
+  const documentCopied = local<boolean>("documentCopied")
   const sendDisabled = js<boolean>`${feedbackForm.refs.annotationCount} === 0 || ${submitting} || ${clearing}`
   const addDisabled = js<boolean>`${feedbackForm.refs.quote}.trim() === "" || ${feedbackForm.refs.comment}.trim() === "" || ${adding}`
   const submitLabel = js<string>`${submitting} ? "Sending…" : "Send Feedback"`
   const clearLabel = js<string>`${clearing} ? "Sending…" : "Send & Clear"`
   const addLabel = js<string>`${adding} ? "Adding…" : "Add"`
-  const captureSelection = js<void>`if (${feedbackForm.refs.annotationMode}) { const selected = window.feedback.capture(el); if (selected) { ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true } }`
-  const syncDialog = js<void>`${feedbackForm.refs.dialogOpen} ? window.feedback.open(el) : (el.open && el.close())`
+  const captureSelection = js<void>`if (${feedbackForm.refs.annotationMode}) { const selected = evt.detail; ${feedbackForm.refs.quote} = selected.quote; ${feedbackForm.refs.selectionStart} = selected.start; ${feedbackForm.refs.selectionEnd} = selected.end; ${feedbackForm.refs.error} = ""; ${feedbackForm.refs.dialogOpen} = true }`
+  const syncDialog = js<void>`document.getElementById("doc")?.syncDialog(el, ${feedbackForm.refs.dialogOpen})`
+  const copyDocument = js<void>`navigator.clipboard.writeText(document.getElementById("document-source")?.value ?? "").then(() => { ${documentCopied} = true; setTimeout(() => { ${documentCopied} = false }, 1600) }).catch(() => { ${feedbackForm.refs.error} = "Could not copy the document. Copy it manually and try again." })`
+  const copyDocumentLabel = js<string>`${documentCopied} ? "Copied" : "Copy full response"`
   const closeDialog = js<void>`${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
   const useSelectMode = js<void>`${feedbackForm.refs.annotationMode} = false; ${feedbackForm.refs.dialogOpen} = false; ${feedbackForm.refs.error} = ""`
   const useAnnotationMode = js<void>`${feedbackForm.refs.annotationMode} = true`
@@ -402,7 +537,10 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
             <span class="app-mark" aria-hidden="true">
               ›
             </span>
-            <form class="title-form" data-on:submit={post(`/sessions/${props.session.id}/title`)}>
+            <form
+              class="title-form"
+              data-on:submit={mod(post(`/sessions/${props.session.id}/title`), { prevent: true })}
+            >
               <input
                 class="app-title"
                 type="text"
@@ -510,7 +648,10 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
                 type="button"
                 title="Copy full response"
                 aria-label="Copy full response"
-                data-copy-document
+                data-class:copied={documentCopied}
+                data-attr:title={copyDocumentLabel}
+                data-attr:aria-label={copyDocumentLabel}
+                data-on:click={copyDocument}
               >
                 <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="9" y="9" width="11" height="11" rx="2" />
@@ -519,19 +660,24 @@ function FeedbackPage(props: { readonly session: FeedbackSession }) {
                 <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="m5 12 4 4L19 6" />
                 </svg>
-                <span class="visually-hidden copy-document-label" aria-live="polite">
+                <span
+                  class="visually-hidden copy-document-label"
+                  aria-live="polite"
+                  data-text={copyDocumentLabel}
+                >
                   Copy full response
                 </span>
               </button>
             </div>
           </div>
-          <article
+          <feedback-document
             id="doc"
+            role="document"
             data-class:annotation-mode={feedbackForm.refs.annotationMode}
-            data-on:mouseup={captureSelection}
+            data-on:feedback-selection={captureSelection}
           >
             {unsafeHtml(props.session.rendered.html)}
-          </article>
+          </feedback-document>
         </div>
 
         <aside id="sidebar-right" class="sidebar">
@@ -628,7 +774,7 @@ function page(session: FeedbackSession): Response {
       <meta name="color-scheme" content="dark" />,
       <meta name="referrer" content="no-referrer" />,
       <link rel="stylesheet" href="/assets/style.css" />,
-      <script type="module" src="/assets/client.js" />,
+      <script type="module" src="/assets/feedback-document.js" />,
       <script type="module" src={DATASTAR_RUNTIME} />,
     ],
   })
@@ -656,7 +802,10 @@ function createFeedbackApp(pi: ExtensionAPI) {
     })
   )
   app.get("/assets/style.css", serveStatic({ path: join(EXTENSION_DIR, "style.css") }))
-  app.get("/assets/client.js", serveStatic({ path: join(EXTENSION_DIR, "client.js") }))
+  app.get(
+    "/assets/feedback-document.js",
+    serveStatic({ path: join(EXTENSION_DIR, "feedback-document.js") })
+  )
 
   app.get("/", (context) => {
     const id = context.req.query("id")
