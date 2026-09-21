@@ -133,7 +133,8 @@ The controller menu always shows all local modules.
 
 ### Codex Remote
 
-- serves a minimal message page on the Mac's Tailscale IPv4 address at port `8765`
+- serves a minimal message-and-photo page on the Mac's Tailscale IPv4 address at port `8765`
+- uploads photos unchanged to a temporary directory and includes their paths in the message
 - uses Accessibility to focus the open Codex thread's composer and press its Send button
 - refuses to overwrite an existing draft
 - requires Codex Desktop to be open and the Mac to remain awake and logged in
