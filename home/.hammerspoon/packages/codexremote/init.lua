@@ -14,6 +14,18 @@ return function(manager)
 	local MAX_REQUEST_BYTES = 36 * 1024 * 1024
 	local UPLOAD_DIR = "/tmp/codex-remote"
 	local RECONCILE_SECONDS = 10
+	local NEW_CHAT_MESSAGE = [=[I am controlling this Codex thread remotely from my phone. For every response you give in this chat, also post the complete response to my ntfy topic so I can read it remotely.
+
+Use curl and preserve multiline formatting. For example:
+
+curl -fsS \
+  -H 'Title: Codex reply' \
+  -H 'Priority: default' \
+  -H 'Tags: robot' \
+  --data-binary "$MESSAGE" \
+  https://ntfy.mohil.dev/random
+
+Set MESSAGE to the full response you are giving me. Send the notification for this message and every later response. Do not send a test placeholder.]=]
 	local TAILSCALE_BINARIES = {
 		"/Applications/Tailscale.app/Contents/MacOS/tailscale",
 		"/opt/homebrew/bin/tailscale",
@@ -46,8 +58,10 @@ return function(manager)
 		textarea { width: 100%; min-height: 13rem; resize: vertical; padding: 1rem; border: 1px solid #b9b3a7; border-radius: 14px; background: #fffefa; color: #1d1d1b; font: inherit; font-size: 1.08rem; line-height: 1.5; caret-color: #155eef; }
 		input[type="file"] { width: 100%; padding: .8rem; border: 1px solid #b9b3a7; border-radius: 14px; background: #fffefa; font: inherit; }
 		textarea:focus-visible, input:focus-visible, button:focus-visible { outline: 3px solid #8fb4ff; outline-offset: 3px; }
+		.actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 		button { min-height: 3.4rem; border: 0; border-radius: 14px; background: #155eef; color: white; font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer; }
-		button:disabled { cursor: wait; background: #8b919c; }
+		button.secondary { border: 1px solid #9c968b; background: #fffefa; color: #1d1d1b; }
+		button:disabled { cursor: wait; background: #8b919c; color: white; }
 		#status { min-height: 1.5rem; color: #4d4942; }
 		#status[data-kind="error"] { color: #a1261d; }
 		#status[data-kind="success"] { color: #176b3a; }
@@ -66,7 +80,10 @@ return function(manager)
 			<label for="photos">Photos <span aria-hidden="true">(optional)</span></label>
 			<input id="photos" name="photos" type="file" accept="image/*" multiple>
 			<p id="file-summary">No photos selected</p>
-			<button id="send" type="submit">Send to Codex</button>
+			<div class="actions">
+				<button id="send" type="submit">Send to Codex</button>
+				<button id="new-chat" class="secondary" type="button">Start new chat</button>
+			</div>
 		</form>
 		<p id="status" role="status" aria-live="polite">Ready</p>
 	</main>
@@ -76,6 +93,7 @@ return function(manager)
 		const photos = document.querySelector("#photos");
 		const fileSummary = document.querySelector("#file-summary");
 		const button = document.querySelector("#send");
+		const newChatButton = document.querySelector("#new-chat");
 		const status = document.querySelector("#status");
 
 		photos.addEventListener("change", () => {
@@ -110,6 +128,29 @@ return function(manager)
 			return result.path;
 		}
 
+		newChatButton.addEventListener("click", async () => {
+			button.disabled = true;
+			newChatButton.disabled = true;
+			newChatButton.textContent = "Starting…";
+			status.dataset.kind = "";
+			status.textContent = "Opening a new chat on your Mac…";
+
+			try {
+				const response = await fetch("/new-chat", { method: "POST", body: "start" });
+				const result = await response.json();
+				if (!response.ok) throw new Error(result.error || "Could not start a new chat.");
+				status.dataset.kind = "success";
+				status.textContent = "New chat ready — ntfy enabled";
+			} catch (error) {
+				status.dataset.kind = "error";
+				status.textContent = error.message;
+			} finally {
+				button.disabled = false;
+				newChatButton.disabled = false;
+				newChatButton.textContent = "Start new chat";
+			}
+		});
+
 		form.addEventListener("submit", async (event) => {
 			event.preventDefault();
 			const text = message.value.trim();
@@ -121,6 +162,7 @@ return function(manager)
 			}
 
 			button.disabled = true;
+			newChatButton.disabled = true;
 			button.textContent = "Sending…";
 			status.dataset.kind = "";
 
@@ -153,6 +195,7 @@ return function(manager)
 				status.textContent = error.message;
 			} finally {
 				button.disabled = false;
+				newChatButton.disabled = false;
 				button.textContent = "Send to Codex";
 				message.focus();
 			}
@@ -309,6 +352,37 @@ return function(manager)
 		end, 0)
 	end
 
+	local function findNewChatButton(window)
+		return visitDescendants(window, function(element)
+			if element:attributeValue("AXRole") ~= "AXButton" or element:attributeValue("AXEnabled") == false then
+				return nil
+			end
+			local title = trim(element:attributeValue("AXTitle")):lower()
+			local description = trim(element:attributeValue("AXDescription")):lower()
+			if title == "new chat" or description == "new chat" then
+				return element
+			end
+			return nil
+		end, 0)
+	end
+
+	local function openNewChat()
+		local _, window, err = codexWindow()
+		if err then
+			return false, err
+		end
+		local newChatButton = findNewChatButton(window)
+		if not newChatButton then
+			return false, "Could not find Codex's New chat button."
+		end
+		local pressed, pressErr = newChatButton:performAction("AXPress")
+		if not pressed then
+			return false, "Found the New chat button but could not press it: " .. tostring(pressErr or "unknown error")
+		end
+		hs.timer.usleep(300000)
+		return true, nil
+	end
+
 	local function focusComposer()
 		local _, window, err = codexWindow()
 		if err then
@@ -424,6 +498,22 @@ return function(manager)
 		end
 		if method == "GET" and path == "/health" then
 			return jsonResponse({ status = status, detail = status_detail, sending = sending }, status == "ready" and 200 or 503)
+		end
+		if method == "POST" and path == "/new-chat" then
+			if sending then
+				return jsonResponse({ error = "Another Codex action is already in progress." }, 409)
+			end
+			sending = true
+			local ok, newChatErr = openNewChat()
+			if ok then
+				ok, newChatErr = sendToCodex(NEW_CHAT_MESSAGE)
+			end
+			sending = false
+			if not ok then
+				manager.log(PACKAGE_ID, newChatErr)
+				return jsonResponse({ error = newChatErr }, 409)
+			end
+			return jsonResponse({ ok = true }, 200)
 		end
 		if method == "POST" and path == "/upload" then
 			local uploadedPath, uploadErr = saveUpload(body)

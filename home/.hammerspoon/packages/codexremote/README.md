@@ -11,10 +11,11 @@ The HTTP server binds only to the Mac's Tailscale IPv4 address. It is not expose
 3. Reload Hammerspoon.
 4. Open the Hammerspoon menubar → **Codex Remote** → **Copy Remote URL**.
 5. Open that URL on the phone.
+6. Continue the open thread, or tap **Start new chat** before sending. New chats automatically receive an instruction to copy every Codex response to the configured ntfy topic.
 
 The URL has the form `http://100.x.x.x:8765`.
 
-Codex Remote uses macOS Accessibility rather than blind mouse coordinates or clipboard pasting. It finds the enabled Codex composer, focuses it, writes the message, finds the Send button, and presses it. If Codex already contains an unsent draft or is not ready to send, the page reports an error instead of overwriting the draft.
+Codex Remote uses macOS Accessibility rather than blind mouse coordinates or clipboard pasting. It can press Codex's **New chat** button, send the ntfy delivery instruction, find the enabled composer, focus it, write the message, find the Send button, and press it. If Codex already contains an unsent draft or is not ready to send, the page reports an error instead of overwriting the draft.
 
 Selected photos are uploaded unchanged to `/tmp/codex-remote/`. Their absolute paths are appended to the message so Codex can inspect them using its filesystem tools. You can send a message, photos, or both. Each photo can be up to 25 MB; macOS eventually clears the temporary files.
 
