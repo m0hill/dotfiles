@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import type { Tool } from "@modelcontextprotocol/client"
@@ -17,7 +16,13 @@ import { loadMcpConfig } from "./config.js"
 import { ConnectionStore } from "./connection-store.js"
 import { formatMcpServerTarget, redactSecrets } from "./display.js"
 import { handlePiElicitation } from "./elicitation.js"
-import { McpManager, type McpServerFailure, type McpToolEntry } from "./manager.js"
+import type { McpManager, McpServerFailure, McpToolEntry } from "./manager.js"
+import {
+  canReuseConnectionsForResume,
+  preserveForSessionSwitch,
+  SessionConnections,
+  takePreservedConnections,
+} from "./session-connections.js"
 import { runMcpCommand } from "./mcp-command.js"
 import type { CancellableOptions, McpConfig, McpStatus } from "./types.js"
 import {
@@ -111,23 +116,29 @@ export default function piMcpExtension(pi: ExtensionAPI) {
   let registeredToolNames = new Set<string>()
   let latestContext: ExtensionContext | undefined
   let configGeneration = 0
-  let backgroundConnectionRefresh: Promise<void> | undefined
   let rememberedServerNames = new Set<string>()
   const connectionStore = new ConnectionStore()
-  const elicitationContexts = new AsyncLocalStorage<ExtensionContext | undefined>()
+  let connections: SessionConnections | undefined
+  let detachSession: (() => void) | undefined
+
+  function attachConnections(active: SessionConnections) {
+    detachSession?.()
+    connections = active
+    manager = active.manager
+    detachSession = active.attach({
+      elicit: (server, request) => handlePiElicitation(server, request, latestContext),
+      refresh: () => {
+        registerDynamicTools()
+        updateLatestMcpStatus()
+      },
+    })
+  }
 
   async function ensureManager(ctx: ExtensionContext) {
     latestContext = ctx
     if (manager) return manager
-    manager = new McpManager({
-      cwd: ctx.cwd,
-      onElicitation: (server, request) =>
-        handlePiElicitation(server, request, elicitationContexts.getStore() ?? latestContext),
-      onToolsChanged: async () => {
-        registerDynamicTools()
-      },
-    })
-    return manager
+    attachConnections(new SessionConnections(ctx.cwd))
+    return requireManager()
   }
 
   async function loadConfigured(ctx: ExtensionContext) {
@@ -167,7 +178,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     activeManager: McpManager,
     generation: number
   ) {
-    backgroundConnectionRefresh = (async () => {
+    void (async () => {
       await connectConfiguredServers(activeManager, generation)
       if (manager !== activeManager || configGeneration !== generation) return
       updateMcpStatus(ctx)
@@ -219,7 +230,8 @@ export default function piMcpExtension(pi: ExtensionAPI) {
             timeout: latest.timeout,
             signal,
           }
-          return elicitationContexts.run(ctx ?? latestContext, () => callMcpTool(toolInput))
+          latestContext = ctx ?? latestContext
+          return callMcpTool(toolInput)
         },
       })
     }
@@ -254,7 +266,7 @@ export default function piMcpExtension(pi: ExtensionAPI) {
       },
       async execute(_toolCallId, params, signal, _onUpdate, ctx) {
         latestContext = ctx ?? latestContext
-        return elicitationContexts.run(ctx ?? latestContext, () => executeMcpProxy(params, signal))
+        return executeMcpProxy(params, signal)
       },
     })
   }
@@ -737,8 +749,20 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     pi.setActiveTools([...active])
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     latestContext = ctx
+    const preserved =
+      event.reason === "new" || event.reason === "resume"
+        ? takePreservedConnections(ctx.cwd, ctx.sessionManager.getSessionFile())
+        : undefined
+    if (preserved) {
+      config = preserved.config
+      rememberedServerNames = preserved.rememberedServerNames
+      attachConnections(preserved.connections)
+      registerDynamicTools()
+      updateMcpStatus(ctx)
+      return
+    }
     const loaded = await loadConfigured(ctx)
     rememberedServerNames = new Set(await connectionStore.connectedServerNames(config))
     updateMcpStatus(ctx)
@@ -747,14 +771,29 @@ export default function piMcpExtension(pi: ExtensionAPI) {
     }
   })
 
-  pi.on("session_shutdown", async () => {
+  pi.on("session_shutdown", async (event, ctx) => {
     configGeneration += 1
-    const pendingConnectionRefresh = backgroundConnectionRefresh
-    backgroundConnectionRefresh = undefined
-    await manager?.close()
-    if (pendingConnectionRefresh) await Promise.race([pendingConnectionRefresh, Promise.resolve()])
+    detachSession?.()
+    detachSession = undefined
+    latestContext = undefined
+    const active = connections
+    connections = undefined
     manager = undefined
     registeredToolNames = new Set()
+    if (!active) return
+    const preserve =
+      event.reason === "new" ||
+      (event.reason === "resume" &&
+        (await canReuseConnectionsForResume(ctx.cwd, event.targetSessionFile)))
+    if (preserve) {
+      preserveForSessionSwitch(ctx.cwd, event.targetSessionFile, {
+        connections: active,
+        config,
+        rememberedServerNames,
+      })
+      return
+    }
+    await active.close()
   })
 
   pi.registerCommand("mcp", {

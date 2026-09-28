@@ -38,6 +38,15 @@ Proxy mode is the default. Use `toolMode: "direct"` only when you intentionally 
 
 Servers connected explicitly through `/mcp` or `mcp({ connect: "name" })` are remembered in `~/.pi/agent/mcp-connections.json` and reconnect automatically in future sessions. In lazy mode, unscoped tool search and resource discovery stay limited to these remembered servers instead of connecting every configured server. Disconnecting a server through `/mcp` removes that saved preference. This works independently of `startup`: `"eager"`, which still connects every enabled server.
 
+## Session lifecycle
+
+`/new` and same-directory `/resume` keep MCP connections without rereading configuration.
+Connected servers, in-flight startup connections, and tool metadata carry over; UI and tool
+callbacks attach to the new session. Use `/reload` to reread configuration and reconnect.
+Resuming in a different directory reconnects so project configuration and MCP filesystem roots
+stay correct. If the destination directory cannot be verified, resume also reconnects.
+Quitting Pi closes the connections. Fork retains its existing teardown behavior.
+
 ## Command
 
 `/mcp` opens an interactive server manager in the TUI. Use `↑`/`↓` to select a server; `enter` or `c` to connect; `d` to disconnect; `a` to authenticate; `l` to log out; `p` to choose a prompt; and `r` to reload. In non-interactive modes it prints server statuses.
