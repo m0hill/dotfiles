@@ -22,7 +22,6 @@ The skills below are adapted from external sources. Each source link is pinned t
 | `prototype` | [`engineering/prototype`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/prototype/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/prototype/SKILL.md) | Integrates outcomes with implementation issues and Feature Contracts. |
 | `quality-code` | [Dillon Mulroy's `coding-standards`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/coding-standards/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/coding-standards/SKILL.md) | Omits the `better-result` preference and retains local TypeScript edge-case guidance. |
 | `research` | [`engineering/research`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/research/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/research/SKILL.md) | Uses background delegation when available and direct research otherwise. |
-| `resolving-merge-conflicts` | [`engineering/resolving-merge-conflicts`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/resolving-merge-conflicts/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/resolving-merge-conflicts/SKILL.md) | Matches upstream, including model invocation. |
 | `setup-matt-pocock-skills` | [`engineering/setup-matt-pocock-skills`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/setup-matt-pocock-skills/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/setup-matt-pocock-skills/SKILL.md) | Defaults to local markdown under `.scratch/`, retains repository GitHub Issues, and omits GitLab. |
 | `show-me` | [HumanLayer's `show-me`](https://github.com/humanlayer/skills/blob/ce55920be355130e2971c0e6249f5d1b6e3d7a60/plugins/show-me/skills/show-me/SKILL.md) | [`main`](https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md) | Matches upstream. |
 | `triage` | [`engineering/triage`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/triage/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/triage/SKILL.md) | Matches upstream. |
@@ -55,7 +54,6 @@ Model-invoked skills may be selected autonomously and may be composed by other s
 | `quality-code` | `teach` |
 | `quality-python-code` | `to-questionnaire` |
 | `research` | `to-spec` |
-| `resolving-merge-conflicts` | `to-tickets` |
 | `show-me` |  |
 | `tdd` | `wait-what` |
 | `wizard` | `wayfinder` |
@@ -143,7 +141,6 @@ Here, **independent** means the skill does not invoke, require, or hand off to a
 - `quality-code`
 - `quality-python-code`
 - `research`
-- `resolving-merge-conflicts`
 - `show-me`
 - `teach`
 - `to-questionnaire`

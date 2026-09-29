@@ -11,7 +11,6 @@ There is one local menubar controller and local modules for launcher, tiling, au
 - `packages/colorpicker/`
 - `packages/ports/`
 - `packages/codexgateway/`
-- `packages/codexremote/`
 - `packages/paper/`
 - `packages/stt/`
 - `packages/gemini/`
@@ -50,10 +49,6 @@ No Spoon. No registry. No package versions.
 │   ├── codexgateway/
 │   │   ├── init.lua
 │   │   ├── codexgateway.json
-│   │   └── README.md
-│   ├── codexremote/
-│   │   ├── init.lua
-│   │   ├── codexremote.json
 │   │   └── README.md
 │   ├── stt/
 │   │   ├── init.lua
@@ -130,14 +125,6 @@ The controller menu always shows all local modules.
 - reports local `/health` status
 - provides start, restart, stop, and log actions
 - disabling the module stops monitoring, not the gateway service
-
-### Codex Remote
-
-- serves a minimal message-and-photo page on the Mac's Tailscale IPv4 address at port `8765`
-- uploads photos unchanged to a temporary directory and includes their paths in the message
-- uses Accessibility to start a new chat with ntfy reply delivery, or focus the open thread's composer and press its Send button
-- refuses to overwrite an existing draft
-- requires Codex Desktop to be open and the Mac to remain awake and logged in
 
 ### STT
 

@@ -91,15 +91,6 @@ return function(config)
 			secrets = {},
 		},
 		{
-			id = "codexremote",
-			name = "Codex Remote",
-			description = "Send messages from a Tailscale-only web page to the open Codex thread.",
-			defaultEnabled = true,
-			entryPath = PACKAGES_DIR .. "/codexremote/init.lua",
-			hotkeys = {},
-			secrets = {},
-		},
-		{
 			id = "paper",
 			name = "Paper",
 			description = "Run the local Paper maintenance script.",
