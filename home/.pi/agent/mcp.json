@@ -1,51 +1,31 @@
 {
-  "mcp": {
-    "toolMode": "proxy",
-    "startup": "lazy",
-    "timeout": 60000,
-    "servers": {
-      "paper": {
-        "type": "remote",
-        "url": "http://127.0.0.1:29979/mcp",
-        "oauth": false,
-        "enabled": true
-      },
-      "figma": {
-        "type": "remote",
-        "url": "https://mcp.figma.com/mcp",
-        "oauth": {
-          "clientName": "Claude Code",
-          "scope": "mcp:connect"
-        },
-        "enabled": true
-      },
-      "notion": {
-        "type": "remote",
-        "url": "https://mcp.notion.com/mcp",
-        "oauth": {
-          "clientName": "Pi MCP"
-        },
-        "enabled": true
-      },
-      "cloudflare-api": {
-        "type": "remote",
-        "url": "https://mcp.cloudflare.com/mcp",
-        "oauth": {
-          "clientName": "Pi MCP"
-        },
-        "enabled": true
-      },
-      "azure": {
-        "type": "local",
-        "command": [
-          "npx",
-          "-y",
-          "@azure/mcp@latest",
-          "server",
-          "start"
-        ],
-        "enabled": true
-      }
+  "mcpServers": {
+    "paper": {
+      "url": "http://127.0.0.1:29979/mcp",
+      "exposure": "deferred",
+      "timeout": 60
+    },
+    "figma": {
+      "url": "https://mcp.figma.com/mcp",
+      "oauth": { "scope": "mcp:connect" },
+      "exposure": "deferred",
+      "timeout": 60
+    },
+    "notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "exposure": "deferred",
+      "timeout": 60
+    },
+    "cloudflare-api": {
+      "url": "https://mcp.cloudflare.com/mcp",
+      "exposure": "deferred",
+      "timeout": 60
+    },
+    "azure": {
+      "command": "npx",
+      "args": ["-y", "@azure/mcp@latest", "server", "start"],
+      "exposure": "deferred",
+      "timeout": 60
     }
   }
 }

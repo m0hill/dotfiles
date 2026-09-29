@@ -1,4 +1,3 @@
 packages:
   - .
-  - agent/extensions/pi-mcp
   - agent/extensions/ts-context

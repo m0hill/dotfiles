@@ -5,7 +5,10 @@ import {
   type Theme,
   type ThemeColor,
 } from "@earendil-works/pi-coding-agent"
-import { type Component, truncateToWidth } from "@earendil-works/pi-tui"
+import { truncateToWidth } from "@earendil-works/pi-tui"
+
+type ContextMessage = ReturnType<typeof buildSessionContext>["messages"][number]
+type ContextTool = ReturnType<ExtensionAPI["getAllTools"]>[number]
 
 const BAR_WIDTH = 36
 const CUSTOM_ENTRY_TYPE = "context-report"
@@ -25,7 +28,7 @@ export type ContextBreakdownInput = {
     filePath: string
     disableModelInvocation?: boolean
   }>
-  tools: ReadonlyArray<{ name: string; description: string; parameters: unknown }>
+  tools: ReadonlyArray<Pick<ContextTool, "name" | "description" | "parameters">>
   messages: ReadonlyArray<{
     role: string
     tokens: number
@@ -40,7 +43,7 @@ export type ContextBreakdown = {
   estimatedTokens: number
 }
 
-export function textTokens(text: string): number {
+function textTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
@@ -71,6 +74,8 @@ export function buildContextBreakdown(input: ContextBreakdownInput): ContextBrea
   let toolResultTokens = 0
   let otherMessageTokens = 0
   for (const message of input.messages) {
+    // Pi's canonical transcript contains prompt/tool checkpoints; they are counted above.
+    if (message.role === "system") continue
     if (message.role === "user") userTokens += message.tokens
     else if (message.role === "assistant") {
       const estimatedThinkingTokens = Math.min(
@@ -131,23 +136,11 @@ type ContextReportData = {
   approximate: boolean
 }
 
-// The runtime is Pi 0.84, while this dotfiles package still carries Pi 0.80 types.
-type EntryRendererAPI = {
-  registerEntryRenderer<T>(
-    customType: string,
-    renderer: (entry: { data?: T }, options: unknown, theme: Theme) => Component | undefined
-  ): void
-}
-
 export default function contextExtension(pi: ExtensionAPI): void {
-  const entryRendererAPI = pi as ExtensionAPI & EntryRendererAPI
-  entryRendererAPI.registerEntryRenderer<ContextReportData>(
-    CUSTOM_ENTRY_TYPE,
-    (entry, _options, theme) => {
-      if (!entry.data) return undefined
-      return new ContextReport(theme, entry.data)
-    }
-  )
+  pi.registerEntryRenderer<ContextReportData>(CUSTOM_ENTRY_TYPE, (entry, _options, theme) => {
+    if (!entry.data) return undefined
+    return new ContextReport(theme, entry.data)
+  })
 
   pi.registerCommand("context", {
     description: "Show a simple context usage breakdown",
@@ -171,15 +164,12 @@ export default function contextExtension(pi: ExtensionAPI): void {
         contextFiles: options.contextFiles ?? [],
         skills: options.skills ?? [],
         tools: pi.getAllTools().filter((tool) => activeTools.has(tool.name)),
-        messages: messages.map((message) => {
-          const reportedReasoningTokens = readReportedReasoningTokens(message)
-          return {
-            role: message.role,
-            tokens: estimateTokens(message),
-            estimatedThinkingTokens: estimateThinkingTokens(message),
-            ...(reportedReasoningTokens === undefined ? {} : { reportedReasoningTokens }),
-          }
-        }),
+        messages: messages.map((message) => ({
+          role: message.role,
+          tokens: estimateTokens(message),
+          estimatedThinkingTokens: estimateThinkingTokens(message),
+          reportedReasoningTokens: readReportedReasoningTokens(message),
+        })),
         reportedTokens: usage?.tokens ?? undefined,
       })
 
@@ -280,40 +270,31 @@ function categoryColor(id: string): ThemeColor {
   }
 }
 
-function estimateThinkingTokens(message: unknown): number {
-  if (!isRecord(message) || message.role !== "assistant" || !Array.isArray(message.content)) {
-    return 0
-  }
+function estimateThinkingTokens(message: ContextMessage): number {
+  if (message.role !== "assistant") return 0
 
   let thinkingText = ""
   for (const block of message.content) {
-    if (isRecord(block) && block.type === "thinking" && typeof block.thinking === "string") {
-      thinkingText += block.thinking
-    }
+    if (block.type === "thinking") thinkingText += block.thinking
   }
   return textTokens(thinkingText)
 }
 
-function readReportedReasoningTokens(message: unknown): number | undefined {
-  // Pi normalizes this field across providers that expose a reasoning-token breakdown.
-  if (!isRecord(message) || !isRecord(message.usage)) return undefined
+function readReportedReasoningTokens(message: ContextMessage): number | undefined {
+  if (message.role !== "assistant") return undefined
   const reasoning = message.usage.reasoning
-  return typeof reasoning === "number" && Number.isFinite(reasoning) && reasoning >= 0
+  return reasoning !== undefined && Number.isFinite(reasoning) && reasoning >= 0
     ? reasoning
     : undefined
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-export function formatTokens(tokens: number): string {
+function formatTokens(tokens: number): string {
   if (tokens < 1_000) return `${tokens}`
   if (tokens < 1_000_000) return `${trimZero((tokens / 1_000).toFixed(1))}k`
   return `${trimZero((tokens / 1_000_000).toFixed(1))}M`
 }
 
-export function formatPercent(ratio: number): string {
+function formatPercent(ratio: number): string {
   const percent = Math.max(0, ratio) * 100
   return percent < 10 ? `${trimZero(percent.toFixed(1))}%` : `${Math.round(percent)}%`
 }
