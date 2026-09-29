@@ -1,7 +1,6 @@
 ---
 name: commit
 description: Create Git commits in Mohil's message style.
-disable-model-invocation: true
 ---
 
 # Commit
