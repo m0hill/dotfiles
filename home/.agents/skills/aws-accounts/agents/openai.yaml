@@ -1,0 +1,3 @@
+interface:
+  display_name: "AWS Accounts"
+  short_description: "Select AWS profiles and verify account access"

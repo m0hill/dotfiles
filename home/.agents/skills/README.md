@@ -41,7 +41,7 @@ Model-invoked skills may be selected autonomously and may be composed by other s
 
 | Model-invoked | User-invoked |
 | --- | --- |
-| `assume` | `agent-browser` |
+| `aws-accounts` | `agent-browser` |
 | `code-review` | `bro` |
 | `codebase-design` | `commit` |
 | `diagnosing-bugs` | `design-taste-frontend` |
@@ -124,7 +124,7 @@ flowchart TD
 Here, **independent** means the skill does not invoke, require, or hand off to another installed skill. It may still own internal reference files, and other skills may depend on it.
 
 - `agent-browser`
-- `assume`
+- `aws-accounts`
 - `bro`
 - `code-review`
 - `codebase-design`
