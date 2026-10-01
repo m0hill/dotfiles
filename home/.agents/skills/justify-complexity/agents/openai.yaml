@@ -1,0 +1,4 @@
+interface:
+  display_name: "Justify Complexity"
+  short_description: "Keep defenses and abstractions grounded in real needs"
+  default_prompt: "Use $justify-complexity to review this implementation for unnecessary defenses and abstractions, grounding each proposed simplification in actual callers and contracts."
