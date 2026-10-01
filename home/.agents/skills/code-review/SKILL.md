@@ -11,7 +11,10 @@ Review the change as a skeptical ship/no-ship reviewer across three independent 
 2. **Standards** — whether the diff follows documented repo standards plus the smell baseline below.
 3. **Spec** — whether the diff faithfully implements the originating issue or spec.
 
-Default to skepticism. Do not give credit for intent, partial fixes, or likely follow-up work. Report only material, defensible findings.
+Treat reviewer findings as candidates, not instructions to implement. The lead
+reviewer owns the final judgment. Report material, defensible findings; intent,
+partial fixes, and promised follow-up work do not establish correctness.
+Keep review requests read-only unless the user also asks for changes.
 
 ## Inputs
 
@@ -74,9 +77,47 @@ Include the target label, user focus, diff command, commit list, and changed-fil
 
 If no spec exists, skip the Spec subagent and report `no spec available`. If subagents are unavailable, run the same briefs as three independent sequential passes and keep their notes separate.
 
-Do not merge or rerank the reports. Each axis is complete only after every changed file has been considered.
+Keep the passes independent until they finish. Each axis is complete only after
+every changed file has been considered. Then adjudicate across their reports.
 
-#### Axis A — Adversarial Risk
+### 5. Adjudicate the findings
+
+The lead reviewer checks candidates against the actual code, contracts, and
+request before presenting a verdict. Do not forward the raw reports as the
+final review or treat reviewer agreement or confidence scores as evidence.
+
+For each candidate:
+
+- Verify the cited location and the premise. Trace relevant producers, callers,
+  and existing guards; confirm that a quoted requirement applies to this change.
+  A hypothetical null, retry, or concurrent action needs a reachable path.
+  A past incident is not required, and a passing suite does not disprove a bug.
+- Separate the defect from its suggested remedy. Keep a supported finding even
+  if its proposed fix is excessive. Use `justify-complexity` for remedies that
+  add defenses or abstractions, and `meaningful-tests` for coverage proposals.
+  Prefer a correction at the owning boundary over repeated downstream checks.
+- Combine duplicate findings about the same cause and correction, retaining
+  relevant axis labels. Keep independently actionable defects separate. Order
+  surviving findings by impact and evidence, not the number of reviewers who
+  reported them. A single well-supported finding can block approval.
+- Reject claims contradicted by the code or contract, stylistic preferences,
+  and unsupported possibilities. Nearby precedent does not excuse a documented
+  violation. Do not create a finding quota or dismiss an issue merely because
+  it would be inconvenient to fix.
+- If a consequential premise remains unresolved, perform a focused check when
+  feasible. Otherwise name the missing fact, its consequence, and the smallest
+  check that would resolve it. Keep this uncertainty separate from established
+  findings; do not present it as either a proven bug or cleared risk.
+
+Finish when each candidate has been accepted, combined, rejected, or left with
+an explicit evidence gap. These are working decisions, not a required ledger.
+Mention rejected candidates only when the reason materially helps the user
+judge the result. Do not generate another review round without a specific
+unresolved question.
+
+## Review criteria
+
+### Axis A — Adversarial Risk
 
 Actively try to disprove the change. Assume it can fail in subtle, high-cost, or user-visible ways until the evidence says otherwise.
 
@@ -101,7 +142,7 @@ A risk finding must answer:
 
 Be aggressive, but grounded. Do not invent files, lines, runtime behaviour, incidents, or attack chains. If a conclusion depends on inference, state that and keep confidence honest. Prefer one strong finding over several weak ones.
 
-#### Axis B — Standards
+### Axis B — Standards
 
 Report:
 
@@ -109,6 +150,10 @@ Report:
 - Material baseline smells, labelled as judgement calls and grounded in the hunk.
 
 Smell baseline:
+
+These are investigation cues. The listed remedies are possibilities, not
+automatic prescriptions; establish a concrete cost before recommending a
+refactor and check that the remedy reduces it.
 
 - **Mysterious Name** — a function, variable, or type whose name does not reveal what it does or holds. Fix by renaming; if no honest name comes, the design is murky.
 - **Duplicated Code** — the same logic shape appears in more than one hunk or file. Fix by extracting the shared shape and calling it from both sites.
@@ -123,7 +168,7 @@ Smell baseline:
 - **Middle Man** — a class or function mostly delegates onward. Fix by cutting it and calling the real target directly.
 - **Refused Bequest** — a subclass or implementer ignores or overrides most inherited behaviour. Fix by dropping inheritance and using composition.
 
-#### Axis C — Spec
+### Axis C — Spec
 
 Report:
 
@@ -150,33 +195,43 @@ If no spec is available, say so and skip this axis rather than inventing intent.
 
 Do not include style feedback, naming feedback, low-value cleanup, or speculative concerns without evidence. Every finding must include:
 
-- the axis: `adversarial-risk`, `standards`, or `spec`
+- the applicable axes: `adversarial-risk`, `standards`, or `spec`
 - affected file and line range
 - confidence from `0` to `1`
 - concise impact explanation
 - concrete recommendation
 
-Use `needs attention` if there is any material finding worth blocking on. Use `approve` only when you cannot support any substantive finding from the provided context.
+Use `needs attention` when an accepted finding blocks shipping or a specific,
+consequential evidence gap prevents a ship judgment. Identify which it is.
+Missing information alone is not a blocker: identify the observed behavior or
+required contract that makes the unknown consequential and explain why the
+ship decision depends on resolving it. Otherwise report it as a verification
+limit without demanding speculative hardening.
+Use `approve` when neither remains within the reviewed scope; state verification
+limits without implying that approval proves the absence of all defects.
 
-Use this format:
+Use this format, omitting empty sections except the verdict:
 
 ```markdown
 ## Verdict
-<`needs attention` or `approve`> — <terse ship/no-ship assessment>
+<`needs attention` or `approve`> — <assessment and reviewed scope>
 
-## Adversarial Risk
-- ...
+## Findings
+- <applicable axes; location; confidence; impact and evidence; recommendation>
 
-## Standards
-- ...
+## Unresolved
+- <missing fact; why it matters; smallest resolving check>
 
-## Spec
-- ...
+## Material dismissals
+- <candidate rejected and the evidence that ruled it out>
 
-Summary: <finding counts per axis; worst issue within each axis, if any>
+## Verification
+<checks performed and limits; note when no spec was available>
 ```
 
-Keep the axes side by side. Do not pick a single winner across axes.
+Report each accepted issue once even when several axes found it. A clean review
+can be a brief verdict and verification statement. Keep hypothetical risks out
+of the findings and do not turn uncertainty into a list of speculative fixes.
 
 ## Final check
 

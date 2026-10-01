@@ -7,7 +7,7 @@ The skills below are adapted from external sources. Each source link is pinned t
 | Local skill | Pinned source | Track updates | Local adaptation |
 | --- | --- | --- | --- |
 | `ask-matt` | [`engineering/ask-matt`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/ask-matt/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/ask-matt/SKILL.md) | Matches upstream. |
-| `code-review` | [`engineering/code-review`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/code-review/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md) | Adds adversarial-risk review, Feature Contracts, and harness-agnostic parallel review. |
+| `code-review` | [`engineering/code-review`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/code-review/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md) | Adds adversarial-risk review, Feature Contracts, independent parallel passes, and lead adjudication of evidence and remedies. |
 | `codebase-design` | [`engineering/codebase-design`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/codebase-design/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) | Matches upstream, including model invocation. |
 | `diagnosing-bugs` | [`engineering/diagnosing-bugs`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/diagnosing-bugs/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/diagnosing-bugs/SKILL.md) | Retains diagnosis-only mode and conditional state-space analysis. |
 | `domain-modeling` | [`engineering/domain-modeling`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/domain-modeling/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/domain-modeling/SKILL.md) | Matches upstream, including model invocation. |
@@ -93,6 +93,8 @@ flowchart TD
   tdd --> tests
   tdd -. refactoring decisions .-> complexity
   tests -. test setup abstractions .-> complexity
+  review -. defenses and abstractions .-> complexity
+  review -. coverage proposals .-> tests
 
   architecture[improve-codebase-architecture] --> design[codebase-design]
   architecture --> grilling
@@ -123,6 +125,7 @@ flowchart TD
 | `diagnosing-bugs` | Routes diff-first diagnosis to `code-review` and may recommend `improve-codebase-architecture` after a fix. |
 | `tdd` | Owns red-green-refactor; delegates test quality to `meaningful-tests` and abstraction decisions to `justify-complexity`. |
 | `meaningful-tests` | Owns test selection and evidence; consults `justify-complexity` for production abstractions introduced for testing. |
+| `code-review` | Adjudicates independent review candidates; consults `justify-complexity` for remedies and `meaningful-tests` for coverage proposals. |
 
 ## Independent skills
 
@@ -131,7 +134,6 @@ Here, **independent** means the skill does not invoke, require, or hand off to a
 - `agent-browser`
 - `aws-accounts`
 - `bro`
-- `code-review`
 - `codebase-design`
 - `justify-complexity`
 - `commit`
