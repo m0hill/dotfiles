@@ -17,14 +17,14 @@ The skills below are adapted from external sources. Each source link is pinned t
 | `handoff` | [`productivity/handoff`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/productivity/handoff/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/productivity/handoff/SKILL.md) | Matches upstream. |
 | `herdr` | [Dillon Mulroy's `herdr`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/herdr/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/herdr/SKILL.md) | Matches the pinned source; local OpenAI metadata keeps model invocation enabled. |
 | `improve-codebase-architecture` | [`engineering/improve-codebase-architecture`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/improve-codebase-architecture/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md) | Matches upstream, including the visual HTML report workflow. |
-| `implement` | [`engineering/implement`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/implement/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/implement/SKILL.md) | Invokes the local `tdd` and `code-review` skills without filesystem coupling. |
+| `implement` | [`engineering/implement`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/implement/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/implement/SKILL.md) | Composes `justify-complexity` and `meaningful-tests`, conditional `tdd`, and final `code-review`. |
 | `install-anti-slop` | [Dillon Mulroy's `anti-slop`](https://github.com/dmmulroy/anti-slop/blob/6d538555cb151d4121ed51a27db81890eacf8ae9/skills/install-anti-slop/SKILL.md) | [`main`](https://github.com/dmmulroy/anti-slop/blob/main/skills/install-anti-slop/SKILL.md) | Matches upstream, including bundled plugin assets. |
 | `prototype` | [`engineering/prototype`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/prototype/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/prototype/SKILL.md) | Integrates outcomes with implementation issues and Feature Contracts. |
 | `quality-code` | [Dillon Mulroy's `coding-standards`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/coding-standards/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/coding-standards/SKILL.md) | Omits the `better-result` preference and retains local TypeScript edge-case guidance. |
 | `research` | [`engineering/research`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/research/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/research/SKILL.md) | Uses background delegation when available and direct research otherwise. |
 | `setup-matt-pocock-skills` | [`engineering/setup-matt-pocock-skills`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/setup-matt-pocock-skills/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/setup-matt-pocock-skills/SKILL.md) | Defaults to local markdown under `.scratch/`, retains repository GitHub Issues, and omits GitLab. |
 | `triage` | [`engineering/triage`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/triage/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/triage/SKILL.md) | Matches upstream. |
-| `tdd` | [`engineering/tdd`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/tdd/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/tdd/SKILL.md) | Matches upstream, including model invocation. |
+| `tdd` | [`engineering/tdd`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/tdd/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/tdd/SKILL.md) | Delegates test quality to `meaningful-tests`, chooses routine seams autonomously, and includes refactoring in the loop. |
 | `teach` | [`productivity/teach`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/productivity/teach/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/productivity/teach/SKILL.md) | Includes the upstream workspace format documents. |
 | `to-spec` | [`engineering/to-spec`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/to-spec/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/to-spec/SKILL.md) | Matches upstream; tracker behavior comes from per-repository configuration. |
 | `to-tickets` | [`engineering/to-tickets`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/to-tickets/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/to-tickets/SKILL.md) | Matches upstream; tracker behavior comes from per-repository configuration. |
@@ -48,6 +48,8 @@ Model-invoked skills may be selected autonomously and may be composed by other s
 | `grilling` | `handoff` |
 | `herdr` | `implement` |
 | `install-anti-slop` |  |
+| `justify-complexity` | |
+| `meaningful-tests` | |
 | `opensrc-skill` | `improve-codebase-architecture` |
 | `prototype` | `setup-matt-pocock-skills` |
 | `quality-code` | `teach` |
@@ -84,9 +86,13 @@ flowchart TD
   tickets[to-tickets] -. needs tracker setup .-> setup
   tickets -. next-session handoff .-> implement[implement]
 
-  implement --> tdd[tdd]
+  implement --> complexity[justify-complexity]
+  implement --> tests[meaningful-tests]
+  implement -. test-first work .-> tdd[tdd]
   implement --> review[code-review]
-  tdd -. review stage .-> review
+  tdd --> tests
+  tdd -. refactoring decisions .-> complexity
+  tests -. test setup abstractions .-> complexity
 
   architecture[improve-codebase-architecture] --> design[codebase-design]
   architecture --> grilling
@@ -112,10 +118,11 @@ flowchart TD
 | `wayfinder` | Composes `grilling`, `domain-modeling`, `research`, and `prototype`; uses the configured tracker. |
 | `to-spec` | Requires tracker configuration to publish the specification. |
 | `to-tickets` | Requires tracker configuration, then hands the frontier to user-invoked `implement`. |
-| `implement` | Composes model-invoked `tdd` and `code-review`. |
+| `implement` | Composes `justify-complexity`, `meaningful-tests`, conditional `tdd`, and final `code-review`. |
 | `improve-codebase-architecture` | Composes `codebase-design`, `grilling`, and `domain-modeling`. |
 | `diagnosing-bugs` | Routes diff-first diagnosis to `code-review` and may recommend `improve-codebase-architecture` after a fix. |
-| `tdd` | Treats `code-review` as the later review stage rather than part of red-green implementation. |
+| `tdd` | Owns red-green-refactor; delegates test quality to `meaningful-tests` and abstraction decisions to `justify-complexity`. |
+| `meaningful-tests` | Owns test selection and evidence; consults `justify-complexity` for production abstractions introduced for testing. |
 
 ## Independent skills
 
@@ -126,6 +133,7 @@ Here, **independent** means the skill does not invoke, require, or hand off to a
 - `bro`
 - `code-review`
 - `codebase-design`
+- `justify-complexity`
 - `commit`
 - `design-taste-frontend`
 - `diverge`

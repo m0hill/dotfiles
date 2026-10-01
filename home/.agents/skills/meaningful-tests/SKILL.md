@@ -10,6 +10,10 @@ permit implementation changes. Existing tests are evidence, not a template.
 Review requests produce findings; requests to improve or implement authorize
 in-scope edits. Preserve applicable project test requirements.
 
+This skill owns test selection, boundaries, and evidence. Use `tdd` for the
+red-green-refactor sequence when test-first work is requested. Consult
+[examples.md](examples.md) when choosing assertions or test doubles.
+
 ## Start from behavior
 
 Read the request, affected production path, callers, and contracts before
@@ -40,6 +44,9 @@ wiring, persistence, framework configuration, or a user workflow.
 
 Keep production logic under examination real. Control external dependencies
 at their boundary instead of mocking away the behavior being tested.
+Use existing seams where they preserve the failure mechanism. Apply
+`justify-complexity` before adding production interfaces or dependency injection
+for test setup; mockability alone does not justify a new abstraction.
 
 Assert meaningful results, state transitions, or external effects.
 Assert interactions only when the interaction itself is a required contract.
