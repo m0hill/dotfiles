@@ -12,12 +12,11 @@ return function(manager)
 	local DEFAULT_CLIPBOARD_HOTKEY = { { "cmd", "shift" }, "v" }
 
 	local CONFIG = {
-		MAX_APPS = 200,
 		MAX_APP_RESULTS = 12,
 		MAX_FILE_RESULTS = 20,
 		MAX_CLIP_RESULTS = 30,
-		MAX_CLIPBOARD_ITEMS = 80,
-		MAX_CLIPBOARD_CHARS = 8000,
+		MAX_CLIPBOARD_ITEMS = 200,
+		MAX_CLIPBOARD_CHARS = 256 * 1024,
 		MAX_APP_USAGE_ITEMS = 200,
 		MAX_DISPLAY_CHARS = 90,
 		FILE_SEARCH_MIN_CHARS = 2,
@@ -91,8 +90,14 @@ return function(manager)
 	local bound_hotkeys = {}
 	local pasteboard_watcher = nil
 	local app_cache = {}
+	local app_watchers = {}
+	local app_refresh_timer = nil
+	local app_reconcile_timer = nil
 	local app_usage = {}
 	local clipboard_history = {}
+	local clipboard_store = nil
+	local clipboard_preview = nil
+	local preview_hotkey = nil
 	local file_results = {}
 	local previous_app = nil
 	local file_search_timer = nil
@@ -296,6 +301,10 @@ return function(manager)
 	end
 
 	local function compareChoices(a, b)
+		-- Apps are the primary action; unrelated exact-name files must never steal Enter.
+		if (a.kind == "app") ~= (b.kind == "app") then
+			return a.kind == "app"
+		end
 		if a._score ~= b._score then
 			return a._score > b._score
 		end
@@ -465,7 +474,12 @@ return function(manager)
 			end
 			local score = scoreAliases(q, record, scoreTitle(q, titleLower))
 			if score then
-				score = score + boost + math.max(0, (limit - index))
+				if q == "" and (kind == "app" or kind == "clip") then
+					-- Preserve usage/recency order through the result cutoff.
+					score = score + boost + 1 / (index + 1)
+				else
+					score = score + boost + math.max(0, (limit - index))
+				end
 				local title = nil
 
 				if #ranked < limit then
@@ -513,6 +527,25 @@ return function(manager)
 		end
 	end
 
+	local function clipboardContext(clip, inPreview)
+		local parts = { clip.source or "Unknown source" }
+		if type(clip.createdAt) == "number" then
+			local age = math.max(0, os.time() - clip.createdAt)
+			local when = age < 60 and "Just now"
+				or age < 3600 and (math.floor(age / 60) .. "m ago")
+				or age < 86400 and (math.floor(age / 3600) .. "h ago")
+				or os.date("%b %d, %H:%M", clip.createdAt)
+			parts[#parts + 1] = when
+		end
+		if clip.type == "image" then
+			parts[#parts + 1] = tostring(clip.width or "?") .. " × " .. tostring(clip.height or "?")
+		end
+		if not inPreview then
+			parts[#parts + 1] = "Tab to preview"
+		end
+		return table.concat(parts, " · ")
+	end
+
 	local function addClipboardChoices(choices, query, clips, opts)
 		local displayChars = opts.maxDisplayChars or CONFIG.MAX_DISPLAY_CHARS
 		pushRanked(
@@ -527,7 +560,7 @@ return function(manager)
 					clip._preview = truncate(singleLine(clip.text or ""), displayChars)
 					clip._previewMaxChars = displayChars
 				end
-				local choice = makeChoice("clip", clip._preview, "Clipboard", clip, score, 2)
+				local choice = makeChoice("clip", clip._preview, clipboardContext(clip), clip, score, 2)
 				if opts.includeImages ~= false then
 					choice.image = getClipboardIcon(clip)
 				end
@@ -562,7 +595,7 @@ return function(manager)
 			end
 			local score = scoreTitle(q, titleLower)
 			if score then
-				score = score + 120 + math.max(0, (limit - index))
+				score = score + 120 + (q == "" and 1 / (index + 1) or math.max(0, limit - index))
 				local title = nil
 
 				if #ranked < limit then
@@ -609,7 +642,7 @@ return function(manager)
 			end
 			local choice = {
 				text = clip._preview,
-				subText = "Clipboard",
+				subText = clipboardContext(clip),
 				kind = "clip",
 				payload = clip,
 			}
@@ -646,7 +679,7 @@ return function(manager)
 				3,
 				function(file, score)
 					local name = file.name or basename(file.path)
-					local choice = makeChoice("file", name, "File", file, score, 3)
+					local choice = makeChoice("file", name, shortenPath(file.path), file, score, 3)
 					if opts.includeImages ~= false then
 						choice.image = getFileIcon(file)
 					end
@@ -665,37 +698,6 @@ return function(manager)
 		end
 		local configDir = hs and hs.configdir or "."
 		return configDir .. "/packages/launcher/clipboard.json"
-	end
-
-	local function readJson(path, defaultValue)
-		local file = io.open(path, "r")
-		if not file then
-			return defaultValue
-		end
-		local contents = file:read("*all")
-		file:close()
-		if not contents or contents == "" then
-			return defaultValue
-		end
-		local ok, data = pcall(hs.json.decode, contents)
-		if not ok or type(data) ~= "table" then
-			return defaultValue
-		end
-		return data
-	end
-
-	local function writeJson(path, data)
-		local ok, encoded = pcall(hs.json.encode, data, true)
-		if not ok or not encoded then
-			return false
-		end
-		local file = io.open(path, "w")
-		if not file then
-			return false
-		end
-		file:write(encoded)
-		file:close()
-		return true
 	end
 
 	local function normalizeAppUsage(value)
@@ -774,72 +776,17 @@ return function(manager)
 	end
 
 	local function loadClipboardHistory()
-		clipboard_history = {}
-		if not settings.persistClipboard then
-			return
-		end
-		local data = readJson(clipboardPath(), {})
-		for _, item in ipairs(data) do
-			if type(item) == "table" and type(item.text) == "string" and item.text ~= "" then
-				table.insert(clipboard_history, {
-					text = item.text,
-					createdAt = item.createdAt,
-					source = item.source,
-				})
-			end
-			if #clipboard_history >= settings.maxClipboardItems then
-				break
-			end
-		end
-	end
-
-	local function persistClipboardHistory()
-		if not settings.persistClipboard then
-			return
-		end
-		writeJson(clipboardPath(), clipboard_history)
-	end
-
-	local function isIgnoredClipboardSource()
-		local front = hs.application.frontmostApplication()
-		local bundleId = front and front:bundleID()
-		if not bundleId then
-			return false
-		end
-		for _, ignored in ipairs(settings.ignoredClipboardBundleIds or {}) do
-			if bundleId == ignored then
-				return true
-			end
-		end
-		return false
-	end
-
-	local function addClipboardText(text, source)
-		if type(text) ~= "string" then
-			return false
-		end
-		if text == "" or #text > settings.maxClipboardChars then
-			return false
-		end
-
-		for i = #clipboard_history, 1, -1 do
-			if clipboard_history[i].text == text then
-				table.remove(clipboard_history, i)
-			end
-		end
-
-		table.insert(clipboard_history, 1, {
-			text = text,
-			createdAt = os.time(),
-			source = source,
+		local factory = dofile(hs.configdir .. "/packages/launcher/clipboard.lua")
+		clipboard_store = factory({
+			path = clipboardPath(),
+			persistClipboard = settings.persistClipboard,
+			maxClipboardItems = settings.maxClipboardItems,
+			maxClipboardChars = settings.maxClipboardChars,
+			ignoredClipboardBundleIds = settings.ignoredClipboardBundleIds,
+			notify = manager.notify,
 		})
-
-		while #clipboard_history > settings.maxClipboardItems do
-			table.remove(clipboard_history)
-		end
-
-		persistClipboardHistory()
-		return true
+		clipboard_store.load()
+		clipboard_history = clipboard_store.items
 	end
 
 	local function scanAppsInDir(dir, depth, results, seen)
@@ -872,10 +819,6 @@ return function(manager)
 						scanAppsInDir(path, depth + 1, results, seen)
 					end
 				end
-			end
-			if #results >= CONFIG.MAX_APPS then
-				dirObj:close()
-				return
 			end
 			entry = dirObj:next()
 		end
@@ -1133,6 +1076,9 @@ return function(manager)
 		if choice.kind == "app" or choice.kind == "file" then
 			return payload.path, nil
 		elseif choice.kind == "clip" then
+			if payload.type == "image" then
+				return nil, "photo"
+			end
 			local text = trim(payload.text or "")
 			if text ~= "" and text:find("\n", 1, true) == nil then
 				local expanded = expandHome(text)
@@ -1153,7 +1099,9 @@ return function(manager)
 			return
 		end
 
-		ui_query = query or ui_query or ""
+		local nextQuery = query or ui_query or ""
+		local selected = nextQuery == ui_query and ui_choice_map[tostring(ui_list:selectedRow())] or nil
+		ui_query = nextQuery
 		local choices = choicesWithEmptyState(computeChoices(ui_query, ui_mode, false), ui_mode)
 		local rows = {}
 		ui_choice_map = {}
@@ -1174,11 +1122,30 @@ return function(manager)
 		end
 
 		ui_list:rows(rows)
-		for index, row in ipairs(rows) do
-			if not row.disabled then
-				ui_list:selectedRow(index)
-				break
+		local selectedIndex = nil
+		if selected then
+			for index, choice in ipairs(choices) do
+				local oldPayload, payload = selected.payload or {}, choice.payload or {}
+				if
+					choice.kind == selected.kind
+					and (payload.path or payload.text) == (oldPayload.path or oldPayload.text)
+					and not choice.disabled
+				then
+					selectedIndex = index
+					break
+				end
 			end
+		end
+		if not selectedIndex then
+			for index, row in ipairs(rows) do
+				if not row.disabled then
+					selectedIndex = index
+					break
+				end
+			end
+		end
+		if selectedIndex then
+			ui_list:selectedRow(selectedIndex)
 		end
 	end
 
@@ -1192,7 +1159,29 @@ return function(manager)
 		end
 	end
 
+	local function watchAppDirectories()
+		for _, dir in ipairs(CONFIG.APP_DIRS) do
+			local path = expandHome(dir)
+			if not app_watchers[path] and hs.fs.attributes(path, "mode") == "directory" then
+				app_watchers[path] = hs.pathwatcher
+					.new(path, function()
+						if app_refresh_timer then
+							app_refresh_timer:stop()
+						end
+						app_refresh_timer = hs.timer.doAfter(0.5, function()
+							app_refresh_timer = nil
+							refreshApps()
+							refreshChoices()
+						end)
+					end)
+					:start()
+			end
+		end
+	end
+
 	local function stopFileSearch()
+		-- Invalidate completions even when hiding, stopping, or switching modes.
+		file_search_token = file_search_token + 1
 		if file_search_timer then
 			file_search_timer:stop()
 			file_search_timer = nil
@@ -1205,10 +1194,8 @@ return function(manager)
 
 	local function searchFiles(query)
 		local q = trim(query)
-		file_search_token = file_search_token + 1
-		local token = file_search_token
-
 		stopFileSearch()
+		local token = file_search_token
 		if #q < settings.fileSearchMinChars then
 			file_results = {}
 			refreshChoices(q)
@@ -1270,17 +1257,23 @@ return function(manager)
 		end
 	end
 
-	local function pasteText(text)
-		if not text or text == "" then
+	local function pasteClipboard(clip)
+		if not clipboard_store.write(clip) then
+			manager.notify("Launcher", "Could not restore clipboard item")
 			return
 		end
-		hs.pasteboard.setContents(text)
-		if previous_app and previous_app:bundleID() ~= "org.hammerspoon.Hammerspoon" then
-			previous_app:activate()
+		local target = previous_app
+		if target and target:bundleID() ~= "org.hammerspoon.Hammerspoon" then
+			target:activate()
+			hs.timer.doAfter(0.1, function()
+				local front = hs.application.frontmostApplication()
+				if front and front:pid() == target:pid() then
+					hs.eventtap.keyStroke({ "cmd" }, "v", 0)
+				else
+					manager.notify("Launcher", "Copied to clipboard; press Cmd+V to paste")
+				end
+			end)
 		end
-		hs.timer.doAfter(0.06, function()
-			hs.eventtap.keyStroke({ "cmd" }, "v", 0)
-		end)
 	end
 
 	handleChoice = function(choice)
@@ -1294,7 +1287,7 @@ return function(manager)
 		elseif choice.kind == "file" then
 			openPath(payload.path)
 		elseif choice.kind == "clip" then
-			pasteText(payload.text)
+			pasteClipboard(payload)
 		end
 	end
 
@@ -1319,6 +1312,13 @@ return function(manager)
 	end
 
 	local function hideUiLauncher()
+		if preview_hotkey then
+			preview_hotkey:disable()
+		end
+		if clipboard_preview then
+			clipboard_preview.hide()
+		end
+		stopFileSearch()
 		ui_visible = false
 		if ui_panel then
 			pcall(function()
@@ -1328,6 +1328,13 @@ return function(manager)
 	end
 
 	local function deleteUiLauncher()
+		if preview_hotkey then
+			preview_hotkey:disable()
+		end
+		if clipboard_preview then
+			clipboard_preview.delete()
+			clipboard_preview = nil
+		end
 		ui_visible = false
 		if ui_panel then
 			pcall(function()
@@ -1341,12 +1348,58 @@ return function(manager)
 		ui_query = ""
 	end
 
+	local function previewClipboard()
+		local choice = ui_list and ui_choice_map[tostring(ui_list:selectedRow())]
+		if not choice or choice.kind ~= "clip" then
+			return false
+		end
+		if not clipboard_preview then
+			clipboard_preview = dofile(hs.configdir .. "/packages/launcher/preview.lua")(function()
+				ui_visible = true
+				refreshUiRows(ui_query)
+				ui_panel:show()
+				ui_search:focus()
+				if preview_hotkey then
+					preview_hotkey:enable()
+				end
+			end, function(clip)
+				handleChoice({ kind = "clip", payload = clip })
+			end)
+		end
+		local frame = ui_panel:frame()
+		hideUiLauncher()
+		local ok = clipboard_preview.show(
+			choice.payload,
+			frame,
+			clipboardContext(choice.payload, true),
+			clipboard_store.imagePath(choice.payload)
+		)
+		if not ok then
+			ui_visible = true
+			ui_panel:show()
+			ui_search:focus()
+			if preview_hotkey then
+				preview_hotkey:enable()
+			end
+			manager.notify("Launcher", "Preview image is no longer available")
+		end
+		return true
+	end
+
 	local function showUiLauncher(mode)
+		local alreadyOpen = ui_visible or (clipboard_preview and clipboard_preview.isVisible())
+		if alreadyOpen and ui_mode == (mode or "all") then
+			hideUiLauncher()
+			return true
+		end
 		if not ensureUi() then
 			return false
 		end
 
-		previous_app = hs.application.frontmostApplication()
+		stopFileSearch()
+		if not alreadyOpen then
+			previous_app = hs.application.frontmostApplication()
+		end
 		ui_mode = mode or "all"
 		ui_query = ""
 		file_results = {}
@@ -1377,8 +1430,8 @@ return function(manager)
 		})
 
 		ui_search:on("change", function(query)
-			ui_query = query or ""
-			refreshUiRows(ui_query)
+			file_results = {}
+			refreshUiRows(query or "")
 			if ui_mode == "all" then
 				searchFiles(ui_query)
 			end
@@ -1421,6 +1474,10 @@ return function(manager)
 		})
 
 		ui_panel:on("blur", function()
+			if preview_hotkey then
+				preview_hotkey:disable()
+			end
+			stopFileSearch()
 			ui_visible = false
 		end)
 
@@ -1430,6 +1487,9 @@ return function(manager)
 		ui_panel:centerOnScreen()
 		ui_panel:show()
 		ui_search:focus()
+		if preview_hotkey then
+			preview_hotkey:enable()
+		end
 		return true
 	end
 
@@ -1458,7 +1518,16 @@ return function(manager)
 		math.randomseed(os.time())
 		loadSettings()
 		loadClipboardHistory()
+		-- A scoped hotkey avoids hs.ui's field editor swallowing Tab before keyDown callbacks.
+		preview_hotkey = hs.hotkey.new({}, "tab", previewClipboard)
 		refreshApps()
+		watchAppDirectories()
+		-- Reconcile missed filesystem events and app directories created after startup.
+		app_reconcile_timer = hs.timer.doEvery(60, function()
+			watchAppDirectories()
+			refreshApps()
+			refreshChoices()
+		end)
 
 		local hotkeyDef = manager.getHotkey(PACKAGE_ID, "open", DEFAULT_HOTKEY)
 		local clipboardHotkeyDef = manager.getHotkey(PACKAGE_ID, "clipboard", DEFAULT_CLIPBOARD_HOTKEY)
@@ -1468,17 +1537,29 @@ return function(manager)
 		})
 
 		pasteboard_watcher = hs.pasteboard.watcher.new(function(value)
-			if isIgnoredClipboardSource() then
-				return
-			end
-			addClipboardText(value, nil)
-			if ui_visible then
+			if clipboard_store.capture(value) and ui_visible then
 				refreshChoices(ui_query or "")
 			end
 		end)
 	end
 
 	function P.stop()
+		if preview_hotkey then
+			preview_hotkey:delete()
+			preview_hotkey = nil
+		end
+		for _, watcher in pairs(app_watchers) do
+			watcher:stop()
+		end
+		app_watchers = {}
+		if app_refresh_timer then
+			app_refresh_timer:stop()
+			app_refresh_timer = nil
+		end
+		if app_reconcile_timer then
+			app_reconcile_timer:stop()
+			app_reconcile_timer = nil
+		end
 		stopFileSearch()
 		deleteUiLauncher()
 		for _, hotkey in pairs(bound_hotkeys or {}) do
@@ -1490,6 +1571,10 @@ return function(manager)
 		if pasteboard_watcher then
 			pasteboard_watcher:stop()
 			pasteboard_watcher = nil
+		end
+		if clipboard_store then
+			clipboard_store.stop()
+			clipboard_store = nil
 		end
 	end
 
@@ -1511,6 +1596,7 @@ return function(manager)
 				title = "Refresh App Index",
 				fn = function()
 					refreshApps()
+					refreshChoices()
 					manager.notify("Launcher", "Indexed " .. tostring(#app_cache) .. " apps")
 				end,
 			},
@@ -1524,8 +1610,11 @@ return function(manager)
 			{
 				title = "Clear Clipboard History (" .. tostring(#clipboard_history) .. ")",
 				fn = function()
-					clipboard_history = {}
-					persistClipboardHistory()
+					clipboard_store.clear()
+					if clipboard_preview then
+						clipboard_preview.hide()
+					end
+					refreshChoices()
 				end,
 			},
 		}

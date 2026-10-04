@@ -10,10 +10,6 @@ power-spoons/
 └── packages/
     ├── manager/
     │   └── init.lua      # Local controller + menubar
-    ├── tiler/
-    │   ├── init.lua      # Module entry point
-    │   ├── tiler.json    # Local settings, created on demand
-    │   └── README.md
     ├── stt/
     ├── gemini/
     └── lyrics/
@@ -62,7 +58,7 @@ Packages can include docstrings at the top of init.lua for documentation:
 - `SCREAMING_SNAKE_CASE` for constants and config tables (e.g., `CONFIG`, `MODELS`, `LANGUAGES`)
 - `camelCase` for local functions (e.g., `createIndicator`, `updateMenuBar`, `formatTime`)
 - `snake_case` for module-level state variables (e.g., `currentTrackId`, `pollTimer`, `menubar`)
-- Prefix private settings keys with module name (e.g., `"lyrics.overlay.frame"`, `"tiler.gap"`)
+- Prefix private settings keys with module name (e.g., `"lyrics.overlay.frame"`)
 
 ### Imports & Dependencies
 

@@ -2,15 +2,12 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, tiling, autofocus, screenshots, color picking, port monitoring, local scripts, speech, OCR, overlays, and Spotify controls:
+There is one local menubar controller and local modules for launcher, screenshots, color picking, port monitoring, local scripts, speech, OCR, overlays, and Spotify controls:
 
 - `packages/launcher/`
-- `packages/tiler/`
-- `packages/autofocus/`
 - `packages/screenshotcopy/`
 - `packages/colorpicker/`
 - `packages/ports/`
-- `packages/codexgateway/`
 - `packages/paper/`
 - `packages/stt/`
 - `packages/gemini/`
@@ -30,12 +27,6 @@ No Spoon. No registry. No package versions.
 │   ├── launcher/
 │   │   ├── init.lua
 │   │   └── launcher.json
-│   ├── tiler/
-│   │   ├── init.lua
-│   │   └── tiler.json
-│   ├── autofocus/
-│   │   ├── init.lua
-│   │   └── autofocus.json
 │   ├── screenshotcopy/
 │   │   ├── init.lua
 │   │   └── screenshotcopy.json
@@ -45,10 +36,6 @@ No Spoon. No registry. No package versions.
 │   ├── ports/
 │   │   ├── init.lua
 │   │   ├── ports.json
-│   │   └── README.md
-│   ├── codexgateway/
-│   │   ├── init.lua
-│   │   ├── codexgateway.json
 │   │   └── README.md
 │   ├── stt/
 │   │   ├── init.lua
@@ -83,23 +70,10 @@ The controller menu always shows all local modules.
 
 ## Modules
 
-### Tiler
-
-- `Ctrl+Option+Left/Right` snap the focused window to left/right half on the current screen
-- `Ctrl+Option+Up` moves from the MacBook display to the external monitor, choosing an empty left/right half or maximizing if none is free
-- `Ctrl+Option+Down` moves from the external monitor to the MacBook display and maximizes
-- `Ctrl+Option+Return` maximizes with the configured gap
-- default gap is `4px`
-
 ### Launcher
 
 - `Cmd+Space` opens the app/file/clipboard command palette
 - `Cmd+Shift+V` opens clipboard history
-
-### Autofocus
-
-- focuses on mouse-down so clicks on another monitor are less likely to be wasted only activating the app
-- does not track mouse movement, so it avoids focus-follow-mouse jitter
 
 ### Screenshot Copy
 
@@ -118,13 +92,6 @@ The controller menu always shows all local modules.
 - shows listening localhost TCP ports inside the manager's Ports submenu
 - rows show `:port process pid` with actions to open, copy details, copy the list, or terminate after confirmation
 - refreshes every `5s` using `lsof`
-
-### Codex Gateway
-
-- monitors the `com.m0hill.codex-gateway` user LaunchAgent
-- reports local `/health` status
-- provides start, restart, stop, and log actions
-- disabling the module stops monitoring, not the gateway service
 
 ### STT
 

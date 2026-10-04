@@ -4,6 +4,10 @@ opensrc/
 # JSON files (settings/secrets)
 *.json
 
+# Launcher clipboard image cache and atomic index writes
+packages/launcher/clipboard.json.images/
+packages/launcher/clipboard.json.tmp
+
 # SwiftPM helper build artifacts
 packages/*/helper/.build/
 
