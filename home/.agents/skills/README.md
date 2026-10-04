@@ -2,11 +2,23 @@
 
 ## Source attribution
 
-The skills below are adapted from external sources. Each source link is pinned to the revision used locally; use the tracking links when checking for updates.
+The skills below are adapted from external sources. Source links pin the adaptation baseline; use the tracking links when checking for updates.
+
+### Matt Pocock update: v1.3.1
+
+Reviewed all 24 attributed Matt Pocock skills and the existing local `pr` skill against [v1.3.1](https://github.com/mattpocock/skills/releases/tag/v1.3.1), commit `24fe0ef7737efae15c87225755e9f6f5965e4888`, from the baseline linked below. Applied changes to installed workflows while preserving local adaptations and invocation metadata:
+
+- Adopted `GLOSSARY.md` / `GLOSSARY-MAP.md` and renamed the domain format reference to `GLOSSARY-FORMAT.md`.
+- Added horizontal rules between grilling questions.
+- Removed the router's stale automatic post-mortem handoff; architecture exploration remains a human choice.
+- Kept the local `pr` / `explain-work` composition, adding the upstream domain-language guidance.
+- Kept `ask-matt` scoped to installed workflows; added user-invoked `retro`, but did not install `implement-spec`. The removed `resolving-merge-conflicts` skill was not installed. Other release fixes were already present or superseded by local adaptations.
+
+For repositories using the old domain-doc convention, rename `CONTEXT.md` to `GLOSSARY.md` and `CONTEXT-MAP.md` to `GLOSSARY-MAP.md`, then update repository pointers. This update does not migrate other repositories.
 
 | Local skill | Pinned source | Track updates | Local adaptation |
 | --- | --- | --- | --- |
-| `ask-matt` | [`engineering/ask-matt`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/ask-matt/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/ask-matt/SKILL.md) | Matches upstream. |
+| `ask-matt` | [`engineering/ask-matt`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/ask-matt/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/ask-matt/SKILL.md) | Routes installed workflows only; retains local implementation policy. |
 | `code-review` | [`engineering/code-review`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/code-review/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/code-review/SKILL.md) | Adds adversarial-risk review, Feature Contracts, independent parallel passes, and lead adjudication of evidence and remedies. |
 | `codebase-design` | [`engineering/codebase-design`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/codebase-design/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/codebase-design/SKILL.md) | Matches upstream, including model invocation. |
 | `diagnosing-bugs` | [`engineering/diagnosing-bugs`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/diagnosing-bugs/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/diagnosing-bugs/SKILL.md) | Retains diagnosis-only mode and conditional state-space analysis. |
@@ -22,6 +34,7 @@ The skills below are adapted from external sources. Each source link is pinned t
 | `prototype` | [`engineering/prototype`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/prototype/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/prototype/SKILL.md) | Integrates outcomes with implementation issues and Feature Contracts. |
 | `quality-code` | [Dillon Mulroy's `coding-standards`](https://github.com/dmmulroy/.dotfiles/blob/be8575f901b85100251080c1707e3f3c2966dcc9/home/.agents/skills/coding-standards/SKILL.md) | [`main`](https://github.com/dmmulroy/.dotfiles/blob/main/home/.agents/skills/coding-standards/SKILL.md) | Omits the `better-result` preference and retains local TypeScript edge-case guidance. |
 | `research` | [`engineering/research`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/research/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/research/SKILL.md) | Uses background delegation when available and direct research otherwise. |
+| `retro` | [`engineering/retro`](https://github.com/mattpocock/skills/blob/24fe0ef7737efae15c87225755e9f6f5965e4888/skills/engineering/retro/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/retro/SKILL.md) | Matches v1.3.1; user-invoked retrospective on the agent's environment. |
 | `setup-matt-pocock-skills` | [`engineering/setup-matt-pocock-skills`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/setup-matt-pocock-skills/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/setup-matt-pocock-skills/SKILL.md) | Defaults to local markdown under `.scratch/`, retains repository GitHub Issues, and omits GitLab. |
 | `triage` | [`engineering/triage`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/triage/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/triage/SKILL.md) | Matches upstream. |
 | `tdd` | [`engineering/tdd`](https://github.com/mattpocock/skills/blob/885e2ca4d842d139e9aef4e48d366c63cb1b8013/skills/engineering/tdd/SKILL.md) | [`main`](https://github.com/mattpocock/skills/blob/main/skills/engineering/tdd/SKILL.md) | Delegates test quality to `meaningful-tests`, chooses routine seams autonomously, and includes refactoring in the loop. |
@@ -55,6 +68,7 @@ Model-invoked skills may be selected autonomously and may be composed by other s
 | `quality-code` | `teach` |
 | `quality-python-code` | `to-questionnaire` |
 | `research` | `to-spec` |
+|  | `retro` |
 | `tdd` | `wait-what` |
 | `wizard` | `wayfinder` |
 | `writing-for-agents` | `ask-matt` |
@@ -100,13 +114,14 @@ flowchart TD
   architecture --> grilling
   architecture --> domain
 
+  retro[retro] --> writing[writing-for-agents]
+
   diagnose[diagnosing-bugs] -. review alternative .-> review
-  diagnose -. post-fix architecture handoff .-> architecture
 
   classDef user fill:#3b2f50,stroke:#b69cff,color:#fff;
   classDef model fill:#173f3a,stroke:#69d3bd,color:#fff;
-  class setup,grillme,grilldocs,triage,wayfinder,spec,tickets,implement,architecture user;
-  class grilling,domain,research,prototype,tdd,review,design,diagnose model;
+  class setup,grillme,grilldocs,triage,wayfinder,spec,tickets,implement,architecture,retro user;
+  class grilling,domain,research,prototype,tdd,review,design,diagnose,writing model;
 ```
 
 ### Relationship details
@@ -122,7 +137,8 @@ flowchart TD
 | `to-tickets` | Requires tracker configuration, then hands the frontier to user-invoked `implement`. |
 | `implement` | Composes `justify-complexity`, `meaningful-tests`, conditional `tdd`, and final `code-review`. |
 | `improve-codebase-architecture` | Composes `codebase-design`, `grilling`, and `domain-modeling`. |
-| `diagnosing-bugs` | Routes diff-first diagnosis to `code-review` and may recommend `improve-codebase-architecture` after a fix. |
+| `diagnosing-bugs` | Routes diff-first diagnosis to `code-review`; cleanup does not invoke user-only architecture workflows. |
+| `retro` | Composes `writing-for-agents`; suggests environment improvements after a session. |
 | `tdd` | Owns red-green-refactor; delegates test quality to `meaningful-tests` and abstraction decisions to `justify-complexity`. |
 | `meaningful-tests` | Owns test selection and evidence; consults `justify-complexity` for production abstractions introduced for testing. |
 | `code-review` | Adjudicates independent review candidates; consults `justify-complexity` for remedies and `meaningful-tests` for coverage proposals. |

@@ -6,7 +6,8 @@ description: Write or revise PR titles and bodies using explain-work, useful evi
 Read [explain-work](../explain-work/SKILL.md) and apply its explanation guidance
 to the final diff. Use the PR structure below instead of its report sections
 and verification checklist. Write for reviewers who have not read the chat.
-Honor required repository templates.
+Honor required repository templates. Use the domain language from `GLOSSARY.md`
+when it exists.
 
 Write a reviewer briefing. Explain scope boundaries and rejected alternatives
 only when they answer a likely reviewer question. For performance evidence,

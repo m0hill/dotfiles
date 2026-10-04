@@ -8,7 +8,7 @@ description: Use a test-first red-green-refactor loop when the user requests TDD
 Use `meaningful-tests` to select the behavior, test boundary, and assertions.
 This skill owns the order of implementation, not a separate test-quality policy.
 
-Read relevant domain guidance and existing contracts. Choose ordinary test
+Read `GLOSSARY.md` (if it exists), relevant ADRs, and existing contracts. Choose ordinary test
 boundaries from those contracts without requiring user approval. Ask only when
 missing intent or a consequential design decision prevents choosing correctly.
 
