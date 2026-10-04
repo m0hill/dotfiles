@@ -18,7 +18,7 @@
       "CronList"
     ]
   },
-  "model": "opus",
+  "model": "opus[1m]",
   "disableClaudeAiConnectors": true,
   "disableBundledSkills": true,
   "hooks": {
