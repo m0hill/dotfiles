@@ -3,13 +3,17 @@
     "paper": {
       "url": "http://127.0.0.1:29979/mcp",
       "exposure": "deferred",
-      "timeout": 60
+      "timeout": 60,
+      "enabled": false
     },
     "figma": {
       "url": "https://mcp.figma.com/mcp",
-      "oauth": { "scope": "mcp:connect" },
+      "oauth": {
+        "scope": "mcp:connect"
+      },
       "exposure": "deferred",
-      "timeout": 60
+      "timeout": 60,
+      "enabled": false
     },
     "notion": {
       "url": "https://mcp.notion.com/mcp",
@@ -19,13 +23,20 @@
     "cloudflare-api": {
       "url": "https://mcp.cloudflare.com/mcp",
       "exposure": "deferred",
-      "timeout": 60
+      "timeout": 60,
+      "enabled": false
     },
     "azure": {
       "command": "npx",
-      "args": ["-y", "@azure/mcp@latest", "server", "start"],
+      "args": [
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ],
       "exposure": "deferred",
-      "timeout": 60
+      "timeout": 60,
+      "enabled": false
     }
   }
 }
