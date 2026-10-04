@@ -66,7 +66,7 @@ return function(config)
 		{
 			id = "spotifyvolume",
 			name = "Spotify Volume",
-			description = "Use F7/F9 media keys for Spotify volume down/up.",
+			description = "Use Option + volume keys for Spotify volume down/up.",
 			defaultEnabled = false,
 			entryPath = PACKAGES_DIR .. "/spotifyvolume/init.lua",
 			hotkeys = {},

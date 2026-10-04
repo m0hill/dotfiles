@@ -1,5 +1,5 @@
 --- Spotify Volume Keys
---- Use F7/F9 media keys to adjust Spotify app volume.
+--- Use Option + volume keys to adjust Spotify app volume.
 ---
 --- @package spotifyvolume
 --- @version v1
@@ -8,36 +8,17 @@ return function(manager)
 	local P = {}
 	local STEP = 7
 	local PACKAGE_NAME = "Spotify Volume"
-
-	local SYSTEM_KEY_DELTAS = {
-		PREVIOUS = -STEP, -- Some keyboards label F7/F9 as previous/next
-		NEXT = STEP,
-		REWIND = -STEP, -- Mac media keys usually report F7/F9 as rewind/fast-forward
-		FAST = STEP,
-	}
-
-	local KEYCODE_DELTAS = {
-		[hs.keycodes.map.f7] = -STEP,
-		[hs.keycodes.map.f9] = STEP,
-	}
+	local SYSTEM_KEY_DELTAS = { SOUND_DOWN = -STEP, SOUND_UP = STEP }
 
 	local event_tap = nil
 	local active_system_keys = {}
-	local active_keycodes = {}
 	local last_error = nil
-	local status = "listening"
+	local status = "stopped"
 
-	local function clampVolume(volume)
-		return math.max(0, math.min(100, math.floor(volume + 0.5)))
-	end
-
-	local function hasActionModifiers(flags)
+	local function isSpotifyShortcut(flags)
 		return type(flags) == "table"
-			and (flags.cmd == true or flags.ctrl == true or flags.alt == true or flags.shift == true)
-	end
-
-	local function isSpotifyRunning()
-		return hs.application.get("Spotify") ~= nil
+			and flags.alt == true
+			and not (flags.cmd == true or flags.ctrl == true or flags.shift == true)
 	end
 
 	local function notifyErrorOnce(key, message)
@@ -49,7 +30,7 @@ return function(manager)
 	end
 
 	local function adjustSpotifyVolume(delta)
-		if not isSpotifyRunning() then
+		if not hs.application.get("Spotify") then
 			status = "waiting for Spotify"
 			return false
 		end
@@ -66,7 +47,6 @@ end tell
 ]],
 			delta
 		)
-
 		local okLua, okScript, result = pcall(hs.osascript.applescript, script)
 		if not okLua or not okScript then
 			local message = tostring(okLua and result or okScript)
@@ -74,16 +54,14 @@ end tell
 			notifyErrorOnce(message, "Could not control Spotify volume: " .. message)
 			return false
 		end
-
 		local volume = tonumber(result)
 		if not volume then
 			status = "error"
 			notifyErrorOnce("missing-volume", "Spotify did not return a volume value")
 			return false
 		end
-
 		last_error = nil
-		status = string.format("Spotify %d%%", clampVolume(volume))
+		status = string.format("Spotify %d%%", math.max(0, math.min(100, math.floor(volume + 0.5))))
 		return true
 	end
 
@@ -95,6 +73,7 @@ end tell
 			return false
 		end
 
+		-- Consume the matching release even if Option was released first.
 		if not systemKey.down then
 			if active_system_keys[key] then
 				active_system_keys[key] = nil
@@ -102,11 +81,9 @@ end tell
 			end
 			return false
 		end
-
-		if hasActionModifiers(event:getFlags()) then
+		if not isSpotifyShortcut(event:getFlags()) then
 			return false
 		end
-
 		local consumed = adjustSpotifyVolume(delta)
 		if consumed then
 			active_system_keys[key] = true
@@ -114,78 +91,31 @@ end tell
 		return consumed
 	end
 
-	local function handleFunctionKey(event)
-		local eventType = event:getType()
-		local keycode = event:getKeyCode()
-		local delta = KEYCODE_DELTAS[keycode]
-		if not delta then
-			return false
-		end
-
-		if eventType == hs.eventtap.event.types.keyUp then
-			if active_keycodes[keycode] then
-				active_keycodes[keycode] = nil
-				return true
-			end
-			return false
-		end
-
-		if hasActionModifiers(event:getFlags()) then
-			return false
-		end
-
-		local consumed = adjustSpotifyVolume(delta)
-		if consumed then
-			active_keycodes[keycode] = true
-		end
-		return consumed
-	end
-
-	local function handleEvent(event)
-		local eventType = event:getType()
-		if eventType == hs.eventtap.event.types.systemDefined then
-			return handleSystemKey(event)
-		end
-		if eventType == hs.eventtap.event.types.keyDown or eventType == hs.eventtap.event.types.keyUp then
-			return handleFunctionKey(event)
-		end
-		return false
-	end
-
 	function P.start()
-		if event_tap then
-			event_tap:stop()
-			event_tap = nil
-		end
-
+		P.stop()
+		last_error = nil
 		if hs.accessibilityState and not hs.accessibilityState(false) then
 			manager.notify(
 				PACKAGE_NAME,
-				"Enable Accessibility permission for Hammerspoon so it can catch F7/F9.",
+				"Enable Accessibility permission for Hammerspoon so it can catch Option + volume keys.",
 				{ withdrawAfter = 5 }
 			)
 		end
-
-		event_tap = hs.eventtap.new({
-			hs.eventtap.event.types.systemDefined,
-			hs.eventtap.event.types.keyDown,
-			hs.eventtap.event.types.keyUp,
-		}, function(event)
-			local ok, consumedOrErr = pcall(handleEvent, event)
+		event_tap = hs.eventtap.new({ hs.eventtap.event.types.systemDefined }, function(event)
+			local ok, consumedOrErr = pcall(handleSystemKey, event)
 			if not ok then
 				status = "error"
-				notifyErrorOnce("eventtap", "F7/F9 handler failed: " .. tostring(consumedOrErr))
+				notifyErrorOnce("eventtap", "Option + volume handler failed: " .. tostring(consumedOrErr))
 				return false
 			end
 			return consumedOrErr == true
 		end)
-
 		if event_tap then
 			event_tap:start()
 			status = "listening"
 		else
 			status = "error"
-			manager.notifyError(PACKAGE_NAME, "Could not create the F7/F9 event tap")
+			manager.notifyError(PACKAGE_NAME, "Could not create the Option + volume event tap")
 		end
 	end
 
@@ -195,7 +125,6 @@ end tell
 			event_tap = nil
 		end
 		active_system_keys = {}
-		active_keycodes = {}
 		status = "stopped"
 	end
 

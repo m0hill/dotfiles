@@ -1,10 +1,12 @@
 # Spotify Volume
 
-Minimal Hammerspoon module that uses the unused media keys for Spotify volume:
+Use the normal audio volume keys with **Option** held to adjust Spotify's app volume:
 
-- F7 / Previous/Rewind: Spotify volume down by `5%`
-- F9 / Next/Fast-forward: Spotify volume up by `5%`
+- **Option + Volume Down**: Spotify volume down by 7 percentage points.
+- **Option + Volume Up**: Spotify volume up by 7 percentage points.
 
-The real Mac volume up/down/mute keys are left alone.
+On a standard Mac keyboard these are the speaker keys on F11/F12. Use the actual volume-key events, not plain function-key events; the Fn/Globe requirement depends on your keyboard settings.
 
-If Spotify is not running or cannot be controlled, the key press is passed through normally. Hammerspoon needs Accessibility permission to catch the keys and Automation permission to control Spotify.
+Plain volume keys still control macOS volume. F7/F9 retain their normal previous/next-track behavior. Mute is unchanged. Option+Shift+volume keeps the native fine-volume shortcut; other modifier combinations pass through too.
+
+If Spotify is not running or cannot be controlled, the key press passes through normally (Option+volume may open macOS Sound settings). Hammerspoon needs Accessibility permission to intercept media keys and Automation permission to control Spotify.

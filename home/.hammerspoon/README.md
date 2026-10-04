@@ -102,9 +102,9 @@ The controller menu always shows all local modules.
 
 ### Spotify Volume
 
-- uses F7 / Previous for Spotify volume down and F9 / Next for volume up
-- leaves the real Mac volume up/down/mute keys alone
-- each press changes Spotify's `sound volume` by `5%`
+- uses **Option + Volume Down/Up** to adjust Spotify volume
+- plain volume keys control macOS; previous/next-track keys and mute keep their native behavior
+- each press changes Spotify's `sound volume` by 7 percentage points
 - requires Hammerspoon Accessibility permission and Spotify Automation permission
 
 ## Notes
