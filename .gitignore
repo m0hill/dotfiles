@@ -31,5 +31,9 @@ home/.pi/agent/mcp-npx-cache.json
 home/.pi/agent/mcp-onboarding.json
 home/.pi/agent/mcp-oauth/
 
+# Claude-managed skills
+home/.agents/skills/synced/
+home/.agents/skills/.trash/
+
 #cloudflared config
 config/.cloudflared/*.yml

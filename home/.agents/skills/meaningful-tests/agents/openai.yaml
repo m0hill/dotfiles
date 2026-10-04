@@ -1,4 +1,4 @@
 interface:
   display_name: "Meaningful Tests"
-  short_description: "Replace low-value tests and cover consequential failures"
-  default_prompt: "Use $meaningful-tests to improve tests for the active changes: identify consequential behavior, replace low-value coverage, and add missing tests for realistic failures."
+  short_description: "Delete low-value tests and protect meaningful behavior"
+  default_prompt: "Use $meaningful-tests to improve tests for the active changes: delete low-value and redundant tests, consolidate useful coverage, and add missing tests only for consequential failures."

@@ -1,9 +1,9 @@
 ---
 name: explain-work
-description: Produce a plain-language explanation of agent work for human review, covering actual behavior, consequential decisions, changed contracts, risks, and verification, with a small visual when useful.
+description: Explain agent work visually for human review, using diagrams or change sketches alongside plain-language behavior, decisions, contracts, risks, and verification.
 ---
 
-Explain the actual work so the user can judge it without reading code.
+Show and explain the actual work so the user can judge it without reading code.
 
 Your output is a review report. Ground it in the request, final artifacts,
 recorded decisions, and observed verification results. Use focused read-only
@@ -26,7 +26,7 @@ help the user make those judgments.
 ## Build the report in this order
 
 Use these sections for substantial work. For a small change, combine them
-into a short paragraph. Omit sections with no meaningful content.
+into a short explanation and visual. Omit sections with no meaningful content.
 
 ### Result
 
@@ -92,17 +92,68 @@ Use synthetic examples and redact sensitive values.
 
 ## Visuals
 
-Add a small inline visual when it makes the explanation easier to understand:
+Include at least one diagram or change sketch in the explanation. Choose its
+form, not whether to include it. Skip only when the user requests prose alone
+or the change is a trivial text/value edit with no flow or structure to explain.
 
-- A flow or sequence diagram for interactions and ordering.
-- A state diagram for transitions and recovery.
-- A shallow tree for ownership or structure.
-- A small diff for a change in an established shape.
-- A table for contracts or trade-offs.
+Pick the smallest view that shows the central behavior or change. Adapt these
+examples to the actual work; one well-chosen visual is usually enough.
 
-Choose the smallest view that answers the reader's question. Use concrete
-labels and preserve important failure paths. Mark proposed or unverified
-behavior explicitly.
+**Logic or a behavioral change — pseudocode or a diff:**
+
+```diff
+on(save)
+-  write content
++  if content is unchanged
++    return cached result
++  write content
++  invalidate cache
+```
+
+**Runtime order — a call tree:**
+
+```text
+submitForm
+  validateInput
+  saveDraft
+    persistContent
+  showConfirmation
+```
+
+**UI composition or ownership — a component or file tree:**
+
+```text
+<EditorPage>
+  <DraftForm>          # owns unsaved edits
+  <SaveStatus>         # displays persistence state
+  <HistoryPanel>       # reads saved versions
+```
+
+**Interactions and failure paths — Mermaid:**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Editor
+    participant API
+    User->>Editor: Save draft
+    Editor->>API: Write content
+    alt Saved
+        API-->>Editor: Saved version
+        Editor-->>User: Show confirmation
+    else Failed
+        API-->>Editor: Error
+        Editor-->>User: Keep edits and offer retry
+    end
+```
+
+Use a state diagram for transitions and recovery. Use a table for comparisons
+or contract shapes when those are the central point. Show the whole new shape
+instead of a diff when omitted context would hide ownership or order.
+
+Use concrete labels and preserve important failure paths. Mark proposed or
+unverified behavior explicitly. Keep only the parts needed to understand the
+point; let the visual carry structure and the prose explain consequences.
 
 Place the visual beside the text it supports. Prefer chat-native output;
 use a separate HTML artifact only when requested or when the explanation

@@ -1,12 +1,14 @@
 ---
 name: meaningful-tests
-description: Design tests for changed behavior, or improve an existing suite by replacing low-value tests and adding missing coverage for consequential failures.
+description: Delete low-value and redundant tests, consolidate useful coverage, and add missing tests for consequential failures. Use for test cleanup, suite review, or designing tests for changed behavior.
 ---
 
 # Meaningful Tests
 
 Protect behavior that matters with tests that detect plausible defects and
-permit implementation changes. Existing tests are evidence, not a template.
+permit implementation changes with the least test maintenance. Actively shrink
+low-value coverage. Existing tests are evidence, not a template or an obligation
+to preserve.
 Review requests produce findings; requests to improve or implement authorize
 in-scope edits. Preserve applicable project test requirements.
 
@@ -56,20 +58,51 @@ unless the protected promise depends on them.
 Tests should survive implementation-only refactors. Legitimate contract
 changes can change tests.
 
-## Improve the suite
+## Prune before expanding
 
-Remove tests that merely repeat setup, static guarantees, generated code,
-or library behavior. Verify that the guarantee actually covers the risk:
-runtime data and our integration choices may still need tests.
+For each test or group of overlapping tests in scope, ask: **What consequential
+wrong behavior would escape if this coverage disappeared?** Inspect the real
+code path and other coverage before answering. A unique input or test name is
+not a unique risk. "More coverage" and "might catch something" do not justify
+keeping a test.
 
-A short test or an existence assertion is not automatically low-value.
+Delete coverage that has no concrete contribution:
 
-Before deleting a test, identify any unique behavior it protects.
-Replace brittle coverage of a real risk before deleting it.
-Remove obsolete or redundant coverage without replacement quotas.
+- Tests that restate fixtures, mock return values, constants, or implementation
+  structure without detecting a meaningful application defect.
+- Runtime tests of guarantees already enforced by the compiler, generated
+  contracts, or libraries, unless our integration creates a distinct risk.
+- Repeated examples that exercise the same behavior without covering a distinct
+  boundary, failure mode, or important class of inputs.
+- Private-call, field-existence, and snapshot assertions with no supported
+  behavioral or compatibility obligation.
+- Tests for removed behavior or unsupported scenarios, and helpers, fixtures,
+  mocks, or snapshots left unused by the deletions.
 
-Characterization tests can preserve legacy behavior without certifying it
-as correct. Keep that purpose explicit.
+Prefer deleting a low-value test outright over polishing, renaming, or rewriting
+it to justify its existence. Do not replace each deleted test, preserve test
+counts, or add trivial cases to recover a coverage percentage. In an authorized
+cleanup, make supported deletions instead of merely recommending them or asking
+for permission to remove ordinary redundant tests.
+
+When several tests protect the same risk, retain the clearest effective coverage
+and remove the rest. Keep multiple levels only when they catch different defects
+or provide a concrete diagnostic or feedback advantage worth their maintenance.
+Do not automatically replace fast focused tests with a broad slow test.
+
+Replace a brittle test only when it is the sole useful protection for a real
+risk. If that risk already has adequate coverage, delete the brittle test without
+replacement. If its purpose remains unclear after focused inspection, name the
+specific uncertainty rather than inventing a hypothetical reason to keep it.
+
+A short test or existence assertion can earn its place through a real contract.
+Characterization tests can protect a planned legacy refactor without certifying
+current behavior as correct; identify that purpose rather than using the label
+as a blanket exemption from pruning.
+
+Find missing consequential coverage independently of these deletions. The goal
+is a smaller maintenance burden with better defect detection, not maximum
+removal. No deletion quota is required.
 
 ## External providers
 
@@ -107,8 +140,9 @@ unless intended behavior has genuinely changed.
 
 Report:
 
+- Tests and supporting scaffolding deleted, with the redundant or absent value
+  summarized by group. Explain material low-value candidates retained.
 - Significant tests added or replaced and the defects they catch.
-- Low-value coverage removed.
 - Verification performed.
 - Important remaining gaps, distinguishing fixture-based from live evidence.
 

@@ -53,3 +53,15 @@ A documented response with two content blocks can test that our real adapter
 preserves both. Returning the final domain value from a mocked adapter bypasses
 that mapping and cannot protect it. Neither approach independently proves that
 the provider currently emits the documented response.
+
+## Delete without replacing
+
+A save workflow has tests asserting that three internal setters are called, plus
+an existing connected test that verifies failed saves retain edits and do not
+navigate away. If the setter tests cover no additional obligation, delete them
+and their unused spies. Do not rewrite them into three more save-failure tests.
+
+Several parser examples differ only in arbitrary names while exercising the
+same accepted-input class. Keep a clear representative; retain other examples
+only when they distinguish relevant behavior such as escaping or a supported
+boundary value. A parameterized table does not make redundant cases valuable.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR"
+  short_description: "Write clear PR titles, evidence, and risk summaries"
+  default_prompt: "Use $pr to write or revise the pull request title and body for this change."
