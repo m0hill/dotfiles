@@ -11,7 +11,6 @@ power-spoons/
     ├── manager/
     │   └── init.lua      # Local controller + menubar
     ├── stt/
-    ├── gemini/
     └── lyrics/
 ```
 

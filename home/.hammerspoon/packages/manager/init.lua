@@ -37,17 +37,6 @@ return function(config)
 			secrets = {},
 		},
 		{
-			id = "colorpicker",
-			name = "Color Picker",
-			description = "Click a pixel and copy its hex color code.",
-			defaultEnabled = true,
-			entryPath = PACKAGES_DIR .. "/colorpicker/init.lua",
-			hotkeys = {
-				{ action = "pick", description = "Pick Color", default = "Cmd+Option+C" },
-			},
-			secrets = {},
-		},
-		{
 			id = "ports",
 			name = "Ports",
 			description = "Shows local TCP ports and the process using each one.",
@@ -57,30 +46,13 @@ return function(config)
 			secrets = {},
 		},
 		{
-			id = "paper",
-			name = "Paper",
-			description = "Run the local Paper maintenance script.",
+			id = "scripts",
+			name = "Run Script",
+			description = "Run local scripts, including Paper.",
 			defaultEnabled = true,
-			entryPath = PACKAGES_DIR .. "/paper/init.lua",
+			entryPath = PACKAGES_DIR .. "/scripts/init.lua",
 			hotkeys = {},
 			secrets = {},
-		},
-		{
-			id = "gemini",
-			name = "Gemini OCR",
-			description = "Capture a region and extract text with Gemini.",
-			defaultEnabled = false,
-			entryPath = PACKAGES_DIR .. "/gemini/init.lua",
-			hotkeys = {
-				{ action = "capture", description = "Start Capture", default = "Cmd+Shift+S" },
-			},
-			secrets = {
-				{
-					key = "GEMINI_API_KEY",
-					label = "Gemini API Key",
-					hint = "Get from https://aistudio.google.com/app/apikey",
-				},
-			},
 		},
 		{
 			id = "lyrics",

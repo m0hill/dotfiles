@@ -2,15 +2,13 @@
 
 This repo now acts as a plain `~/.hammerspoon` config.
 
-There is one local menubar controller and local modules for launcher, screenshots, color picking, port monitoring, local scripts, speech, OCR, overlays, and Spotify controls:
+There is one local menubar controller and local modules for launcher, screenshots, port monitoring, local scripts, speech, overlays, and Spotify controls:
 
 - `packages/launcher/`
 - `packages/screenshotcopy/`
-- `packages/colorpicker/`
 - `packages/ports/`
-- `packages/paper/`
+- `packages/scripts/`
 - `packages/stt/`
-- `packages/gemini/`
 - `packages/lyrics/`
 - `packages/spotifyvolume/`
 
@@ -30,9 +28,6 @@ No Spoon. No registry. No package versions.
 │   ├── screenshotcopy/
 │   │   ├── init.lua
 │   │   └── screenshotcopy.json
-│   ├── colorpicker/
-│   │   ├── init.lua
-│   │   └── colorpicker.json
 │   ├── ports/
 │   │   ├── init.lua
 │   │   ├── ports.json
@@ -40,9 +35,6 @@ No Spoon. No registry. No package versions.
 │   ├── stt/
 │   │   ├── init.lua
 │   │   └── stt.json
-│   ├── gemini/
-│   │   ├── init.lua
-│   │   └── gemini.json
 │   ├── lyrics/
 │   │   ├── init.lua
 │   │   └── lyrics.json
@@ -81,11 +73,12 @@ The controller menu always shows all local modules.
 - copies newly saved screenshots from `Cmd+Shift+3`, `Cmd+Shift+4`, and `Cmd+Shift+5` to the clipboard as image data plus a path fallback
 - uses the configured macOS screenshot location, falling back to `~/Desktop`
 
-### Color Picker
+### Run Script
 
-- press `Cmd+Option+C`
-- click any pixel on any screen
-- copies the color as a hex code like `#AABBCC`
+- Paper is the first script under **Automations → Run Script → Paper**
+- use **Add Script…** to add other local scripts
+- each script has run, cancel, last-result, reveal, and remove actions
+- see `packages/scripts/README.md` for execution behavior and settings
 
 ### Ports
 
@@ -101,13 +94,6 @@ The controller menu always shows all local modules.
 - can switch to a normal combo trigger in the menu
 - requires `sox` and the local `stt-helper` binary
 - stores the Parakeet model under `~/Library/Application Support/Hammerspoon/STT/cache`
-
-### Gemini OCR
-
-- press `Cmd+Shift+S`
-- select a screen region
-- extracted text is copied and pasted
-- requires `GEMINI_API_KEY`
 
 ### Lyrics
 
@@ -130,5 +116,4 @@ The controller menu always shows all local modules.
 ## Troubleshooting
 
 - STT needs the helper installed once: see `packages/stt/README.md`
-- Gemini needs Screen Recording permission for Hammerspoon
 - If a module fails, check the Hammerspoon console and toggle the module off/on
