@@ -1,5 +1,5 @@
 --- STT
---- Press a trigger once to record audio and press again to transcribe locally with Parakeet.
+--- Press a trigger once to record audio and press again to transcribe locally with Parakeet Ultra.
 ---
 --- @package stt
 --- @author m0hill
@@ -43,6 +43,7 @@ return function(manager)
 	local status_task = nil
 	local download_task = nil
 	local transcribe_task = nil
+	local preload_error = nil
 	local escape_cancel_tap = nil
 	local recording_generation = 0
 	local active_recording_generation = nil
@@ -113,11 +114,6 @@ return function(manager)
 		return home .. "/Library/Application Support/Hammerspoon/STT"
 	end
 
-	local function shellQuote(value)
-		local escaped = tostring(value):gsub("\\", "\\\\"):gsub('"', '\\"')
-		return '"' .. escaped .. '"'
-	end
-
 	local function helperBinaryPath()
 		return helperRuntimeRoot() .. "/bin/stt-helper"
 	end
@@ -127,8 +123,7 @@ return function(manager)
 		if not attrs or attrs.mode ~= "file" then
 			return false
 		end
-		local _, ok = hs.execute("/bin/test -x " .. shellQuote(helperBinaryPath()))
-		return ok == true
+		return (attrs.permissions or ""):find("x", 1, true) ~= nil
 	end
 
 	local function helperMissingMessage()
@@ -324,7 +319,7 @@ return function(manager)
 
 	local function cleanupHelperTasks()
 		local tasks = { status_task, download_task, transcribe_task }
-		for _, task in ipairs(tasks) do
+		for _, task in pairs(tasks) do
 			if task and task:isRunning() then
 				task:terminate()
 			end
@@ -391,7 +386,7 @@ return function(manager)
 		end
 	end
 
-	local function runHelper(args, onComplete)
+	local function runHelper(args, onComplete, keepInputOpen)
 		local path = helperBinaryPath()
 		local commandName = args[1] or "helper"
 		if not helperExists() then
@@ -401,10 +396,25 @@ return function(manager)
 			return nil, result.error
 		end
 
-		local task = hs.task.new(path, function(exitCode, stdout, stderr)
+		local streamedStdout, streamedStderr = "", ""
+		local function complete(exitCode, stdout, stderr)
+			stdout = streamedStdout .. (stdout or "")
+			stderr = streamedStderr .. (stderr or "")
 			local result = parseHelperResult(exitCode, stdout, stderr)
 			onComplete(exitCode, result, stdout, stderr)
-		end, args)
+		end
+		local task
+		if keepInputOpen then
+			-- Streaming must be selected in the constructor: setStreamingCallback
+			-- alone does not set hs.task's isStream flag and stdin closes at start.
+			task = hs.task.new(path, complete, function(_, stdout, stderr)
+				streamedStdout = streamedStdout .. (stdout or "")
+				streamedStderr = streamedStderr .. (stderr or "")
+				return true
+			end, args)
+		else
+			task = hs.task.new(path, complete, args)
+		end
 
 		if not task then
 			helperState.checked = true
@@ -458,65 +468,35 @@ return function(manager)
 		right_option_cancelled = false
 	end
 
-	local function stopRecordingAndTranscribe()
-		if not is_recording then
-			return
+	local function discardPreload()
+		local task = transcribe_task
+		transcribe_task = nil
+		preload_error = nil
+		if task and task:isRunning() then
+			task:terminate()
 		end
+	end
 
-		setIndicatorMode("transcribing")
-		cleanupRecordingRuntime(true)
-
-		local path = wav_path
-		wav_path = nil
-
-		if not path then
-			cleanupIndicators()
-			notifyError("STT", "No recording captured.")
-			return
-		end
-
-		local attrs = hs.fs.attributes(path)
-		if not attrs or (attrs.size or 0) < CONFIG.MIN_BYTES then
-			cleanupIndicators()
-			os.remove(path)
-			notifyError("STT", "Recording too short. Please speak longer.")
-			return
-		end
-
-		if not helperExists() then
-			cleanupIndicators()
-			os.remove(path)
-			applyHelperState({ ok = false, helperReady = false, modelAvailable = false, error = helperMissingMessage() })
-			notifyError("STT", helperMissingMessage())
-			manager.refreshMenu()
-			return
-		end
-
-		if not helperState.modelAvailable then
-			cleanupIndicators()
-			os.remove(path)
-			notifyError("STT", "Model missing. Open STT menu and click Download Model.")
-			refreshHelperStatus()
-			return
-		end
-
-		is_busy = true
-		setIndicatorMode("transcribing")
-		playSound("process")
-		manager.refreshMenu()
-
-		transcribe_task, _ = runHelper({ "transcribe", "--input", path }, function(_, result)
+	local function preloadTranscription(path)
+		preload_error = nil
+		local task
+		task = runHelper({ "transcribe", "--input", path, "--wait" }, function(_, result)
+			-- A cancelled recording's late callback must not affect a new one.
+			if transcribe_task ~= task then
+				return
+			end
 			transcribe_task = nil
-			is_busy = false
-			cleanupIndicators()
-			if path then
-				os.remove(path)
+			if is_recording then
+				preload_error = result and result.error or "Model preload failed."
+				return
 			end
 
+			is_busy = false
+			cleanupIndicators()
+			os.remove(path)
 			if result and result.helperReady ~= nil then
 				applyHelperState(result)
 			end
-
 			if not result or result.ok ~= true then
 				notifyError("STT", result and result.error or "Transcription failed.")
 				playSound("error")
@@ -531,24 +511,62 @@ return function(manager)
 				manager.refreshMenu()
 				return
 			end
-
 			hs.pasteboard.setContents(text)
 			hs.eventtap.keyStroke({ "cmd" }, "v", 0)
-
 			local preview = '"' .. (text:len() > 50 and text:sub(1, 50) .. "..." or text) .. '"'
 			notify("STT", preview)
 			playSound("success")
 			manager.refreshMenu()
-		end)
+		end, true)
+		transcribe_task = task
+		if not task then
+			preload_error = "Could not start stt-helper."
+		end
+	end
 
-		if not transcribe_task then
-			is_busy = false
+	local function stopRecordingAndTranscribe()
+		if not is_recording then
+			return
+		end
+
+		cleanupRecordingRuntime(true)
+
+		local path = wav_path
+		wav_path = nil
+
+		if not path then
+			discardPreload()
+			cleanupIndicators()
+			notifyError("STT", "No recording captured.")
+			return
+		end
+
+		local attrs = hs.fs.attributes(path)
+		if not attrs or (attrs.size or 0) < CONFIG.MIN_BYTES then
+			discardPreload()
 			cleanupIndicators()
 			os.remove(path)
-			notifyError("STT", "Could not start stt-helper.")
-			playSound("error")
-			manager.refreshMenu()
+			notifyError("STT", "Recording too short. Please speak longer.")
+			return
 		end
+
+		if preload_error or not transcribe_task then
+			local message = preload_error or "Model preload failed."
+			discardPreload()
+			cleanupIndicators()
+			os.remove(path)
+			notifyError("STT", message)
+			refreshHelperStatus()
+			manager.refreshMenu()
+			return
+		end
+
+		is_busy = true
+		setIndicatorMode("transcribing")
+		playSound("process")
+		manager.refreshMenu()
+
+		transcribe_task:setInput("transcribe\n")
 	end
 
 	local function requestStopRecording()
@@ -557,8 +575,6 @@ return function(manager)
 		end
 
 		stop_requested = true
-		setIndicatorMode("transcribing")
-
 		if stop_timer then
 			stop_timer:stop()
 			stop_timer = nil
@@ -578,6 +594,7 @@ return function(manager)
 
 		local path = wav_path
 		wav_path = nil
+		discardPreload()
 		cleanupRecordingRuntime(false)
 
 		if path then
@@ -633,16 +650,18 @@ return function(manager)
 			return
 		end
 
-		setIndicatorMode("recording")
-
 		if not rec_path then
-			rec_path = which("rec")
-			if not rec_path then
-				cleanupIndicators()
-				notifyError("STT", "'sox' is not installed. Install via: brew install sox")
-				playSound("error")
-				return
-			end
+			notifyError("STT", "'sox' is not installed. Install via: brew install sox, then restart STT.")
+			return
+		end
+		if not helperExists() then
+			notifyError("STT", helperMissingMessage())
+			return
+		end
+		if not helperState.modelAvailable then
+			notifyError("STT", "Model missing. Open STT menu and click Download Model.")
+			refreshHelperStatus()
+			return
 		end
 
 		wav_path = tmpWavPath()
@@ -692,8 +711,11 @@ return function(manager)
 			return
 		end
 
+		-- Capture first; canvas, sound, menu work and model loading come after.
 		startEscapeCancelBinding()
 		stop_timer = hs.timer.doAfter(CONFIG.MAX_RECORDING_SECONDS, requestStopRecording)
+		preloadTranscription(wav_path)
+		setIndicatorMode("recording")
 		playSound("start")
 		manager.refreshMenu()
 	end
@@ -814,7 +836,7 @@ return function(manager)
 
 		is_downloading = true
 		helperState.message = "Downloading model..."
-		notify("STT", "Downloading Parakeet model...")
+		notify("STT", "Downloading Parakeet Ultra model...")
 		manager.refreshMenu()
 
 		download_task, _ = runHelper({ "download" }, function(_, result)
@@ -822,7 +844,7 @@ return function(manager)
 			is_downloading = false
 			applyHelperState(result)
 			if result and result.ok == true and result.modelAvailable == true then
-				notify("STT", "Parakeet model downloaded.")
+				notify("STT", "Parakeet Ultra model downloaded.")
 				playSound("success")
 			else
 				notifyError("STT", result and result.error or "Download failed.")
@@ -845,7 +867,7 @@ return function(manager)
 
 		is_downloading = true
 		helperState.message = "Deleting model..."
-		notify("STT", "Deleting Parakeet model...")
+		notify("STT", "Deleting Parakeet Ultra model...")
 		manager.refreshMenu()
 
 		download_task, _ = runHelper({ "delete" }, function(_, result)
@@ -853,7 +875,7 @@ return function(manager)
 			is_downloading = false
 			applyHelperState(result)
 			if result and result.ok == true and result.modelAvailable ~= true then
-				notify("STT", "Parakeet model deleted.")
+				notify("STT", "Parakeet Ultra model deleted.")
 				playSound("success")
 			else
 				notifyError("STT", result and result.error or "Delete failed.")
@@ -878,6 +900,7 @@ return function(manager)
 	end
 
 	function P.start()
+		rec_path = which("rec")
 		bindTrigger()
 		refreshHelperStatus()
 	end
@@ -887,6 +910,7 @@ return function(manager)
 		cancelPendingRightOptionStart()
 		cleanupRecordingRuntime()
 		cleanupIndicators()
+		discardPreload()
 		cleanupHelperTasks()
 		if wav_path then
 			os.remove(wav_path)
@@ -911,7 +935,7 @@ return function(manager)
 
 		return {
 			{
-				title = helperLine,
+				title = helperLine .. " (Parakeet Ultra)",
 				disabled = true,
 			},
 			{

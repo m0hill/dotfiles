@@ -6,6 +6,7 @@ import Foundation
 private let helperMarkerBase64 = "__STT_JSON_B64__"
 private let minimumDuration: TimeInterval = 1.5
 private let expectedSampleRate: Double = 16_000
+private let modelVersion: AsrModelVersion = .ultra
 
 struct HelperResponse: Encodable {
 	let ok: Bool
@@ -45,13 +46,13 @@ enum HelperError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .invalidCommand:
-			return "Usage: stt-helper status | download | delete | transcribe --input /path/file.wav"
+			return "Usage: stt-helper status | download | delete | transcribe --input /path/file.wav [--wait]"
 		case .missingInput:
 			return "Missing required --input argument."
 		case .unsupportedPlatform:
 			return "Parakeet requires Apple Silicon on macOS 14+."
 		case .modelMissing:
-			return "Parakeet model missing. Open the STT menu and click Download Model."
+			return "Parakeet Ultra model missing. Open the STT menu and click Download Model."
 		case let .modelNotUsable(message):
 			return message
 		case .emptyTranscript:
@@ -170,7 +171,7 @@ struct SttHelper {
 			}
 			let target = preferredModelDirectory()
 			log("download start target=\(target.path)")
-			_ = try await AsrModels.download(to: target, version: .v3)
+			_ = try await AsrModels.download(to: target, version: modelVersion)
 			guard modelAvailable() else {
 				throw HelperError.modelNotUsable("Model download finished, but STT could not find the model files.")
 			}
@@ -194,13 +195,26 @@ struct SttHelper {
 			let modelDirectory = preferredModelDirectory()
 			log("transcribe start input=\(inputPath.path) modelPath=\(modelDirectory.path)")
 
-			let prepared = try AudioPreparer.prepare(url: inputPath)
-			defer { prepared.cleanup() }
-
-			let models = try await AsrModels.load(from: modelDirectory, version: .v3)
+			let loadStarted = ContinuousClock.now
+			let models = try await AsrModels.load(from: modelDirectory, version: modelVersion)
 			let manager = AsrManager(config: .default)
 			try await manager.loadModels(models)
-			let result = try await manager.transcribe(prepared.url, source: .microphone)
+			log("model ready loadDuration=\(ContinuousClock.now - loadStarted)")
+
+			// Hammerspoon launches us after capture starts. Do not open the WAV
+			// until the recorder has exited and finalized its header.
+			if arguments.contains("--wait") {
+				guard readLine() == "transcribe" else {
+					throw HelperError.missingInput
+				}
+			}
+
+			let transcribeStarted = ContinuousClock.now
+			let prepared = try AudioPreparer.prepare(url: inputPath)
+			defer { prepared.cleanup() }
+			var decoderState = try TdtDecoderState(decoderLayers: modelVersion.decoderLayers)
+			let result = try await manager.transcribe(prepared.url, decoderState: &decoderState)
+			log("transcribe finished duration=\(ContinuousClock.now - transcribeStarted)")
 			let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
 			guard !text.isEmpty else {
 				throw HelperError.emptyTranscript
@@ -247,7 +261,7 @@ struct SttHelper {
 	}
 
 	private static func preferredModelDirectory() -> URL {
-		let defaultDirectory = AsrModels.defaultCacheDirectory(for: .v3)
+		let defaultDirectory = AsrModels.defaultCacheDirectory(for: modelVersion)
 		return cacheRoot()
 			.appendingPathComponent("FluidAudio/Models", isDirectory: true)
 			.appendingPathComponent(defaultDirectory.lastPathComponent, isDirectory: true)
@@ -258,7 +272,7 @@ struct SttHelper {
 	}
 
 	private static func modelAvailable() -> Bool {
-		AsrModels.modelsExist(at: preferredModelDirectory(), version: .v3)
+		AsrModels.modelsExist(at: preferredModelDirectory(), version: modelVersion)
 	}
 
 	private static func statusResponse(message: String, text: String? = nil) -> HelperResponse {
