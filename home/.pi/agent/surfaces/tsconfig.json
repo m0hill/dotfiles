@@ -1,0 +1,7 @@
+{
+  "extends": "../extensions/surfaces/runtime/tsconfig.json",
+  "compilerOptions": {
+    "paths": { "@surfaces/kit": ["../extensions/surfaces/runtime/index.tsx"] }
+  },
+  "include": ["*.ts", "*.tsx"]
+}
