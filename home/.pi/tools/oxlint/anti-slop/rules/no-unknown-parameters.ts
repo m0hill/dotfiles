@@ -1,7 +1,39 @@
 import { defineRule } from "@oxlint/plugins";
 import type { ESTree } from "@oxlint/plugins";
 
-type Parameter = ESTree.ParamPattern;
+import {
+  containsUnknownType,
+  functionParameterBindingName,
+  functionParameterTypeAnnotation,
+} from "../shared/function-parameters.ts";
+
+const TRANSPARENT_WRAPPERS = new Set(["Readonly", "Partial", "Required"]);
+
+function propertyName(key: ESTree.PropertyKey): string | undefined {
+  if (key.type === "Identifier") return key.name;
+  return key.type === "Literal" && typeof key.value === "string" ? key.value : undefined;
+}
+
+/** Return whether an object parameter hides an unknown member, other than `cause`, from the top-level check. */
+function wrapsUnknownType(type: ESTree.TSType): boolean {
+  if (type.type === "TSParenthesizedType") return wrapsUnknownType(type.typeAnnotation);
+  if (type.type === "TSUnionType" || type.type === "TSIntersectionType") return type.types.some(wrapsUnknownType);
+  if (type.type === "TSTypeReference") {
+    return (
+      type.typeName.type === "Identifier" &&
+      TRANSPARENT_WRAPPERS.has(type.typeName.name) &&
+      (type.typeArguments?.params.some(wrapsUnknownType) ?? false)
+    );
+  }
+  if (type.type !== "TSTypeLiteral") return false;
+  return type.members.some((member) => {
+    if (member.type !== "TSPropertySignature" || member.typeAnnotation == null) return false;
+    if (propertyName(member.key) === "cause") return false;
+    const memberType = member.typeAnnotation.typeAnnotation;
+    return containsUnknownType(memberType) || wrapsUnknownType(memberType);
+  });
+}
+
 type ParameterOwner =
   | ESTree.ArrowFunctionExpression
   | ESTree.Function
@@ -11,54 +43,55 @@ type ParameterOwner =
   | ESTree.TSFunctionType
   | ESTree.TSMethodSignature;
 
-function parameterAnnotation(parameter: Parameter): ESTree.TSTypeAnnotation | null | undefined {
-  if (parameter.type === "TSParameterProperty") {
-    return parameterAnnotation(parameter.parameter);
-  }
-  if (parameter.type === "RestElement") {
-    return parameter.typeAnnotation ?? parameterAnnotation(parameter.argument);
-  }
-  if (parameter.type === "AssignmentPattern") {
-    return parameter.typeAnnotation ?? parameter.left.typeAnnotation;
-  }
-  return parameter.typeAnnotation;
+function isTypePredicateSubject(owner: ParameterOwner, parameterName: string): boolean {
+  const predicate = owner.returnType?.typeAnnotation;
+  return (
+    predicate?.type === "TSTypePredicate" &&
+    predicate.parameterName.type === "Identifier" &&
+    predicate.parameterName.name === parameterName
+  );
 }
 
-function parameterName(parameter: Parameter, sourceText: string): string {
-  if (parameter.type === "TSParameterProperty") {
-    return parameterName(parameter.parameter, sourceText);
-  }
-  if (parameter.type === "AssignmentPattern") {
-    return parameterName(parameter.left, sourceText);
-  }
-  if (parameter.type === "RestElement") {
-    return parameterName(parameter.argument, sourceText);
-  }
-  return parameter.type === "Identifier"
-    ? parameter.name
-    : sourceText.replace(/\s*:\s*unknown\s*$/u, "");
+/** Return the argument index that receives a rejection reason for `.catch(fn)` and `.then(ok, fn)`. */
+function rejectionHandlerIndex(callee: ESTree.Expression | ESTree.Super): number | undefined {
+  if (callee.type !== "MemberExpression" || callee.computed || callee.property.type !== "Identifier") return undefined;
+  if (callee.property.name === "catch") return 0;
+  return callee.property.name === "then" ? 1 : undefined;
 }
 
-/** Disallow unknown inputs except explicitly named error-cause enrichment. */
+/** Return whether a parameter receives a promise rejection reason, which has no earlier boundary to parse it at. */
+function isRejectionReason(owner: ParameterOwner, parameterIndex: number): boolean {
+  if (parameterIndex !== 0) return false;
+  if (owner.type !== "ArrowFunctionExpression" && owner.type !== "FunctionExpression") return false;
+  const call = owner.parent;
+  if (call.type !== "CallExpression") return false;
+  const index = rejectionHandlerIndex(call.callee);
+  return index !== undefined && call.arguments[index] === owner;
+}
+
+/** Disallow unknown inputs except error causes, promise rejection reasons, and type-predicate subjects. */
 export const noUnknownParametersRule = defineRule({
   meta: {
     type: "problem",
     docs: {
       description:
-        "Disallow explicitly unknown function parameters except `cause`; decode unknown input at its I/O boundary instead.",
+        "Disallow explicitly unknown function parameters, including unknown members of object parameters, except `cause`, promise rejection reasons, and type-predicate subjects; decode unknown input at its I/O boundary instead.",
     },
     messages: {
       unknownParameter:
-        "Parameter `{{parameter}}` accepts `unknown` without establishing its contract. Define the expected schema or parser so the value becomes a strongly typed domain type at the earliest possible point, as close as possible to the I/O boundary where the data originated.",
+        "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type; parse at the I/O boundary with the project's schema library (add Zod if there is none) before calling this function.",
     },
   },
-  create(context) {
+  createOnce(context) {
     const checkParameters = (node: ParameterOwner) => {
-      for (const parameter of node.params) {
-        const annotation = parameterAnnotation(parameter);
-        if (annotation?.typeAnnotation.type !== "TSUnknownKeyword") continue;
-        const name = parameterName(parameter, context.sourceCode.getText(parameter));
-        if (name === "cause") continue;
+      for (const [index, parameter] of node.params.entries()) {
+        const annotation = functionParameterTypeAnnotation(parameter);
+        if (annotation === null || annotation === undefined) continue;
+        if (isRejectionReason(node, index)) continue;
+        const type = annotation.typeAnnotation;
+        if (!containsUnknownType(type) && !wrapsUnknownType(type)) continue;
+        const name = functionParameterBindingName(parameter, context.sourceCode);
+        if (name === "cause" || isTypePredicateSubject(node, name)) continue;
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",

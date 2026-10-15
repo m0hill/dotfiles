@@ -6,11 +6,52 @@ import {
 	createTypeEnvironment,
 	type TypeEnvironment,
 } from "../shared/dictionary-types.ts";
+import { visibleTypeAlias } from "../shared/type-alias-resolution.ts";
 
 import type { ESTree } from "@oxlint/plugins";
 
+const typeNodeKinds: ReadonlySet<string> = new Set([
+	"JSDocNonNullableType",
+	"JSDocNullableType",
+	"JSDocUnknownType",
+	"TSAnyKeyword",
+	"TSArrayType",
+	"TSBigIntKeyword",
+	"TSBooleanKeyword",
+	"TSConditionalType",
+	"TSConstructorType",
+	"TSFunctionType",
+	"TSImportType",
+	"TSIndexedAccessType",
+	"TSInferType",
+	"TSIntersectionType",
+	"TSIntrinsicKeyword",
+	"TSLiteralType",
+	"TSMappedType",
+	"TSNamedTupleMember",
+	"TSNeverKeyword",
+	"TSNullKeyword",
+	"TSNumberKeyword",
+	"TSObjectKeyword",
+	"TSParenthesizedType",
+	"TSStringKeyword",
+	"TSSymbolKeyword",
+	"TSTemplateLiteralType",
+	"TSThisType",
+	"TSTupleType",
+	"TSTypeLiteral",
+	"TSTypeOperator",
+	"TSTypePredicate",
+	"TSTypeQuery",
+	"TSTypeReference",
+	"TSUndefinedKeyword",
+	"TSUnionType",
+	"TSUnknownKeyword",
+	"TSVoidKeyword",
+]);
+
 function isTypeNode(node: ESTree.Node): node is ESTree.TSType {
-	return node.type.startsWith("TS") && node.type !== "TSTypeAnnotation";
+	return typeNodeKinds.has(node.type);
 }
 
 function typeReferenceName(type: ESTree.TSTypeReference): string | null {
@@ -27,16 +68,33 @@ function isInsideTypeAliasDeclaration(node: ESTree.Node): boolean {
 }
 
 function isPlainAliasConsumerUse(node: ESTree.TSType, environment: TypeEnvironment): boolean {
-	if (node.type !== "TSTypeReference" || node.typeArguments?.params.length) return false;
+	if (node.type !== "TSTypeReference") return false;
+	if (node.typeArguments !== null && node.typeArguments.params.length > 0) return false;
 	const name = typeReferenceName(node);
-	return name !== null && environment.aliases.has(name) && !isInsideTypeAliasDeclaration(node);
+	return (
+		name !== null &&
+		visibleTypeAlias(name, node, environment.typeAliases) !== null &&
+		!isInsideTypeAliasDeclaration(node)
+	);
+}
+
+function isInsideTypeParameterConstraint(node: ESTree.TSType): boolean {
+	let child: ESTree.Node = node;
+	let parent: ESTree.Node = child.parent;
+	while (parent.type !== "Program") {
+		if (parent.type === "TSTypeParameter" && parent.constraint === child) return true;
+		child = parent;
+		parent = child.parent;
+	}
+	return false;
 }
 
 function shouldReportType(node: ESTree.TSType, environment: TypeEnvironment): boolean {
+	if (isInsideTypeParameterConstraint(node)) return false;
 	if (isPlainAliasConsumerUse(node, environment)) return false;
 	if (classifyUnsafeDictionary(node, environment) === null) return false;
-	let current: ESTree.Node | null = node.parent;
-	while (current !== null && current.type !== "Program") {
+	let current: ESTree.Node = node.parent;
+	while (current.type !== "Program") {
 		if (isTypeNode(current) && classifyUnsafeDictionary(current, environment) !== null)
 			return false;
 		current = current.parent;
@@ -54,7 +112,7 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 		},
 		messages: {
 			unsafeDictionary:
-				"This object dictionary's direct value type is an unsafe {{value}} escape hatch. Replace it with a concrete owner/schema-derived value type and parse external data at its boundary.",
+				"This dictionary's {{value}} value type gives callers no concrete value contract. Use an owner/schema-derived value type; parse external payloads before insertion.",
 		},
 	},
 	createOnce(context) {
@@ -71,7 +129,10 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 
 		return {
 			Program(node) {
-				environment = createTypeEnvironment(node);
+				environment = createTypeEnvironment(
+					node,
+					context.sourceCode.visitorKeys,
+				);
 			},
 			TSTypeReference: reportIfUnsafe,
 			TSTypeLiteral: reportIfUnsafe,
@@ -79,7 +140,6 @@ export const noUnsafeDictionaryTypeRule = defineRule({
 			TSIndexSignature(node) {
 				if (
 					environment === null ||
-					node.typeAnnotation === null ||
 					node.parent.type === "TSTypeLiteral"
 				)
 					return;

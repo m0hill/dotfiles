@@ -1,0 +1,96 @@
+{
+  "options": {
+    "typeAware": true
+  },
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "../index.ts"
+    }
+  ],
+  "rules": {
+    "oxc/no-accumulating-spread": "error",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "name": [
+              "describe",
+              "it",
+              "suite",
+              "test"
+            ],
+            "package": "node:test"
+          }
+        ]
+      }
+    ],
+    "typescript/no-misused-promises": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/strict-boolean-expressions": [
+      "error",
+      {
+        "allowNullableBoolean": true
+      }
+    ],
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      {
+        "allowDefaultCaseForExhaustiveSwitch": false,
+        "requireDefaultForNonUnion": true
+      }
+    ],
+    "typescript/use-unknown-in-catch-callback-variable": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs"
+      ],
+      "rules": {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off",
+        "typescript/strict-boolean-expressions": "off"
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "jsPlugins": [
+    {
+      "name": "anti-slop-gleam",
+      "specifier": "../gleam/index.ts"
+    }
+  ],
+  "rules": {
+    "oxc/no-accumulating-spread": "off",
+    "anti-slop/no-reduce-accumulator-copy": "off",
+    "anti-slop-gleam/no-ambient-capabilities": "error",
+    "anti-slop-gleam/no-classes": "error",
+    "anti-slop-gleam/no-enums": "error",
+    "anti-slop-gleam/no-loops": "error",
+    "anti-slop-gleam/no-mutable-bindings": "error",
+    "anti-slop-gleam/no-null": "error",
+    "anti-slop-gleam/no-shared-mutation": "error",
+    "anti-slop-gleam/no-throw": "error",
+    "anti-slop-gleam/no-try-catch": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.*",
+        "**/*.spec.*"
+      ],
+      "rules": {
+        "anti-slop-gleam/no-ambient-capabilities": "off",
+        "anti-slop-gleam/no-loops": "off",
+        "anti-slop-gleam/no-mutable-bindings": "off",
+        "anti-slop-gleam/no-null": "off",
+        "anti-slop-gleam/no-throw": "off",
+        "anti-slop-gleam/no-try-catch": "off"
+      }
+    }
+  ]
+}
