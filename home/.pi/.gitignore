@@ -3,3 +3,5 @@ node_modules/
 settings.json
 trust.json
 models-store.json
+agent/surfaces/*
+!agent/surfaces/tsconfig.json

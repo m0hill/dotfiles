@@ -10,8 +10,14 @@ import { Text } from "@earendil-works/pi-tui"
 import { stat } from "node:fs/promises"
 import { isAbsolute, resolve } from "node:path"
 import { type Static, Type } from "typebox"
-import { BackgroundJobs, type JobSnapshot } from "./manager.ts"
+import {
+  type BackgroundJobs,
+  createBackgroundJobs,
+  describeJobError,
+  type JobSnapshot,
+} from "./manager.ts"
 import { sanitizeTerminalText } from "./output.ts"
+import { now, withTimeout } from "./timers.ffi.ts"
 
 const STATUS_KEY = "background-terminal"
 const COMPLETION_MESSAGE_TYPE = "background-terminal-complete"
@@ -62,7 +68,7 @@ function formatDuration(job: JobSnapshot): string {
 }
 
 function formatSummary(job: JobSnapshot): string {
-  const exit = job.exitCode === undefined ? "" : ` · exit ${job.exitCode ?? "signal"}`
+  const exit = job.exitCode === undefined ? "" : ` · exit ${job.exitCode}`
   return `${job.id} · ${job.state}${exit} · ${formatDuration(job)} · ${safeLabel(job.command)}`
 }
 
@@ -147,7 +153,7 @@ async function runHumanCommand(
     ctx.ui.notify(
       found._tag === "ok"
         ? formatStatus(found.value, COMMAND_OUTPUT_BYTES, COMMAND_OUTPUT_LINES)
-        : found.error.message,
+        : describeJobError(found.error),
       found._tag === "ok" ? "info" : "error"
     )
     return
@@ -186,7 +192,7 @@ async function runHumanCommand(
 
     const stopped = await jobs.stop(id)
     ctx.ui.notify(
-      stopped._tag === "ok" ? formatSummary(stopped.value) : stopped.error.message,
+      stopped._tag === "ok" ? formatSummary(stopped.value) : describeJobError(stopped.error),
       stopped._tag === "ok" ? "info" : "error"
     )
     return
@@ -199,7 +205,7 @@ async function runHumanCommand(
 export default function backgroundTerminalExtension(pi: ExtensionAPI): void {
   let currentContext: ExtensionContext | undefined
 
-  const jobs = new BackgroundJobs(createLocalBashOperations(), (job) => {
+  const onSettled = (job: JobSnapshot) => {
     if (currentContext?.hasUI) {
       const running = jobs.runningCount()
       currentContext.ui.setStatus(STATUS_KEY, running > 0 ? `bg: ${running} running` : undefined)
@@ -213,6 +219,12 @@ export default function backgroundTerminalExtension(pi: ExtensionAPI): void {
       },
       { deliverAs: "followUp", triggerTurn: true }
     )
+  }
+  const jobs = createBackgroundJobs({
+    operations: createLocalBashOperations(),
+    now,
+    withTimeout,
+    onSettled,
   })
 
   const updateStatus = () => {
@@ -270,7 +282,7 @@ export default function backgroundTerminalExtension(pi: ExtensionAPI): void {
               text:
                 found._tag === "ok"
                   ? formatStatus(found.value, MODEL_OUTPUT_BYTES, MODEL_OUTPUT_LINES)
-                  : found.error.message,
+                  : describeJobError(found.error),
             },
           ],
           details: { action, id: params.id, found: found._tag === "ok" },
@@ -290,7 +302,10 @@ export default function backgroundTerminalExtension(pi: ExtensionAPI): void {
           content: [
             {
               type: "text",
-              text: stopped._tag === "ok" ? formatSummary(stopped.value) : stopped.error.message,
+              text:
+                stopped._tag === "ok"
+                  ? formatSummary(stopped.value)
+                  : describeJobError(stopped.error),
             },
           ],
           details: { action, id: params.id, stopped: stopped._tag === "ok" },
@@ -322,7 +337,7 @@ export default function backgroundTerminalExtension(pi: ExtensionAPI): void {
             text:
               started._tag === "ok"
                 ? `Started ${started.value.id}: ${safeLabel(command)}\nContinue useful work; completion will arrive automatically.`
-                : started.error.message,
+                : describeJobError(started.error),
           },
         ],
         details: {
