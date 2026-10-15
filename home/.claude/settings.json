@@ -1,4 +1,9 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "allow": [
       "Bash(threadctl *)"
@@ -48,7 +53,8 @@
   "disableRemoteControl": true,
   "disableWorkflows": true,
   "enabledPlugins": {
-    "paper-desktop@paper": true
+    "paper-desktop@paper": true,
+    "notion@anthropic-plugin-directory": false
   },
   "extraKnownMarketplaces": {
     "paper": {
@@ -64,5 +70,6 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "autoCompactEnabled": false,
+  "switchModelsOnFlag": true,
   "disableArtifacts": true
 }
