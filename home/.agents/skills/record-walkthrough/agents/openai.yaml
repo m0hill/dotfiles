@@ -1,0 +1,3 @@
+interface:
+  display_name: "Record Walkthrough"
+  short_description: "Record browser walkthroughs with Agent Browser"
