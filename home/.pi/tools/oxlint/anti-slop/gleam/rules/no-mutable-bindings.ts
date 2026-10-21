@@ -3,7 +3,7 @@ import { defineRule } from "@oxlint/plugins";
 import { resolveVariable } from "../../shared/scope.ts";
 import { isBoundaryFile } from "../shared/boundary.ts";
 
-import type { ESTree, Variable } from "@oxlint/plugins";
+import type { ESTree, Scope, Variable } from "@oxlint/plugins";
 
 function isBindingTarget(node: ESTree.Node): boolean {
 	return node.type === "Identifier" || node.type === "ArrayPattern" || node.type === "ObjectPattern";
@@ -19,6 +19,9 @@ function isCapturedState(variable: Variable): boolean {
 	return writes.length > 0 && writes.every((reference) => reference.from.variableScope !== home);
 }
 
+/** A group of long-lived `let` or `var` bindings declared in one function or module scope. */
+type StateGroup = { node: ESTree.Node; names: string[] };
+
 /** Keep every binding immutable so each name has exactly one value. */
 export const noMutableBindingsRule = defineRule({
 	meta: {
@@ -32,17 +35,28 @@ export const noMutableBindingsRule = defineRule({
 			reassignment:
 				"Do not reassign bindings. Bind the new value to a new `const` with a descriptive name.",
 			capturedState:
-				"`{{name}}` is long-lived state that callbacks change. Keep all such state in one `const state = { ... }` object owned by the function that sets it up, and change it only through that object.",
+				"Long-lived state that callbacks change: `{{names}}`. Keep all such state in one `const state = { ... }` object owned by the function that sets it up, and change it only through that object.",
 		},
 	},
 	create(context) {
 		if (isBoundaryFile(context.filename)) return {};
 
 		const sourceCode = context.sourceCode;
+		// One report per scope: the fix for all of a scope's state is one `state` object.
+		const groups = new Map<Scope, StateGroup>();
+		const isCapturedDeclarator = (declarator: ESTree.Node) => {
+			const variables = sourceCode.getDeclaredVariables(declarator);
+			return variables.length > 0 && variables.every(isCapturedState);
+		};
+		// Writes to a grouped binding are covered by the group report.
+		const isGrouped = (variable: Variable) =>
+			variable.defs.every((definition) => definition.type === "Variable" && isCapturedDeclarator(definition.node));
 
 		const reportAssignment = (node: ESTree.Node, variable: Variable | null) => {
 			if (variable !== null && isCapturedState(variable)) {
-				context.report({ node, messageId: "capturedState", data: { name: variable.name } });
+				if (!isGrouped(variable)) {
+					context.report({ node, messageId: "capturedState", data: { names: variable.name } });
+				}
 				return;
 			}
 			context.report({ node, messageId: "reassignment" });
@@ -52,14 +66,21 @@ export const noMutableBindingsRule = defineRule({
 			VariableDeclaration(node) {
 				if (node.kind !== "let" && node.kind !== "var") return;
 				for (const declarator of node.declarations) {
-					const variables = sourceCode.getDeclaredVariables(declarator);
-					const captured = variables.length > 0 && variables.every(isCapturedState);
-					if (captured) {
-						const name = variables.map((variable) => variable.name).join("`, `");
-						context.report({ node: declarator, messageId: "capturedState", data: { name } });
-					} else {
+					const [first] = sourceCode.getDeclaredVariables(declarator);
+					if (first === undefined || !isCapturedDeclarator(declarator)) {
 						context.report({ node: declarator, messageId: "mutableDeclaration", data: { kind: node.kind } });
+						continue;
 					}
+					const home = first.scope.variableScope;
+					const names = sourceCode.getDeclaredVariables(declarator).map((variable) => variable.name);
+					const group = groups.get(home);
+					if (group === undefined) groups.set(home, { node: declarator, names });
+					else group.names.push(...names);
+				}
+			},
+			"Program:exit"() {
+				for (const group of groups.values()) {
+					context.report({ node: group.node, messageId: "capturedState", data: { names: group.names.join("`, `") } });
 				}
 			},
 			AssignmentExpression(node) {
