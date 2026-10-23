@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "source": "main",
+  "remote": "origin",
+  "env_files": [
+    "apps/web/.env.local",
+    "apps/backend/.env",
+    "legacy/ai-service/.env"
+  ],
+  "steps": [
+    {
+      "cwd": "apps/web",
+      "seed_dirs": ["node_modules"],
+      "command": ["mise", "exec", "--", "corepack", "pnpm", "install", "--frozen-lockfile"]
+    },
+    {
+      "cwd": "apps/backend",
+      "seed_dirs": [],
+      "command": ["uv", "sync", "--locked", "--python", "3.11", "--group", "dev", "--no-install-project"]
+    },
+    {
+      "cwd": "legacy/ai-service",
+      "seed_dirs": [],
+      "command": ["uv", "sync", "--locked", "--python", "3.11", "--group", "dev", "--no-install-project"]
+    },
+    {
+      "cwd": ".",
+      "seed_dirs": [],
+      "command": ["sh", "scripts/install-hooks.sh"]
+    }
+  ]
+}
