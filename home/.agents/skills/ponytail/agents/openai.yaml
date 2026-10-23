@@ -1,0 +1,7 @@
+interface:
+  display_name: "Ponytail"
+  short_description: "Solve the whole task with the smallest clear change"
+  default_prompt: "Use $ponytail to solve this task with the smallest complete change, reusing existing code and preserving necessary checks."
+
+policy:
+  allow_implicit_invocation: false

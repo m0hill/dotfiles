@@ -1,21 +1,25 @@
 ---
 name: herdr
-description: "Control Herdr, a terminal multiplexer for coding agents. Use only when the user explicitly mentions Herdr or asks to use Herdr to inspect or control panes, tabs, workspaces, terminals, commands, or communication with another agent. Do not use merely because a task could benefit from a background terminal, delegation, or parallel work. Requires HERDR_ENV=1."
+description: "Control Herdr, a terminal multiplexer for coding agents. Use when the user explicitly requests Herdr workspaces, panes, commands, or agent coordination, including control from a GUI agent through an explicitly selected session."
 ---
 
 # Herdr
 
 Herdr is a terminal multiplexer and runtime for coding agents. It organizes terminals into workspaces, tabs, and panes, detects agent identity and status, and exposes the running session through the `herdr` CLI.
 
-Before issuing any control command, check that this agent is running inside a Herdr-managed pane:
+Agents may control Herdr from a GUI or terminal. Inside a Herdr-managed pane,
+use the injected caller context:
 
 ```bash
 test "${HERDR_ENV:-}" = 1
 ```
 
-If the check fails, say that you are not running inside Herdr and stop. Do not inspect or control the focused Herdr session from outside Herdr.
-
-When the check passes, the `herdr` binary in `PATH` talks to the running session. Use it to inspect neighboring work, create isolated terminal contexts, start agents and commands, read their output, and wait for state changes.
+Outside Herdr, discover existing sessions with `herdr session list --json`, select
+the intended session, and pass `--session <name>` on every command. Use explicit
+workspace, tab, and pane IDs; focused-pane defaults and `--current` do not identify
+a GUI caller. Operate only on resources the task authorizes. For the Caretomo
+development stack, use `dev` from the worktrees skill instead of sending ad hoc
+service commands into panes.
 
 ## Learn the current CLI
 
