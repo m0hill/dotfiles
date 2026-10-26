@@ -65,6 +65,39 @@ Startup failures retain ownership and successful processes for inspection. Use
 prove a complete application workflow works. Manage services through this launcher
 instead of starting additional unmanaged servers or workers.
 
+## AWS access
+
+Local Caretomo commands and services use **`sind-dev`** in `ap-northeast-1`.
+The outer `mise.toml` sets the profile/region and clears exported temporary keys;
+`dev` also sets the profile for its application processes, including GUI launches.
+Credentials stay in the user's shared AWS SSO cache, outside checkouts.
+
+For agent commands, use `aws --profile sind-dev <service> ...`. For SDK-based
+commands from a GUI or noninteractive shell, run `mise exec -- <command>` from the
+selected checkout; merely changing directory does not configure an existing GUI
+process. Activated terminal shells pick up mise's directory environment.
+
+Before AWS-dependent testing, verify the login with:
+
+```bash
+mise exec -- aws --profile sind-dev sts get-caller-identity
+```
+
+If authentication has expired, ask the user to run this from any terminal:
+
+```bash
+aws sso login --profile sind-dev
+```
+
+Then retry with `sind-dev`. Supported SDK providers refresh temporary credentials
+while the SSO session remains valid; the user must log in again when that session
+expires. Keep `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN`
+out of application env files. Honcho reloads `.env`, so the launcher reports
+nonempty static keys or a conflicting/empty `AWS_PROFILE` there rather than letting
+them override SSO. Other AWS profiles remain available for separately authorized
+work; local Caretomo testing uses only `sind-dev`. Authentication does not grant
+permissions or enable a provider that the application disables in development.
+
 ## Browser verification: URLs and seeded accounts
 
 Before opening the app or making test requests, successfully reserve the stack,

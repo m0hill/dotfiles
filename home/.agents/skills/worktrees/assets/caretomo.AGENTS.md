@@ -29,3 +29,7 @@ Before browser verification, read the runtime reference's **Browser verification
 section for local hospital URLs, role-specific seeded login IDs/password, session
 switching, and missing-fixture handling. Use those local accounts directly;
 reserve the stack and confirm the active checkout before testing.
+
+Local AWS access uses `sind-dev`; read the runtime reference's **AWS access**
+section for shared SSO login and GUI command setup. Run SDK commands with
+`mise exec --` and AWS CLI commands with `--profile sind-dev`.

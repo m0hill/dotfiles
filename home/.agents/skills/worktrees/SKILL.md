@@ -67,6 +67,10 @@ switching. Use the documented local fixtures directly rather than asking the use
 for credentials. Reserve before browser/API testing and verify the active checkout;
 an empty migrated database still needs fixtures.
 
+For AWS-dependent local work, use `sind-dev` and read the runtime reference's
+**AWS access** section. SDK commands use `mise exec --`; AWS CLI commands name
+`--profile sind-dev`. Reuse the shared SSO login instead of copying temporary keys.
+
 ## Migrate or configure another repository
 
 Read [`references/layout.md`](references/layout.md) before migrating a clone or

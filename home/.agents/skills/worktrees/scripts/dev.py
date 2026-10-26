@@ -324,6 +324,20 @@ def environment(
     for key in ("VIRTUAL_ENV", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "PORT"):
         result.pop(key, None)
     result.update(values)
+    # Honcho reloads .env, so stale file credentials must be removed at source.
+    aws_keys = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+    if any(values.get(key) for key in aws_keys) or values.get("AWS_PROFILE") not in (
+        None,
+        "sind-dev",
+    ):
+        raise WorktreeError(
+            f"Remove static AWS keys or a conflicting AWS_PROFILE from {env_path}; local services use sind-dev SSO"
+        )
+    for key in aws_keys:
+        result.pop(key, None)
+    result["AWS_PROFILE"] = "sind-dev"
+    result["AWS_REGION"] = "ap-northeast-1"
+    result["AWS_DEFAULT_REGION"] = "ap-northeast-1"
     result["APP_ENVIRONMENT"] = "development"
     result["PYTHONUNBUFFERED"] = "1"
     if directory == "apps/backend":

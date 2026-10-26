@@ -198,6 +198,49 @@ class DevIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(WorktreeError, "database is not initialized"):
             dev.environment(self.root, self.root / "500", "django", "wrong_database")
 
+    def test_sso_profile_survives_inherited_keys_and_honcho_loading(self) -> None:
+        backend = self.root / "500/apps/backend"
+        backend.mkdir(parents=True)
+        selected = dev.database_name(self.settings, "500")
+        (backend / ".env").write_text(
+            f"APP_PG_DB={selected}\nAWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\nAWS_SESSION_TOKEN=\n"
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "AWS_PROFILE": "other-account",
+                "AWS_ACCESS_KEY_ID": "synthetic-stale-key",
+                "AWS_SECRET_ACCESS_KEY": "synthetic-stale-secret",
+                "AWS_SESSION_TOKEN": "synthetic-stale-token",
+            },
+        ):
+            environment = dev.environment(
+                self.root, self.root / "500", "django", selected
+            )
+        output = subprocess.check_output(
+            [
+                str(Path(sys.executable).parent / "honcho"),
+                "run",
+                sys.executable,
+                "-c",
+                "import json, os; print(json.dumps({'profile': os.environ.get('AWS_PROFILE'), 'has_keys': any(os.environ.get(k) for k in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))}))",
+            ],
+            cwd=backend,
+            env=environment,
+            text=True,
+        )
+        self.assertEqual(json.loads(output), {"profile": "sind-dev", "has_keys": False})
+        for setting in (
+            "AWS_ACCESS_KEY_ID=synthetic-key",
+            "AWS_PROFILE=other-account",
+            "AWS_PROFILE=",
+        ):
+            (backend / ".env").write_text(f"APP_PG_DB={selected}\n{setting}\n")
+            with self.assertRaisesRegex(
+                WorktreeError, "local services use sind-dev SSO"
+            ):
+                dev.environment(self.root, self.root / "500", "django", selected)
+
     def test_service_wrapper_stops_its_child_and_removes_ownership_record(self) -> None:
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
