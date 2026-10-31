@@ -3,16 +3,14 @@
 # requires-python = ">=3.11"
 # dependencies = ["python-dotenv==1.2.2"]
 # ///
-"""One active Caretomo development stack, displayed in owned Herdr panes."""
+"""One active Caretomo development stack, displayed in owned Rex panes."""
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import signal
@@ -20,11 +18,12 @@ import socket
 import subprocess
 import sys
 import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from dotenv import dotenv_values, set_key
 
 import coordination
-
 from worktrees import (
     WorktreeError,
     checkout,
@@ -110,16 +109,16 @@ def database_name(settings: Config, name: str) -> str:
     return f"caretomo_{slug}_{hashlib.sha256(name.encode()).hexdigest()[:6]}"
 
 
-def herdr(settings: Config, *args: str) -> dict[str, object]:
-    output = run(
-        ["herdr", "--session", settings.session, *args], Path.cwd(), capture=True
-    )
-    if not output:
-        return {}
-    response = mapping(json.loads(output))
-    if response.get("error") is not None:
-        raise WorktreeError(string(mapping(response["error"]).get("message")))
-    return mapping(response.get("result"))
+def rex(*args: str) -> dict[str, object]:
+    output = run(["rex", "--autostart=false", *args], Path.cwd(), capture=True)
+    return mapping(json.loads(output)) if output else {}
+
+
+def first_block(result: dict[str, object]) -> str:
+    blocks = result.get("block_ids")
+    if not isinstance(blocks, list) or not blocks:
+        raise WorktreeError("Rex did not return a terminal block")
+    return string(blocks[0])
 
 
 def state_file(root: Path) -> Path:
@@ -148,63 +147,57 @@ def save(root: Path, runtime: Runtime) -> None:
 def ensure_workspace(root: Path, settings: Config) -> Runtime:
     if state_file(root).exists():
         runtime = load_runtime(root)
-        herdr(settings, "workspace", "get", runtime.workspace)
+        rex("session", "inspect", runtime.workspace, "--json")
         return runtime
-    result = herdr(
-        settings,
-        "workspace",
-        "create",
-        "--cwd",
-        str(root),
-        "--label",
-        "Caretomo",
-        "--no-focus",
+    result = rex(
+        "new", settings.session, "--cwd", str(root), "--window", "App", "--json"
     )
-    pane = mapping(result.get("root_pane"))
+    windows = result.get("initial_windows")
+    if not isinstance(windows, list) or not windows:
+        raise WorktreeError("Rex did not return an initial window")
     runtime = Runtime(
-        string(pane.get("workspace_id")), {"django": string(pane.get("pane_id"))}, None
+        string(result.get("session_id")),
+        {"django": first_block(mapping(windows[0]))},
+        None,
     )
     save(root, runtime)
-    herdr(settings, "tab", "rename", string(pane.get("tab_id")), "App")
     return runtime
 
 
 def ensure_pane(root: Path, settings: Config, runtime: Runtime, service: str) -> str:
     if service not in runtime.panes:
         if service == "web":
-            result = herdr(
-                settings,
-                "pane",
+            result = rex(
                 "split",
-                runtime.panes["django"],
-                "--direction",
-                "right",
-                "--cwd",
-                str(root),
-                "--no-focus",
-            )
-            pane = mapping(result.get("pane"))
-        else:
-            result = herdr(
-                settings,
-                "tab",
-                "create",
-                "--workspace",
+                "-s",
                 runtime.workspace,
+                "-b",
+                runtime.panes["django"],
+                "--split=right",
                 "--cwd",
                 str(root),
-                "--label",
-                SERVICES[service].label,
-                "--no-focus",
+                "--focus=false",
+                "--json",
             )
-            pane = mapping(result.get("root_pane"))
-        runtime.panes[service] = string(pane.get("pane_id"))
+        else:
+            result = rex(
+                "window",
+                "new",
+                "-s",
+                runtime.workspace,
+                SERVICES[service].label,
+                "--cwd",
+                str(root),
+                "--focus=false",
+                "--json",
+            )
+        runtime.panes[service] = first_block(result)
         save(root, runtime)
     pane_id = runtime.panes[service]
-    pane = mapping(herdr(settings, "pane", "get", pane_id).get("pane"))
-    if pane.get("workspace_id") != runtime.workspace:
-        raise WorktreeError("Saved pane is outside the owned runtime workspace")
-    herdr(settings, "pane", "rename", pane_id, SERVICES[service].label)
+    pane = rex("block", "inspect", pane_id, "--json")
+    if pane.get("session_id") != runtime.workspace:
+        raise WorktreeError("Saved pane is outside the owned runtime session")
+    rex("block", "rename", "-s", runtime.workspace, pane_id, SERVICES[service].label)
     return pane_id
 
 
@@ -348,6 +341,10 @@ def environment(
         result["PHOENIX_PORT"] = "6007"
         result["PHOENIX_COLLECTOR_ENDPOINT"] = "http://localhost:6007"
         result["PHOENIX_WORKING_DIR"] = str(root / ".local" / "phoenix")
+    if service == "phoenix":
+        # Older app checkouts pin Python 3.10, whose SciPy wheel fails on recent macOS.
+        result["UV_PYTHON"] = "3.11"
+        result["UV_PROJECT_ENVIRONMENT"] = str(root / ".local" / "phoenix-venv")
     return result
 
 
@@ -419,7 +416,8 @@ def start_service(
     command = shlex.join(
         [str(Path.home() / ".local/bin/dev"), "-r", str(root), "_run", service, name]
     )
-    herdr(settings, "pane", "run", pane, command)
+    rex("send", "-s", runtime.workspace, "-b", pane, command)
+    rex("send-key", "-s", runtime.workspace, "-b", pane, "enter")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         if running(root, service) and (port is None or port_open(port)):
@@ -427,7 +425,7 @@ def start_service(
             return
         time.sleep(0.25)
     raise WorktreeError(
-        f"{service} did not become ready; inspect its Herdr pane or dev logs {service}"
+        f"{service} did not become ready; inspect its Rex pane or dev logs {service}"
     )
 
 
@@ -452,13 +450,7 @@ def up(root: Path, settings: Config, name: str) -> None:
     environment(root, target, "django", active.database)
     runtime.active = active
     save(root, runtime)
-    herdr(
-        settings,
-        "workspace",
-        "rename",
-        runtime.workspace,
-        f"Caretomo · {branch}",
-    )
+    rex("session", "rename", runtime.workspace, f"{settings.session} · {branch}")
     start_service(root, settings, runtime, "database", name)
     for service in [service for service in SERVICES if service != "database"]:
         start_service(root, settings, runtime, service, name)
@@ -468,7 +460,7 @@ def stop_service(root: Path, settings: Config, runtime: Runtime, service: str) -
     if not running(root, service):
         return
     pane = ensure_pane(root, settings, runtime, service)
-    herdr(settings, "pane", "send-keys", pane, "Ctrl+C")
+    rex("send-key", "-s", runtime.workspace, "-b", pane, "ctrl+c")
     deadline = time.monotonic() + 40
     while running(root, service) and time.monotonic() < deadline:
         time.sleep(0.2)
@@ -491,7 +483,7 @@ def down(root: Path, settings: Config, all_services: bool) -> None:
         run(["docker", "stop", settings.container], root)
     runtime.active = None
     save(root, runtime)
-    herdr(settings, "workspace", "rename", runtime.workspace, "Caretomo")
+    rex("session", "rename", runtime.workspace, settings.session)
 
 
 def serve(root: Path, settings: Config, service: str, name: str) -> int:
@@ -606,7 +598,7 @@ def main() -> int:
     commands.add_parser(
         "status", help="Show ownership, processes, ports, and pane IDs as JSON"
     )
-    command = commands.add_parser("logs", help="Read a service's Herdr terminal")
+    command = commands.add_parser("logs", help="Read a service's Rex terminal")
     command.add_argument("service", choices=[*SERVICES, "worker"])
     command.add_argument("--lines", type=int, default=60)
     command = commands.add_parser(
@@ -680,24 +672,24 @@ def main() -> int:
             pane = load_runtime(root).panes.get(service)
             if pane is None:
                 raise WorktreeError("That service has no pane yet")
-            print(
-                run(
-                    [
-                        "herdr",
-                        "--session",
-                        settings.session,
-                        "pane",
-                        "read",
-                        pane,
-                        "--source",
-                        "recent-unwrapped",
-                        "--lines",
-                        str(args.lines),
-                    ],
-                    root,
-                    capture=True,
-                )
+            runtime = load_runtime(root)
+            output = run(
+                [
+                    "rex",
+                    "--autostart=false",
+                    "capture",
+                    "-s",
+                    runtime.workspace,
+                    "-b",
+                    pane,
+                    "--trim",
+                    "--unwrap",
+                ],
+                root,
+                capture=True,
             )
+            print("\n".join(output.splitlines()[-max(1, args.lines) :]))
+
         else:
             actor = coordination.agent(
                 args.agent_id

@@ -1,6 +1,6 @@
 ---
 name: worktrees
-description: Create and bootstrap task worktrees, run Caretomo development services in Herdr, find local browser verification URLs and seeded logins, inspect checkout status, or migrate a local clone into a canonical .bare root.
+description: Create and bootstrap task worktrees, run Caretomo development services in Rex, find local browser verification URLs and seeded logins, inspect checkout status, or migrate a local clone into a canonical .bare root.
 ---
 
 # Task worktrees
@@ -54,7 +54,7 @@ or explicitly discarded. Keep `main` as the setup source.
 For Caretomo servers, workers, PostgreSQL, Storybook, or Phoenix, read
 [`references/runtime.md`](references/runtime.md) and use `dev`. GUI and terminal
 agents use the same launcher. `wt` prepares files; `dev` manages one active
-worktree's services in owned Herdr panes and assigns task databases explicitly.
+worktree's services in owned Rex panes and assigns task databases explicitly.
 Reserve the stack with your stable chat/session ID and a readable task name before
 using servers for testing. Another agent's reservation blocks changes; request
 access and continue independent work or use a bounded wait. Release after testing,

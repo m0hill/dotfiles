@@ -15,7 +15,7 @@ and application guides. Keep `main` available as the setup source. The outer
 `.worktrees.json` and `mise.toml` are personal configuration, outside tracked code.
 For servers, background workers, PostgreSQL, Storybook, or Phoenix, read the
 worktrees skill's `references/runtime.md` and use `dev`. It manages one active
-checkout in explicit Herdr panes, including from GUI agents. Before using servers
+checkout in explicit Rex panes, including from GUI agents. Before using servers
 for tests, reserve the stack with your stable chat/session ID and a readable task
 name. Once reserved, select your checkout with `dev up` or `dev switch`. If busy,
 request access and work independently or use a bounded wait; never interrupt

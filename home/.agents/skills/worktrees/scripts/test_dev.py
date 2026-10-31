@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 import os
-from pathlib import Path
 import signal
 import socket
 import subprocess
 import sys
 import time
 import unittest
+from dataclasses import asdict
+from pathlib import Path
 from unittest.mock import patch
 
-import dev
 import coordination
+import dev
 import test_worktrees
 from worktrees import WorktreeError
 
@@ -156,9 +156,11 @@ class DevIntegrationTests(unittest.TestCase):
         self.runtime.active = dev.Active("main", "main", "test_main")
         dev.save(self.root, self.runtime)
         before = dev.state_file(self.root).read_bytes()
-        with patch("dev.herdr", return_value={}):
-            with self.assertRaisesRegex(WorktreeError, "Stack belongs to main"):
-                dev.up(self.root, self.settings, "500")
+        with (
+            patch("dev.rex", return_value={}),
+            self.assertRaisesRegex(WorktreeError, "Stack belongs to main"),
+        ):
+            dev.up(self.root, self.settings, "500")
         self.assertEqual(dev.state_file(self.root).read_bytes(), before)
 
     def test_unmanaged_port_is_refused_without_claiming_the_stack(self) -> None:
@@ -169,12 +171,20 @@ class DevIntegrationTests(unittest.TestCase):
             spec = dev.Service("test", ".", (), port)
             with (
                 patch.dict(dev.SERVICES, {"django": spec}),
-                patch("dev.herdr", return_value={}),
+                patch("dev.rex", return_value={}),
+                self.assertRaisesRegex(WorktreeError, "already in use"),
             ):
-                with self.assertRaisesRegex(WorktreeError, "already in use"):
-                    dev.up(self.root, self.settings, "500")
+                dev.up(self.root, self.settings, "500")
             self.assertTrue(dev.port_open(port))
             self.assertIsNone(dev.load_runtime(self.root).active)
+
+    def test_service_pane_in_another_session_is_refused(self) -> None:
+        self.runtime.panes["web"] = "foreign-block"
+        with (
+            patch("dev.rex", return_value={"session_id": "another-session"}),
+            self.assertRaisesRegex(WorktreeError, "outside the owned runtime session"),
+        ):
+            dev.ensure_pane(self.root, self.settings, self.runtime, "web")
 
     def test_database_configuration_survives_honcho_environment_loading(self) -> None:
         backend = self.root / "500/apps/backend"
@@ -240,6 +250,19 @@ class DevIntegrationTests(unittest.TestCase):
                 WorktreeError, "local services use sind-dev SSO"
             ):
                 dev.environment(self.root, self.root / "500", "django", selected)
+
+    def test_phoenix_uses_a_separate_environment_from_the_application(self) -> None:
+        backend = self.root / "500/apps/backend"
+        backend.mkdir(parents=True)
+        selected = dev.database_name(self.settings, "500")
+        (backend / ".env").write_text(f"APP_PG_DB={selected}\n")
+        tool = dev.environment(self.root, self.root / "500", "phoenix", selected)
+        app = dev.environment(self.root, self.root / "500", "django", selected)
+        self.assertEqual(tool["UV_PYTHON"], "3.11")
+        self.assertEqual(
+            tool["UV_PROJECT_ENVIRONMENT"], str(self.root / ".local/phoenix-venv")
+        )
+        self.assertNotIn("UV_PROJECT_ENVIRONMENT", app)
 
     def test_service_wrapper_stops_its_child_and_removes_ownership_record(self) -> None:
         with socket.socket() as reservation:

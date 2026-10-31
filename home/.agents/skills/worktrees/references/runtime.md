@@ -153,10 +153,10 @@ services stopped, preserving any data needed. Follow the checkout README to upda
 the generated FastAPI `KIROKUN_DB_API_KEY` in its ignored env file. Keep existing
 populated databases intact when only browser access is missing.
 
-## Herdr layout
+## Rex layout
 
 ```text
-Caretomo · <branch>
+Caretomo Services · <branch>
   App         [ just dev-all: Django + worker | pnpm dev: Next.js ]
   Database    PostgreSQL container logs, host port, and database name
   FastAPI     make dev
@@ -165,17 +165,20 @@ Caretomo · <branch>
 ```
 
 All services start on every `up`/`switch`; tabs and panes are reused on switching.
-The stopped workspace is named `Caretomo`. Its sidebar position is user-managed.
-Every command targets the configured Herdr session and saved
+Open Rex before starting services. Phoenix uses a separate local Python 3.11
+environment under `.local/phoenix-venv`, resolved from the selected checkout's
+lockfile, so older applications can retain their own Python pin.
+The stopped session is named `Caretomo Services`. Its sidebar position is user-managed.
+Every command targets the owned Rex session and saved
 resource IDs; it does not use focus or sidebar order. The launcher creates no
-agent panes and leaves existing user workspaces alone. Its panes remain inspectable
+agent panes and leaves existing user sessions alone. Its panes remain inspectable
 after commands exit. The database tab follows Docker logs; closing that pane does
 not stop the container. `status` reports container state separately from its log
 process. Use `down --all` for a complete shutdown.
 
 ## Databases and configuration
 
-The root-local `.dev.json` names the Herdr session, existing PostgreSQL container,
+The root-local `.dev.json` names the Rex services session, existing PostgreSQL container,
 host port, database user, and main database. Caretomo currently reuses the seeded
 container rather than creating a second one. Consult this file for the actual
 port; it need not be 5432. Credentials remain in ignored application env files.
@@ -190,7 +193,7 @@ Initialization applies migrations but never runs the destructive seed command or
 copies another branch's job queue. Populate development fixtures separately when
 needed. Database volumes and task databases survive `down` and worktree removal.
 
-Root-local `.local/runtime.json` records the owned workspace, panes, and active
+Root-local `.local/runtime.json` records the owned Rex session, panes, and active
 checkout. `.local/services/` records live launcher processes with process start
 times. These are local runtime state, not project files. Do not edit or delete
 ownership records while the stack is running. Stop services before removing a
