@@ -18,8 +18,7 @@ dotfiles/
     │   ├── atuin/      # Shell history
     │   ├── mise/       # Runtime versions
     │   └── ...
-    └── Library/Application Support/com.mitchellh.ghostty/
-        └── config
+    └── Library/       # macOS application configuration
 ```
 
 ## Build/Test Commands
@@ -30,11 +29,9 @@ dotfiles/
 # Preview what stow will do (NO changes made)
 cd ~/dotfiles
 stow -n -v -t ~ home config                    # Preview home/config
-stow -n -v -t ~/Library/Application\ Support/com.mitchellh.ghostty ghostty
 
 # Apply changes
 stow -v -t ~ --restow home config              # Restow packages
-stow -v -t ~/Library/Application\ Support/com.mitchellh.ghostty --restow ghostty
 ```
 
 ### Single Package Testing
@@ -102,13 +99,11 @@ stow -n -v -t ~ config    # Test
 stow -v -t ~ config       # Apply
 ```
 
-### Non-standard location (like Ghostty)
+### macOS application configuration
 
-```bash
-mkdir toolname
-mv ~/Library/Application\ Support/com.vendor.toolname/config toolname/
-stow -v -t ~/Library/Application\ Support/com.vendor.toolname toolname
-```
+Prefer an application's native settings. If a file-based configuration is needed,
+place it under `config/Library/` at its normal relative path and dry-run the
+`config` package before applying Stow.
 
 ### Home directory dotfile
 
@@ -152,7 +147,7 @@ find ~ -type l ! -exec test -e {} \; -delete # Remove them
 
 ## Cross-Platform Notes
 
-- **macOS-specific**: Ghostty path, Homebrew locations
+- **macOS-specific**: Library configuration paths, Homebrew locations
 - **Tool guards**: Scripts must work even if tools missing
 - **Brewfile**: macOS-only (Homebrew); separate Linux setup if needed
 
