@@ -13,3 +13,5 @@ path=(
   $path
 )
 typeset -U path PATH
+# Homebrew exports FPATH; keep inherited completion paths from accumulating in nested shells.
+typeset -U fpath FPATH

@@ -17,6 +17,11 @@ alias gl='git log --graph --pretty="%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen
 
 ZSH_THEME=""
 
+# Keep completion setup local to this shell instead of exporting Oh My Zsh's
+# paths to children. Add Homebrew completions for non-login shells as well.
+typeset +x FPATH
+[[ -d /opt/homebrew/share/zsh/site-functions ]] && fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
+
 plugins=(
   zsh-completions
   zsh-autosuggestions
