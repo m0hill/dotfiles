@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rex Agent Threads"
+  short_description: "Run tasked Pi peers with deterministic message routing"
+  default_prompt: "Use $rex-agent-threads to start a tasked Pi peer."

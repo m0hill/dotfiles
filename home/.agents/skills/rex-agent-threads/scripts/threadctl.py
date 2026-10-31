@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create tasked Pi peer threads in Herdr panes and route messages between them."""
+"""Create tasked Pi peer threads in Rex panes and route messages between them."""
 
 from __future__ import annotations
 
@@ -14,14 +14,15 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, TypeAlias, cast
+from typing import TypeAlias, cast
 
 JsonObject: TypeAlias = dict[str, object]
 
 WORKSPACE_LABEL = "subagents"
-PANE_ID_PATTERN = re.compile(r"^w[0-9A-Za-z]+:p[0-9A-Za-z]+$")
+PANE_ID_PATTERN = re.compile(r"^block:[0-9a-f-]+$")
 RESPONSE_PERFORMATIVES = frozenset(
     {"agree", "refuse", "inform", "failure", "not-understood"}
 )
@@ -43,31 +44,39 @@ class ThreadControlError(Exception):
     """An expected CLI failure with an actionable message."""
 
 
-def herdr(*args: str) -> JsonObject:
-    executable = os.environ.get("HERDR_BIN", "herdr")
-    command = [executable, *args]
+class RexResourceNotFoundError(ThreadControlError):
+    pass
+
+
+def rex_output(*args: str) -> str:
+    executable = os.environ.get("REX_BIN", "rex")
+    command = [executable, "--autostart=false", *args]
     try:
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
     except OSError as exc:
         raise ThreadControlError(f"Could not run {executable}: {exc}") from exc
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
-        raise ThreadControlError(
-            f"Herdr command failed ({completed.returncode}): {shlex.join(command)}: {detail}"
+        error_type = (
+            RexResourceNotFoundError
+            if completed.returncode == 3
+            else ThreadControlError
         )
-    if not completed.stdout.strip():
+        raise error_type(f"Rex command failed: {shlex.join(command)}: {detail}")
+    return completed.stdout
+
+
+def rex(*args: str) -> JsonObject:
+    output = rex_output(*args)
+    if not output.strip():
         return {}
     try:
-        payload = json.loads(completed.stdout)
+        payload = json.loads(output)
     except json.JSONDecodeError as exc:
-        raise ThreadControlError(
-            f"Herdr returned invalid JSON for {shlex.join(command)}"
-        ) from exc
-    if isinstance(payload, dict):
-        for envelope in ("result", "data"):
-            if isinstance(payload.get(envelope), dict):
-                return cast(JsonObject, payload[envelope])
-    raise ThreadControlError("Herdr returned an unexpected response")
+        raise ThreadControlError("Rex returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ThreadControlError("Rex returned an unexpected response")
+    return payload
 
 
 def object_field(value: JsonObject, field: str) -> JsonObject:
@@ -94,16 +103,36 @@ def string_field(value: JsonObject, field: str) -> str:
 
 
 def require_environment() -> None:
-    if os.environ.get("HERDR_ENV") != "1":
-        raise ThreadControlError("This command must run inside a Herdr-managed pane")
+    if not os.environ.get("REX_BLOCK") or not os.environ.get("REX_SESSION"):
+        raise ThreadControlError("This command must run inside a Rex terminal")
 
 
 def current_pane() -> JsonObject:
-    return object_field(herdr("pane", "current", "--current"), "pane")
+    return get_pane(os.environ["REX_BLOCK"])
 
 
 def all_panes() -> list[JsonObject]:
-    return list_field(herdr("pane", "list"), "panes")
+    panes = []
+    for session in list_field(rex("ls", "--json"), "sessions"):
+        session_id = string_field(session, "session_id")
+        try:
+            view = rex("session", "inspect", session_id, "--json")
+        except RexResourceNotFoundError:
+            # Sessions can close between listing them and reading their layout.
+            continue
+        windows = list_field(view, "windows") if view.get("windows") is not None else []
+        for window in windows:
+            for layer in list_field(window, "layers"):
+                for block in list_field(layer, "blocks"):
+                    panes.append(
+                        {
+                            **block,
+                            "pane_id": string_field(block, "block_id"),
+                            "workspace_id": session_id,
+                            "tab_id": string_field(window, "window_id"),
+                        }
+                    )
+    return panes
 
 
 def valid_name(value: str) -> str:
@@ -114,8 +143,49 @@ def valid_name(value: str) -> str:
     return value
 
 
+def pane_location(pane_id: str) -> JsonObject:
+    matches = [pane for pane in all_panes() if pane.get("pane_id") == pane_id]
+    if not matches:
+        raise ThreadControlError(f"Rex pane {pane_id} no longer exists")
+    return matches[0]
+
+
 def get_pane(pane_id: str) -> JsonObject:
-    return object_field(herdr("pane", "get", pane_id), "pane")
+    block = pane_location(pane_id)
+    session_id = string_field(block, "workspace_id")
+    process = rex("block", "call", "-s", session_id, "-b", pane_id, "process")
+    records = list_field(
+        rex("block", "call", "-s", session_id, "-b", pane_id, "program_status"),
+        "records",
+    )
+    root = next((record for record in records if not record.get("id")), {})
+    foreground = process.get("foreground") or {}
+    if not isinstance(foreground, dict):
+        raise ThreadControlError("Rex returned invalid foreground process information")
+    identity = " ".join(
+        str(foreground.get(key, "")) for key in ("name", "script", "argv0")
+    )
+    identity += " " + str(root.get("app", ""))
+    agent = next(
+        (
+            kind
+            for kind in [*AGENTS, "codex"]
+            if re.search(rf"(?:^|[/ ._-]){kind}(?:$|[/ ._-])", identity)
+        ),
+        None,
+    )
+    if foreground.get("name") in SHELLS:
+        agent = None
+    return {
+        **block,
+        "pane_id": pane_id,
+        "workspace_id": session_id,
+        "tab_id": string_field(block, "tab_id"),
+        "cwd": foreground.get("cwd"),
+        "agent": agent,
+        "agent_status": root.get("state", "unknown") if agent else "unknown",
+        "status_updated_at": root.get("updated_at"),
+    }
 
 
 def resolve_peer(reference: str) -> JsonObject:
@@ -132,29 +202,21 @@ def resolve_peer(reference: str) -> JsonObject:
         raise ThreadControlError(
             f"Multiple panes are named {reference!r} ({ids}); use a pane ID instead"
         )
-    return matches[0]
+    return get_pane(string_field(matches[0], "pane_id"))
 
 
 def sender_address(pane: JsonObject) -> str:
-    label = pane.get("label")
-    if isinstance(label, str) and label:
-        return label
     return string_field(pane, "pane_id")
 
 
 def peer_workspace_id() -> str | None:
-    workspaces = list_field(herdr("workspace", "list"), "workspaces")
+    sessions = list_field(rex("ls", "--json"), "sessions")
     matches = [
-        workspace
-        for workspace in workspaces
-        if workspace.get("label") == WORKSPACE_LABEL
+        session for session in sessions if session.get("label") == WORKSPACE_LABEL
     ]
     if len(matches) > 1:
-        raise ThreadControlError(
-            f"Multiple workspaces are named {WORKSPACE_LABEL!r}; "
-            "close or rename the extras"
-        )
-    return string_field(matches[0], "workspace_id") if matches else None
+        raise ThreadControlError(f"Multiple Rex sessions are named {WORKSPACE_LABEL!r}")
+    return string_field(matches[0], "session_id") if matches else None
 
 
 @contextmanager
@@ -170,58 +232,56 @@ def workspace_creation_lock() -> Iterator[None]:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def created_pane(result: JsonObject, session_id: str) -> JsonObject:
+    blocks = result.get("block_ids")
+    if not isinstance(blocks, list) or not blocks or not isinstance(blocks[0], str):
+        raise ThreadControlError("Rex did not return a new block ID")
+    return {
+        "pane_id": blocks[0],
+        "workspace_id": session_id,
+        "tab_id": string_field(result, "window_id"),
+    }
+
+
 def create_peer_tab(name: str, cwd: Path) -> JsonObject:
-    """Create the peer's tab, atomically creating its workspace if needed."""
-    workspace_id = peer_workspace_id()
-    if workspace_id is None:
-        # Another parallel `start` may have observed the same absence. Re-check
-        # under an inter-process lock so exactly one caller creates the workspace.
-        with workspace_creation_lock():
-            workspace_id = peer_workspace_id()
-            if workspace_id is None:
-                created = herdr(
-                    "workspace",
-                    "create",
-                    "--cwd",
-                    str(cwd),
-                    "--label",
-                    WORKSPACE_LABEL,
-                    "--no-focus",
-                )
-                herdr(
-                    "tab",
-                    "rename",
-                    string_field(object_field(created, "tab"), "tab_id"),
-                    name,
-                )
-                return object_field(created, "root_pane")
-    created = herdr(
-        "tab",
-        "create",
-        "--workspace",
-        workspace_id,
-        "--cwd",
-        str(cwd),
-        "--label",
-        name,
-        "--no-focus",
-    )
-    return object_field(created, "root_pane")
+    with workspace_creation_lock():
+        session_id = peer_workspace_id()
+        if session_id is None:
+            created = rex(
+                "new", WORKSPACE_LABEL, "--cwd", str(cwd), "--window", name, "--json"
+            )
+            windows = list_field(created, "initial_windows")
+            if not windows:
+                raise ThreadControlError("Rex did not return an initial window")
+            return created_pane(windows[0], string_field(created, "session_id"))
+        created = rex(
+            "window",
+            "new",
+            "-s",
+            session_id,
+            name,
+            "--cwd",
+            str(cwd),
+            "--focus=false",
+            "--json",
+        )
+        return created_pane(created, session_id)
 
 
 def foreground_non_shell(pane_id: str) -> list[str]:
-    process_info = object_field(
-        herdr("pane", "process-info", "--pane", pane_id), "process_info"
-    )
-    processes = process_info.get("foreground_processes", [])
-    if not isinstance(processes, list):
-        raise ThreadControlError(f"Pane {pane_id} returned invalid process information")
-    return [
-        str(process.get("argv0") or process.get("name"))
-        for process in processes
-        if isinstance(process, dict)
-        and str(process.get("argv0") or process.get("name")) not in SHELLS
-    ]
+    session_id = string_field(pane_location(pane_id), "workspace_id")
+    info = rex("block", "call", "-s", session_id, "-b", pane_id, "process")
+    foreground = info.get("foreground")
+    if not isinstance(foreground, dict):
+        return ["unknown process"]
+    name = str(foreground.get("name", ""))
+    return [] if name in SHELLS else [name]
+
+
+def send_input(pane_id: str, text: str) -> None:
+    session_id = string_field(pane_location(pane_id), "workspace_id")
+    rex("send", "-s", session_id, "-b", pane_id, text)
+    rex("send-key", "-s", session_id, "-b", pane_id, "enter")
 
 
 def launch_command(agent: str, model: str | None, thinking: str | None) -> list[str]:
@@ -291,32 +351,21 @@ def ensure_idle_agent(
             )
         time.sleep(0.5)
 
-    if Path(str(pane.get("foreground_cwd") or pane.get("cwd") or cwd)).resolve() != cwd:
-        herdr("pane", "run", pane_id, f"cd {shlex.quote(str(cwd))}")
-    command = launch_command(agent_kind, model, thinking)
-    # Launch can fail transiently (e.g. the CLI self-updates and exits asking
-    # for a restart), so verify the agent is actually alive and retry once.
-    for _ in range(2):
-        herdr("pane", "run", pane_id, shlex.join(command))
-        try:
-            herdr(
-                "wait",
-                "agent-status",
-                pane_id,
-                "--status",
-                "idle",
-                "--timeout",
-                "30000",
-            )
-        except ThreadControlError:
-            pass
-        time.sleep(1.0)
+    if Path(str(pane.get("cwd") or cwd)).resolve() != cwd:
+        send_input(pane_id, f"cd {shlex.quote(str(cwd))}")
+    send_input(pane_id, shlex.join(launch_command(agent_kind, model, thinking)))
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
         pane = get_pane(pane_id)
-        if pane.get("agent") == agent_kind and foreground_non_shell(pane_id):
+        if pane.get("agent") == agent_kind and pane.get("agent_status") in {
+            "idle",
+            "done",
+        }:
             return pane
+        time.sleep(0.5)
     raise ThreadControlError(
-        f"Launched {agent_kind} in pane {pane_id} but it did not stay running; "
-        "read the pane to inspect its output"
+        f"Agent in {pane_id} did not report idle to Rex; inspect the pane. "
+        "Working/idle status reporting is required; no task was sent."
     )
 
 
@@ -369,34 +418,27 @@ def deliver(pane_id: str, message: str, *, queue: bool) -> None:
         raise ThreadControlError(
             f"Recipient pane {pane_id} is not running an agent; it cannot receive messages"
         )
-    # `pane run` is for shell commands; agents need typed text plus an explicit
-    # Enter, otherwise the message can sit unsubmitted in the input editor.
-    was_idle = status not in {"working", "blocked"}
-    for attempt in range(2):
-        herdr("pane", "send-text", pane_id, message)
-        time.sleep(0.5)
-        herdr("pane", "send-keys", pane_id, "enter")
-        if not was_idle:
+    if status not in {"idle", "done", "working", "blocked"}:
+        raise ThreadControlError(
+            f"Recipient status is {status}; inspect it before sending"
+        )
+    previous_update = pane.get("status_updated_at")
+    send_input(pane_id, message)
+    if status in {"working", "blocked"}:
+        return
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        pane = get_pane(pane_id)
+        if pane.get("status_updated_at") != previous_update and pane.get(
+            "agent_status"
+        ) in {"working", "blocked", "done"}:
             return
-        # A just-launched TUI can swallow the text or the Enter entirely (startup
-        # screens, editor not attached yet). Verify the agent started working;
-        # re-press Enter, then retry the whole send once before giving up.
-        for _ in range(6):
-            time.sleep(1.0)
-            pane = get_pane(pane_id)
-            if not pane.get("agent") or not foreground_non_shell(pane_id):
-                raise ThreadControlError(
-                    f"Recipient agent in pane {pane_id} exited during delivery; "
-                    "the message was not received"
-                )
-            if str(pane.get("agent_status")) == "working":
-                return
-            herdr("pane", "send-keys", pane_id, "enter")
-        if attempt == 0:
-            time.sleep(2.0)
+        if not pane.get("agent"):
+            raise ThreadControlError("Recipient agent exited during delivery")
+        time.sleep(0.25)
     raise ThreadControlError(
-        f"Delivered text to pane {pane_id} but the agent never started processing; "
-        "read the pane to inspect its state"
+        "Text was submitted, but Rex did not report processing. "
+        "Inspect the transcript before retrying; delivery is uncertain."
     )
 
 
@@ -407,10 +449,12 @@ def new_conversation() -> str:
 def start_preamble(peer: str, cwd: Path, sender: str, conversation: str) -> str:
     return "\n".join(
         [
-            f"You are the Herdr peer thread {peer!r} working in {cwd}.",
+            f"You are the Rex peer thread {peer!r} working in {cwd}.",
             "Reply with the threadctl command, for example:",
-            f"  threadctl message inform"
-            f" --to {sender} --conversation {conversation} --content <result>",
+            (
+                f"  threadctl message inform"
+                f" --to {sender} --conversation {conversation} --content <result>"
+            ),
             "Only a successful threadctl invocation communicates a reply.",
         ]
     )
@@ -439,7 +483,7 @@ def command_start(args: argparse.Namespace) -> JsonObject:
     pane = existing[0] if existing else create_peer_tab(name, cwd)
     pane = ensure_idle_agent(pane, args.agent, args.model, args.thinking, cwd)
     pane_id = string_field(pane, "pane_id")
-    herdr("pane", "rename", pane_id, name)
+    rex("block", "rename", "-s", string_field(pane, "workspace_id"), pane_id, name)
 
     conversation = new_conversation()
     message = render_message(
@@ -511,10 +555,15 @@ def command_list(args: argparse.Namespace) -> JsonObject:
                 "pane_id": string_field(pane, "pane_id"),
                 "cwd": pane.get("cwd"),
                 "agent": pane.get("agent"),
-                "status": pane.get("agent_status", "unknown"),
+                "status": get_pane(string_field(pane, "pane_id")).get(
+                    "agent_status", "unknown"
+                ),
             }
-            for pane in all_panes()
-            if pane.get("workspace_id") == workspace_id
+            for pane in (
+                get_pane(string_field(item, "pane_id"))
+                for item in all_panes()
+                if item.get("workspace_id") == workspace_id
+            )
         ]
         if workspace_id
         else []
@@ -524,47 +573,29 @@ def command_list(args: argparse.Namespace) -> JsonObject:
 
 def command_read(args: argparse.Namespace) -> JsonObject:
     pane_id = string_field(resolve_peer(args.peer), "pane_id")
-    executable = os.environ.get("HERDR_BIN", "herdr")
-    command = [
-        executable,
-        "pane",
-        "read",
-        pane_id,
-        "--source",
-        "recent-unwrapped",
-        "--lines",
-        str(args.lines),
-        "--format",
-        "text",
-    ]
-    try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
-    except OSError as exc:
-        raise ThreadControlError(f"Could not run {executable}: {exc}") from exc
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise ThreadControlError(f"Could not read pane {pane_id}: {detail}")
+    session_id = string_field(pane_location(pane_id), "workspace_id")
+    output = rex_output(
+        "capture", "-s", session_id, "-b", pane_id, "--trim", "--unwrap"
+    )
     return {
         "action": "read",
         "peer": args.peer,
         "pane_id": pane_id,
-        "transcript": completed.stdout,
+        "transcript": "\n".join(output.splitlines()[-args.lines :]),
     }
 
 
 def command_wait(args: argparse.Namespace) -> JsonObject:
     pane_id = string_field(resolve_peer(args.peer), "pane_id")
     status = str(get_pane(pane_id).get("agent_status", "unknown"))
-    if status != args.status:
-        herdr(
-            "wait",
-            "agent-status",
-            pane_id,
-            "--status",
-            args.status,
-            "--timeout",
-            str(args.timeout),
-        )
+    deadline = time.monotonic() + args.timeout / 1000
+    accepted = {"idle", "done"} if args.status == "done" else {args.status}
+    while status not in accepted:
+        if time.monotonic() >= deadline:
+            raise ThreadControlError(
+                f"Timed out waiting for {args.peer}: current status {status}"
+            )
+        time.sleep(0.5)
         status = str(get_pane(pane_id).get("agent_status", "unknown"))
     return {
         "action": "wait-complete",
@@ -576,7 +607,14 @@ def command_wait(args: argparse.Namespace) -> JsonObject:
 
 def command_focus(args: argparse.Namespace) -> JsonObject:
     pane_id = string_field(resolve_peer(args.peer), "pane_id")
-    herdr("agent", "focus", pane_id)
+    pane = get_pane(pane_id)
+    rex("focus", "-s", string_field(pane, "workspace_id"), pane_id)
+    rex(
+        "do",
+        "session.select",
+        "session_id=" + string_field(pane, "workspace_id"),
+        "window_id=" + string_field(pane, "tab_id"),
+    )
     return {"action": "focused", "peer": args.peer, "pane_id": pane_id}
 
 
@@ -597,7 +635,7 @@ def command_close(args: argparse.Namespace) -> JsonObject:
         )
 
     tab_id = string_field(pane, "tab_id")
-    herdr("tab", "close", tab_id)
+    rex("block", "close", "-s", workspace_id, pane_id)
     return {
         "action": "closed",
         "peer": args.peer,

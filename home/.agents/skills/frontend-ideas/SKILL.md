@@ -1,6 +1,6 @@
 ---
 name: frontend-ideas
-description: Generate genuinely non-generic frontend directions by pitting adversarial Herdr peers against each other. For greenfield or "just make it cool / something not-usual" briefs where the user can't specify the target.
+description: Generate genuinely non-generic frontend directions by pitting adversarial Rex peers against each other. For greenfield or "just make it cool / something not-usual" briefs where the user can't specify the target.
 disable-model-invocation: true
 ---
 
@@ -18,9 +18,9 @@ Then generate **randomness the model didn't choose**: pick 3–4 arbitrary ancho
 
 ## 2. Decide: peers or solo
 
-Adversarial peers earn their token cost only when hunting *genuine* novelty on a real design. For a quick pass, or if `HERDR_ENV` is unset, skip to **Solo fallback** at the bottom.
+Adversarial peers earn their token cost only when hunting *genuine* novelty on a real design. For a quick pass, or if `REX_SESSION` is unset, skip to **Solo fallback** at the bottom.
 
-If using peers, read `herdr-agent-threads` for the `threadctl` interface and confirm agent/model/thinking with the user before starting any peer.
+If using peers, read `rex-agent-threads` for the `threadctl` interface and confirm agent/model/thinking with the user before starting any peer.
 
 ## 3. Assign incompatible mandates (the whole trick)
 
@@ -31,7 +31,7 @@ The lever is **mandated incompatibility**, not the number of peers. Same-prior p
 - **Forbid convergence.** Hard rule in every task: no conceding, no middle ground, no "we could combine" until told. Premature synthesis kills the novelty.
 - Each peer produces a concrete direction: one-sentence thesis, a real expression (layout/type/color/motion, actual HTML if useful), and how it defies the generic default.
 
-Start 3 peers this way (see `herdr-agent-threads`). Let them exchange 2–3 rounds under the no-convergence rule.
+Start 3 peers this way (see `rex-agent-threads`). Let them exchange 2–3 rounds under the no-convergence rule.
 
 ## 4. Synthesize with a separate judge
 

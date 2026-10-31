@@ -1,2 +1,2 @@
 #!/bin/sh
-exec python3 "$HOME/.agents/skills/herdr-agent-threads/scripts/threadctl.py" "$@"
+exec python3 "$HOME/.agents/skills/rex-agent-threads/scripts/threadctl.py" "$@"
