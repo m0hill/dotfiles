@@ -12,13 +12,15 @@ dotfiles/
 ├── home/                # Stow package: ~/
 │   ├── .zshrc          # Shell config with guards
 │   ├── .gitconfig      # Git config (portable paths)
+│   ├── .agents/skills/ # Personal agent skills (see Agent Skills)
 │   └── ...
-└── config/              # Stow package: ~/.config/ + ~/Library/
-    ├── .config/
-    │   ├── atuin/      # Shell history
-    │   ├── mise/       # Runtime versions
-    │   └── ...
-    └── Library/       # macOS application configuration
+├── config/              # Stow package: ~/.config/ + ~/Library/
+│   ├── .config/
+│   │   ├── atuin/      # Shell history
+│   │   ├── mise/       # Runtime versions
+│   │   └── ...
+│   └── Library/       # macOS application configuration
+└── executor-apps/       # Executor app sources; not stowed (see Executor Apps)
 ```
 
 ## Build/Test Commands
@@ -112,6 +114,26 @@ mv ~/.mydotfile home/
 stow -v -t ~ home
 ```
 
+## Agent Skills
+
+`home/.agents/skills/` is the single skill catalog for every local agent: stow
+links it to `~/.agents/skills`, and `~/.claude/skills` points at the same folder.
+When adding, removing, or renaming a skill, update the attribution, invocation,
+and relationship tables in `home/.agents/skills/README.md` in the same change.
+
+`home/.agents/skills/synced/` is written by the Claude app and gitignored; leave
+it alone.
+
+## Executor Apps
+
+Agents reach MCP services through one local Executor server
+(`http://127.0.0.1:4312`), connected to each agent as `executor mcp`.
+`executor-apps/<name>/` holds the source of apps written here (`index.ts` plus
+`package.json` pinned to `executor apps framework`). Deploy a change with
+`executor apps deploy --app <app-id> --files .` from the app's folder;
+`executor apps list` shows app IDs. Accounts connect through Executor's secure
+connection flow, so source holds URLs and approval rules, never credentials.
+
 ## Common Patterns
 
 ### Check for Sensitive Data Before Commit
@@ -150,26 +172,3 @@ find ~ -type l ! -exec test -e {} \; -delete # Remove them
 - **macOS-specific**: Library configuration paths, Homebrew locations
 - **Tool guards**: Scripts must work even if tools missing
 - **Brewfile**: macOS-only (Homebrew); separate Linux setup if needed
-
-<!-- opensrc:start -->
-
-## Source Code Reference
-
-Source code for dependencies is available in `opensrc/` for deeper understanding of implementation details.
-
-See `opensrc/sources.json` for the list of available packages and their versions.
-
-Use this source code when you need to understand how a package works internally, not just its types/interface.
-
-### Fetching Additional Source Code
-
-To fetch source code for a package or repository you need to understand, run:
-
-```bash
-npx opensrc <package>           # npm package (e.g., npx opensrc zod)
-npx opensrc pypi:<package>      # Python package (e.g., npx opensrc pypi:requests)
-npx opensrc crates:<package>    # Rust crate (e.g., npx opensrc crates:serde)
-npx opensrc <owner>/<repo>      # GitHub repo (e.g., npx opensrc vercel/ai)
-```
-
-<!-- opensrc:end -->

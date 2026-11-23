@@ -11,3 +11,4 @@ _G.__automation_controller = controllerFactory({
 })
 
 _G.__automation_controller:start()
+

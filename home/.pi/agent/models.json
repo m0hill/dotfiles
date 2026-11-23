@@ -1,21 +1,18 @@
 {
+  "$schema": "https://pi.dev/schemas/models.schema.json",
   "providers": {
     "abliteration": {
+      "name": "abliteration.ai",
       "baseUrl": "https://api.abliteration.ai/v1",
       "api": "openai-completions",
-      "apiKey": "$ABLITERATION_API_KEY",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "supportsReasoningEffort": true,
-        "maxTokensField": "max_tokens"
-      },
+      "apiKey": "!zsh -fc 'source ~/.config/secrets.zsh >/dev/null 2>&1; print -rn -- $ABLITERATION_API_KEY'",
       "models": [
         {
-          "id": "abliterated-model-large-v2",
-          "name": "Abliterated Model Large v2",
+          "id": "abliterated-model-large-flash",
+          "name": "Abliterated Large Flash",
           "reasoning": true,
           "thinkingLevelMap": {
-            "off": null,
+            "off": "none",
             "minimal": null,
             "low": "low",
             "medium": null,
@@ -23,99 +20,17 @@
             "xhigh": null,
             "max": "max"
           },
-          "input": ["text"],
-          "contextWindow": 1000000,
-          "maxTokens": 32768,
-          "samplingParams": {
-            "temperature": 1,
-            "top_p": 1,
-            "include_reasoning": true
+          "input": ["text", "image"],
+          "inputLimits": {
+            "images": { "maxPerRequest": 4 }
           },
+          "contextWindow": 1048576,
+          "maxTokens": 262144,
           "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          }
-        }
-      ]
-    },
-    "MARA": {
-      "baseUrl": "https://api.cloud.mara.com/v1",
-      "api": "openai-completions",
-      "apiKey": "$MARA_API_KEY",
-      "compat": {
-        "supportsDeveloperRole": false
-      },
-      "models": [
-        {
-          "id": "MiniMax-M2.5",
-          "name": "MiniMax-M2.5",
-          "reasoning": true,
-          "input": ["text"],
-          "contextWindow": 192000,
-          "maxTokens": 96000,
-          "cost": {
-            "input": 0.3,
-            "output": 1.2,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          }
-        }
-      ]
-    },
-    "mlx-lm": {
-      "baseUrl": "http://127.0.0.1:8080/v1",
-      "api": "openai-completions",
-      "apiKey": "not-needed",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false,
-        "supportsUsageInStreaming": true,
-        "supportsStrictMode": false,
-        "maxTokensField": "max_tokens"
-      },
-      "models": [
-        {
-          "id": "LFM2.5-2.6B-MLX-4bit",
-          "name": "LFM2.5 2.6B MLX 4-bit (Local)",
-          "reasoning": true,
-          "input": ["text"],
-          "contextWindow": 131072,
-          "maxTokens": 16384,
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          }
-        }
-      ]
-    },
-    "mlx-lm-8bit": {
-      "baseUrl": "http://127.0.0.1:8082/v1",
-      "api": "openai-completions",
-      "apiKey": "not-needed",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false,
-        "supportsUsageInStreaming": true,
-        "supportsStrictMode": false,
-        "maxTokensField": "max_tokens"
-      },
-      "models": [
-        {
-          "id": "LFM2.5-2.6B-MLX-8bit",
-          "name": "LFM2.5 2.6B MLX 8-bit (Local)",
-          "reasoning": true,
-          "input": ["text"],
-          "contextWindow": 131072,
-          "maxTokens": 16384,
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "input": 1,
+            "output": 2,
+            "cacheRead": 0.1,
+            "cacheWrite": 1
           }
         }
       ]

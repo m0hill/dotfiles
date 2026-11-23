@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Stop Claude from auto-invoking personal skills in the current repository.
+
+Writes a skillOverrides entry for every skill in ~/.claude/skills into the
+repository's .claude/settings.local.json. Project skills stay untouched.
+Re-run after adding personal skills.
+
+Usage: claude-hide-personal-skills [user-invocable-only|off|on]
+  user-invocable-only (default): hidden from Claude, still runnable as /name
+  off: hidden everywhere
+  on: remove the overrides this script wrote
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+MODES = {"user-invocable-only", "off", "on"}
+
+
+def main() -> None:
+    mode = sys.argv[1] if len(sys.argv) > 1 else "user-invocable-only"
+    if mode not in MODES:
+        sys.exit(__doc__)
+
+    root = Path(
+        subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    personal = sorted(
+        p.parent.name for p in (Path.home() / ".claude/skills").glob("*/SKILL.md")
+    )
+
+    settings_path = root / ".claude/settings.local.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    overrides = settings.setdefault("skillOverrides", {})
+    for name in personal:
+        if mode == "on":
+            overrides.pop(name, None)
+        else:
+            overrides[name] = mode
+    if not overrides:
+        del settings["skillOverrides"]
+
+    settings_path.parent.mkdir(exist_ok=True)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    print(f"{len(personal)} personal skills set to '{mode}' in {settings_path}")
+
+
+if __name__ == "__main__":
+    main()

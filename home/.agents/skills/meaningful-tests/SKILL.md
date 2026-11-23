@@ -104,6 +104,25 @@ Find missing consequential coverage independently of these deletions. The goal
 is a smaller maintenance burden with better defect detection, not maximum
 removal. No deletion quota is required.
 
+## Place regression tests
+
+Treat an escaped bug as a mutant the suite failed to kill. Before writing a
+test, ask why existing coverage let it survive, then strengthen coverage there:
+
+- An existing test covers the behavior but not the failing input class: add the
+  case to that test or its table.
+- An existing scenario reaches the defect but does not assert the wrong
+  outcome: add the assertion.
+- No test specifies the behavior: add one named for the behavior, beside that
+  feature's tests, not for the bug, ticket, or fixed branch.
+- The defect needs wiring, persistence, or ordering: test at that connected
+  boundary rather than as a minimal unit repro.
+
+The minimized repro locates the bug; it is not automatically the test to keep.
+Good tests change when requirements change, not when a bug is found in code
+they already claim to cover. Keep tests focused on one behavior; do not merge
+unrelated checks into one large scenario to avoid adding a test.
+
 ## External providers
 
 Test our adapter's meaningful request construction, response translation,

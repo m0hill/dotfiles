@@ -10,6 +10,8 @@ alias gsr='git reset --soft HEAD~1'
 alias gca='git commit --amend --no-edit'
 alias gcm='git commit -m'
 alias gl='git log --graph --pretty="%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%ar) %C(bold blue)<%an>%Creset"'
+# Vanilla pi: built-in tools only, no skills/MCP/extensions/context files.
+alias piv='pi --model abliteration/abliterated-model-large-flash --no-skills --no-mcp --no-extensions --no-prompt-templates --no-context-files --tools read,bash,edit,write'
 
 [ -f "$HOME/.config/secrets.zsh" ] && source "$HOME/.config/secrets.zsh"
 

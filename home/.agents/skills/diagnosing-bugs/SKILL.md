@@ -9,7 +9,7 @@ A discipline for hard bugs. Skip phases only when explicitly justified.
 
 When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
-Use this skill for an observed failure. If the task starts from a diff or PR and asks what might be wrong, use `code-review` instead.
+Use this skill for an observed failure, not to look for possible problems in a diff or PR.
 
 Choose the mode from the request:
 
@@ -144,7 +144,9 @@ A correct seam is one where the test exercises the **real bug pattern** as it oc
 
 If a correct seam exists:
 
-1. Turn the minimised repro into a failing test at that seam.
+1. Turn the minimised repro into a failing test at that seam, placed per
+   `meaningful-tests` — usually by strengthening the existing test for the
+   broken behavior rather than adding a standalone bug test.
 2. Watch it fail.
 3. Apply the fix.
 4. Watch it pass.
